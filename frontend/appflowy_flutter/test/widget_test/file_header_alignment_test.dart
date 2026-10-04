@@ -145,22 +145,28 @@ void main() {
             expect(tester.getRect(iconRow).top - header.top, 20);
             expect(
               tester
-                  .getSize(find
-                      .descendant(of: iconRow, matching: find.byType(Wrap))
-                      .first)
+                  .getSize(
+                    find
+                        .descendant(of: iconRow, matching: find.byType(Wrap))
+                        .first,
+                  )
                   .height,
               104,
             );
           }
           expect(
             tester.getRect(find.byKey(_icon)).top - header.top,
-            closeTo(tallIconActions ? 44 : WorkspaceTokens.pageTopWithoutCover,
-                0.01),
+            closeTo(
+              tallIconActions ? 44 : WorkspaceTokens.pageTopWithoutCover,
+              0.01,
+            ),
           );
           expect(
             tester.getRect(find.byKey(_title)).top,
-            greaterThanOrEqualTo(tester.getRect(find.byKey(_icon)).bottom +
-                WorkspaceTokens.pageIconTitleGap),
+            greaterThanOrEqualTo(
+              tester.getRect(find.byKey(_icon)).bottom +
+                  WorkspaceTokens.pageIconTitleGap,
+            ),
           );
           expect(header.bottom, lessThan(tester.getRect(_sourceField).bottom));
           final context = tester.element(find.byKey(_header));
@@ -727,9 +733,10 @@ void main() {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
-                        key: first,
-                        onPressed: () {},
-                        child: const Text('Kernel')),
+                      key: first,
+                      onPressed: () {},
+                      child: const Text('Kernel'),
+                    ),
                   ),
                 ),
                 SizedBox(
@@ -737,9 +744,10 @@ void main() {
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                        key: last,
-                        onPressed: () {},
-                        child: const Text('Run all')),
+                      key: last,
+                      onPressed: () {},
+                      child: const Text('Run all'),
+                    ),
                   ),
                 ),
               ],
@@ -751,8 +759,10 @@ void main() {
     try {
       for (final (width, scale) in const [(1280.0, 1.0), (240.0, 2.0)]) {
         await _mount(tester, child, width: width, scale: scale);
-        expect(measuredWidths,
-            everyElement(allOf(isPositive, lessThan(double.infinity))));
+        expect(
+          measuredWidths,
+          everyElement(allOf(isPositive, lessThan(double.infinity))),
+        );
         final rects = await _expectActionsInside(
           tester,
           [first, last, _copy, _share, _rename].map(find.byKey),
@@ -887,8 +897,9 @@ Future<List<Rect>> _expectActionsInside(
   final rects = <Rect>[];
   for (final action in actions) {
     expect(action, findsOneWidget);
-    if (action.hitTestable().evaluate().isEmpty)
+    if (action.hitTestable().evaluate().isEmpty) {
       await tester.ensureVisible(action);
+    }
     await settleFileControls(tester);
     expect(action.hitTestable(), findsOneWidget);
     final rect = tester.getRect(action);
@@ -947,7 +958,9 @@ void _expectAddCoverAboveTitle(WidgetTester tester) {
     lessThanOrEqualTo(tester.getRect(find.byKey(_title)).top),
   );
   expect(
-      find.byKey(const ValueKey('workspace-file-change-icon')), findsOneWidget);
+    find.byKey(const ValueKey('workspace-file-change-icon')),
+    findsOneWidget,
+  );
 }
 
 void _expectSavedCoverAboveTitle(

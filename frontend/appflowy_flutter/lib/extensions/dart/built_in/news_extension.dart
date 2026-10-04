@@ -203,7 +203,8 @@ class NewsFeed {
       throw StateError('That feed is larger than 4 MB.');
     }
     return NewsChannel.parse(
-        utf8.decode(response.bodyBytes, allowMalformed: true));
+      utf8.decode(response.bodyBytes, allowMalformed: true),
+    );
   }
 }
 

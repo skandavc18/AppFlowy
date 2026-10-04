@@ -602,11 +602,14 @@ void main() {
     expect(nativeControls, findsWidgets);
     for (final button in nativeControls.evaluate()) {
       final control = find.byWidget(button.widget);
-      expect(find.descendant(of: control, matching: find.byType(TextButton)),
-          findsOneWidget);
       expect(
-          find.descendant(of: control, matching: find.byType(WorkspaceGlyph)),
-          findsOneWidget);
+        find.descendant(of: control, matching: find.byType(TextButton)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: control, matching: find.byType(WorkspaceGlyph)),
+        findsOneWidget,
+      );
     }
     expect(PdfPreviewGeometry.toolbarHeight, 42);
     expect(PdfPreviewGeometry.toolbarRadius, 10);
@@ -793,20 +796,23 @@ void main() {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         WorkspaceControlButton(
-                            key: copy,
-                            icon: Icons.copy_rounded,
-                            tooltip: 'Copy file',
-                            onPressed: () => copied++),
+                          key: copy,
+                          icon: Icons.copy_rounded,
+                          tooltip: 'Copy file',
+                          onPressed: () => copied++,
+                        ),
                         WorkspaceControlButton(
-                            key: share,
-                            icon: Icons.ios_share_rounded,
-                            tooltip: 'Share file',
-                            onPressed: () => shared++),
+                          key: share,
+                          icon: Icons.ios_share_rounded,
+                          tooltip: 'Share file',
+                          onPressed: () => shared++,
+                        ),
                         WorkspaceControlButton(
-                            key: edit,
-                            icon: Icons.edit_rounded,
-                            tooltip: 'Edit file',
-                            onPressed: () => edited++),
+                          key: edit,
+                          icon: Icons.edit_rounded,
+                          tooltip: 'Edit file',
+                          onPressed: () => edited++,
+                        ),
                       ],
                     ),
                   ),
@@ -1086,7 +1092,9 @@ void main() {
         ),
       );
       await tester.enterText(
-          find.byKey(const ValueKey('findTextField')), 'first query');
+        find.byKey(const ValueKey('findTextField')),
+        'first query',
+      );
       await tester.pump();
       expect(queries, ['first query']);
       controller.selection =

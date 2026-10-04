@@ -117,12 +117,13 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
 
     if (live == null) {
       return _withPageHeader(
-          context,
-          ProviderStateView(
-            status: ProviderStatus.loading,
-            info: source.info,
-            palette: palette,
-          ));
+        context,
+        ProviderStateView(
+          status: ProviderStatus.loading,
+          info: source.info,
+          palette: palette,
+        ),
+      );
     }
 
     return ListenableBuilder(
@@ -131,30 +132,32 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
         // Nothing read yet and something went wrong: the whole panel says so.
         if (live.hasFailed && live.nodes.isEmpty) {
           return _withPageHeader(
-              context,
-              ProviderStateView(
-                status: live.status,
-                info: source.info,
-                palette: palette,
-                retryAfter: live.failure?.retryAfter,
-                onRetry: () => unawaited(live.refresh()),
-                onReconnect: () => _reconnect(context),
-                onPickAgain: pickPhotosAgainAction(
-                  context,
-                  collection: widget.collection,
-                  failure: live.failure,
-                ),
-              ));
+            context,
+            ProviderStateView(
+              status: live.status,
+              info: source.info,
+              palette: palette,
+              retryAfter: live.failure?.retryAfter,
+              onRetry: () => unawaited(live.refresh()),
+              onReconnect: () => _reconnect(context),
+              onPickAgain: pickPhotosAgainAction(
+                context,
+                collection: widget.collection,
+                failure: live.failure,
+              ),
+            ),
+          );
         }
 
         if (live.status == ProviderStatus.loading && live.nodes.isEmpty) {
           return _withPageHeader(
-              context,
-              ProviderStateView(
-                status: ProviderStatus.loading,
-                info: source.info,
-                palette: palette,
-              ));
+            context,
+            ProviderStateView(
+              status: ProviderStatus.loading,
+              info: source.info,
+              palette: palette,
+            ),
+          );
         }
 
         final offer = keepPhotosOffer(
@@ -190,7 +193,8 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
               children: [header, if (banner != null) banner],
             ),
             child: Builder(
-                builder: (context) => widget.builder(context, live, palette)),
+              builder: (context) => widget.builder(context, live, palette),
+            ),
           );
         }
         return Column(

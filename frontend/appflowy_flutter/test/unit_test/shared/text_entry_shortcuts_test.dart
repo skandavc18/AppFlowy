@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
@@ -179,8 +181,10 @@ void main() {
       await _press(tester, LogicalKeyboardKey.arrowLeft);
       expect(controller.selection, const TextSelection.collapsed(offset: 1));
       await _press(tester, LogicalKeyboardKey.arrowRight, shift: true);
-      expect(controller.selection,
-          const TextSelection(baseOffset: 1, extentOffset: 2));
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 1, extentOffset: 2),
+      );
       await _press(tester, LogicalKeyboardKey.keyC, control: true);
       expect(clipboard.text, 'b');
       expect(controller.text, 'abcd');
@@ -191,16 +195,24 @@ void main() {
       expect(controller.text, 'a🙂cd');
       expect(changes.last, 'a🙂cd');
       await _press(tester, LogicalKeyboardKey.keyA, control: true);
-      expect(controller.selection,
-          const TextSelection(baseOffset: 0, extentOffset: 5));
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 5),
+      );
 
       controller.value = _value('alpha beta', 10);
       await _press(tester, LogicalKeyboardKey.arrowLeft, control: true);
       expect(controller.selection, const TextSelection.collapsed(offset: 6));
-      await _press(tester, LogicalKeyboardKey.arrowRight,
-          control: true, shift: true);
-      expect(controller.selection,
-          const TextSelection(baseOffset: 6, extentOffset: 10));
+      await _press(
+        tester,
+        LogicalKeyboardKey.arrowRight,
+        control: true,
+        shift: true,
+      );
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 6, extentOffset: 10),
+      );
 
       controller.value = _value('ab', 2);
       // EditableText's real undo history coalesces changes for 500 ms.
@@ -348,8 +360,11 @@ void main() {
       await _focus(tester, firstFocus);
       first.selection = const TextSelection.collapsed(offset: 5);
       await _press(tester, LogicalKeyboardKey.backspace);
-      expect(first.text, 'firs',
-          reason: 'Nested wrappers must not double edit.');
+      expect(
+        first.text,
+        'firs',
+        reason: 'Nested wrappers must not double edit.',
+      );
       expect(second.text, 'second');
       await _focus(tester, secondFocus);
       second.selection = const TextSelection.collapsed(offset: 6);
@@ -425,9 +440,11 @@ void main() {
             ),
           ),
         );
-        editor.updateSelectionWithReason(
-          Selection.single(path: [0], startOffset: 7),
-          reason: SelectionUpdateReason.uiEvent,
+        unawaited(
+          editor.updateSelectionWithReason(
+            Selection.single(path: [0], startOffset: 7),
+            reason: SelectionUpdateReason.uiEvent,
+          ),
         );
         await tester.pump();
         await _focus(tester, fieldFocus);
@@ -471,7 +488,9 @@ Future<void> _focus(WidgetTester tester, FocusNode focus) async {
   await tester.pump();
   expect(FocusManager.instance.primaryFocus, same(focus));
   expect(
-      focus.context!.findAncestorStateOfType<EditableTextState>(), isNotNull);
+    focus.context!.findAncestorStateOfType<EditableTextState>(),
+    isNotNull,
+  );
 }
 
 Future<void> _press(
@@ -581,15 +600,21 @@ class _DroppingDispatcher extends ActionDispatcher {
   final List<Intent> calls;
 
   @override
-  Object? invokeAction(Action<Intent> action, Intent intent,
-      [BuildContext? context]) {
+  Object? invokeAction(
+    Action<Intent> action,
+    Intent intent, [
+    BuildContext? context,
+  ]) {
     calls.add(intent);
     return null;
   }
 
   @override
-  (bool, Object?) invokeActionIfEnabled(Action<Intent> action, Intent intent,
-      [BuildContext? context]) {
+  (bool, Object?) invokeActionIfEnabled(
+    Action<Intent> action,
+    Intent intent, [
+    BuildContext? context,
+  ]) {
     calls.add(intent);
     return (true, null);
   }
@@ -600,8 +625,9 @@ class _Clipboard {
     final messenger = tester.binding.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
       if (call.method == 'Clipboard.getData') return {'text': text};
-      if (call.method == 'Clipboard.hasStrings')
+      if (call.method == 'Clipboard.hasStrings') {
         return {'value': text.isNotEmpty};
+      }
       if (call.method == 'Clipboard.setData') {
         text = (call.arguments as Map)['text'] as String;
       }

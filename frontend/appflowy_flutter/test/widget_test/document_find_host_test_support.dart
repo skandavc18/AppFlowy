@@ -377,7 +377,8 @@ class RowFindHarness {
         MultiProvider(
           providers: [
             Provider<AppearanceSettingsCubit>.value(
-                value: FindHostAppearance()),
+              value: FindHostAppearance(),
+            ),
             Provider<SharedEditorContext>.value(value: shared),
             BlocProvider<DocumentAppearanceCubit>.value(value: appearance),
             BlocProvider<DocumentBloc>.value(value: document),

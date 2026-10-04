@@ -37,58 +37,64 @@ void main() {
           final decoded = await _decodeLegacyCover(tester);
           final editor = EditorState(
             document: Document(
-                root: pageNode(children: [paragraphNode(text: 'Body')])),
+              root: pageNode(children: [paragraphNode(text: 'Body')]),
+            ),
           )..disableSealTimer = true;
           editor.document.root.updateAttributes({
             DocumentHeaderBlockKeys.coverType: CoverType.asset.toString(),
             DocumentHeaderBlockKeys.coverDetails: '1',
           });
           final originalDocument = editor.document.toJson();
-          final view = ValueNotifier(ViewPB(
-            id: 'legacy-$appearance-$editable',
-            name: 'Retained document title',
-            icon: EmojiIconData.emoji('📘').toViewIcon(),
-            extra: IconSize.merge('', 113.75),
-          ));
+          final view = ValueNotifier(
+            ViewPB(
+              id: 'legacy-$appearance-$editable',
+              name: 'Retained document title',
+              icon: EmojiIconData.emoji('📘').toViewIcon(),
+              extra: IconSize.merge('', 113.75),
+            ),
+          );
           final shared = SharedEditorContext();
           final titleBackend = _TitleBackend(view.value);
           final documentAppearance = _DocumentAppearance();
           final listener = _HeaderListener(view.value.id);
           try {
-            await tester.pumpWidget(vividIconTestApp(
-              appearance,
-              MultiProvider(
-                providers: [
-                  Provider<SharedEditorContext>.value(value: shared),
-                  BlocProvider<DocumentAppearanceCubit>.value(
-                      value: documentAppearance),
-                ],
-                child: ValueListenableBuilder<ViewPB>(
-                  valueListenable: view,
-                  builder: (_, current, __) => SizedBox(
-                    width: 760,
-                    height: 560,
-                    child: AppFlowyEditor(
-                      editorState: editor,
-                      editable: editable,
-                      disableKeyboardService: true,
-                      editorStyle: const EditorStyle.desktop(maxWidth: 760),
-                      header: DocumentCoverWidget(
-                        node: editor.document.root,
+            await tester.pumpWidget(
+              vividIconTestApp(
+                appearance,
+                MultiProvider(
+                  providers: [
+                    Provider<SharedEditorContext>.value(value: shared),
+                    BlocProvider<DocumentAppearanceCubit>.value(
+                      value: documentAppearance,
+                    ),
+                  ],
+                  child: ValueListenableBuilder<ViewPB>(
+                    valueListenable: view,
+                    builder: (_, current, __) => SizedBox(
+                      width: 760,
+                      height: 560,
+                      child: AppFlowyEditor(
                         editorState: editor,
-                        view: current,
-                        tabs: kAllIconPickerTabs,
-                        onIconChanged: (_) =>
-                            fail('Cover rendering must not change the icon'),
-                        titleBuilder: (view) =>
-                            _NativeTitle(view: view, backend: titleBackend),
-                        viewListenerFactory: listener.forView,
+                        editable: editable,
+                        disableKeyboardService: true,
+                        editorStyle: const EditorStyle.desktop(maxWidth: 760),
+                        header: DocumentCoverWidget(
+                          node: editor.document.root,
+                          editorState: editor,
+                          view: current,
+                          tabs: kAllIconPickerTabs,
+                          onIconChanged: (_) =>
+                              fail('Cover rendering must not change the icon'),
+                          titleBuilder: (view) =>
+                              _NativeTitle(view: view, backend: titleBackend),
+                          viewListenerFactory: listener.forView,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ));
+            );
             await tester.pumpAndSettle();
             expect(view.value.cover, isNull);
             expect(find.byType(WorkspacePageCover), findsOneWidget);
@@ -107,16 +113,25 @@ void main() {
             expect(title.controller.text, view.value.name);
             final download = coverState.downloadableCover!;
             expect(download.storage, CoverImageStorage.asset);
-            expect(download.value,
-                'assets/images/built_in_cover_images/m_cover_image_1.png');
-            expect(find.byKey(const ValueKey('document-decoration-download')),
-                findsOneWidget);
+            expect(
+              download.value,
+              'assets/images/built_in_cover_images/m_cover_image_1.png',
+            );
+            expect(
+              find.byKey(const ValueKey('document-decoration-download')),
+              findsOneWidget,
+            );
             final provider = tester.widget<Image>(find.byType(Image)).image
                 as CoverImageProvider;
-            expect(provider.imageProvider,
-                AssetImage(PageStyleCoverImageType.builtInImagePath('1')));
+            expect(
+              provider.imageProvider,
+              AssetImage(PageStyleCoverImageType.builtInImagePath('1')),
+            );
             final target = provider.size.target(
-                decoded.image.width, decoded.image.height, provider.fit);
+              decoded.image.width,
+              decoded.image.height,
+              provider.fit,
+            );
             // The original predecode is a different cache key. A bounded cover
             // must finish its own native codec work, not just fake-clock settle.
             final readiness = Stopwatch()..start();
@@ -125,57 +140,74 @@ void main() {
                     .every((raw) => raw.image == null) &&
                 readiness.elapsed < const Duration(seconds: 2)) {
               await tester.runAsync(
-                  () => Future<void>.delayed(const Duration(milliseconds: 1)));
+                () => Future<void>.delayed(const Duration(milliseconds: 1)),
+              );
               await tester.pump();
             }
             expect(find.byType(RawImage), findsOneWidget);
             final rendered =
                 tester.widget<RawImage>(find.byType(RawImage)).image!;
-            expect((rendered.width, rendered.height),
-                (target.width, target.height));
+            expect(
+              (rendered.width, rendered.height),
+              (target.width, target.height),
+            );
             final retainedFrame = rendered.clone();
             addTearDown(retainedFrame.dispose);
             if (!editable) {
               expect(find.byType(FlowyIconEmojiPicker), findsNothing);
-              expect(find.byKey(const ValueKey('document-decoration-cover')),
-                  findsNothing);
               expect(
-                  find.byKey(
-                      const ValueKey('document-decoration-remove-cover')),
-                  findsNothing);
+                find.byKey(const ValueKey('document-decoration-cover')),
+                findsNothing,
+              );
+              expect(
+                find.byKey(
+                  const ValueKey('document-decoration-remove-cover'),
+                ),
+                findsNothing,
+              );
             }
 
             view.value = IconSize.applyTo(view.value, 187.375);
             await tester.pumpAndSettle();
             expect(tester.state(find.byType(Image)), same(imageState));
             expect(
-                tester
-                    .widget<RawImage>(find.byType(RawImage))
-                    .image!
-                    .isCloneOf(retainedFrame),
-                isTrue);
+              tester
+                  .widget<RawImage>(find.byType(RawImage))
+                  .image!
+                  .isCloneOf(retainedFrame),
+              isTrue,
+            );
             expect(
-                tester.getSize(find.byKey(const ValueKey('page-icon-frame'))),
-                const Size.square(187.375));
+              tester.getSize(find.byKey(const ValueKey('page-icon-frame'))),
+              const Size.square(187.375),
+            );
             expect(coverState.downloadableCover!.value, download.value);
 
             view.value = ViewPB.fromBuffer(view.value.writeToBuffer())
               ..extra = ViewCoverCodec.mergeCover(
-                  view.value.extra, const PageStyleCover.none());
+                view.value.extra,
+                const PageStyleCover.none(),
+              );
             await tester.pumpAndSettle();
             expect(view.value.cover, const PageStyleCover.none());
             expect(find.byType(WorkspacePageCover), findsNothing);
             expect(find.byType(DesktopCover), findsNothing);
-            expect(find.byKey(const ValueKey('document-decoration-download')),
-                findsNothing);
+            expect(
+              find.byKey(const ValueKey('document-decoration-download')),
+              findsNothing,
+            );
             expect(coverState.downloadableCover, isNull);
             expect(IconSize.decode(view.value.extra), 187.375);
-            expect(tester.state(find.byType(DocumentCoverWidget)),
-                same(headerState));
+            expect(
+              tester.state(find.byType(DocumentCoverWidget)),
+              same(headerState),
+            );
             expect(tester.state(find.byType(DocumentCover)), same(coverState));
             expect(tester.state(titleFinder), same(titleState));
-            expect(tester.widget<EditableText>(titleFinder).controller,
-                same(title.controller));
+            expect(
+              tester.widget<EditableText>(titleFinder).controller,
+              same(title.controller),
+            );
             expect(title.controller.text, 'Retained document title');
             expect(titleBackend.events, isEmpty);
             expect(listener.starts, 1);
@@ -205,8 +237,10 @@ Future<ImageInfo> _decodeLegacyCover(WidgetTester tester) async =>
       final stream = AssetImage(PageStyleCoverImageType.builtInImagePath('1'))
           .resolve(ImageConfiguration.empty);
       final done = Completer<ImageInfo>();
-      final listener = ImageStreamListener((info, _) => done.complete(info),
-          onError: done.completeError);
+      final listener = ImageStreamListener(
+        (info, _) => done.complete(info),
+        onError: done.completeError,
+      );
       stream.addListener(listener);
       try {
         return await done.future.timeout(const Duration(seconds: 10));

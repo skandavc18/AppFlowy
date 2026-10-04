@@ -804,7 +804,7 @@ class _FolderGalleryCardState extends State<FolderGalleryCard> {
             child: Tooltip(
               message: [
                 title,
-                if (widget.searchPath != null) widget.searchPath!
+                if (widget.searchPath != null) widget.searchPath!,
               ].join('\n'),
               excludeFromSemantics: true,
               child: WorkspaceInlineEditableText(

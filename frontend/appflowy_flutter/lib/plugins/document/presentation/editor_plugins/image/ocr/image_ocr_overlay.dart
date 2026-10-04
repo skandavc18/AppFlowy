@@ -152,7 +152,6 @@ class _ImageOcrFindRegionState extends State<ImageOcrFindRegion> {
   @override
   Widget build(BuildContext context) => ContextualFindRegion(
         enabled: _available,
-        claimHoverFromControls: true,
         isSelected: widget.isSelected,
         onFind: _open,
         onDismiss: _dismiss,

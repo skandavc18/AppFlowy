@@ -229,9 +229,13 @@ void main() {
           astrologyDateAnalysisWidgetType,
         ]);
         expect(
-            document.allWidgets.map((spec) => spec.type).toSet(), _widgetTypes);
+          document.allWidgets.map((spec) => spec.type).toSet(),
+          _widgetTypes,
+        );
         expect(
-            document.allWidgets.map((spec) => spec.id).toSet(), hasLength(12));
+          document.allWidgets.map((spec) => spec.id).toSet(),
+          hasLength(12),
+        );
         expect(document.allWidgets.first.placement.columnSpan, 12);
         expect(document.variableFor(astrologyDraftKey), isNotNull);
         expect(document.variableFor(astrologyDraftKey)!.initialValue, isNull);
@@ -272,11 +276,14 @@ void main() {
           expect(ExtensionBlockRegistry.parsers(), isNot(contains(type)));
           expect(
             ExtensionBlockRegistry.builders(
-                const BlockComponentConfiguration()),
+              const BlockComponentConfiguration(),
+            ),
             isNot(contains(type)),
           );
           expect(
-              ExtensionBlockRegistry.alignableTypes(), isNot(contains(type)));
+            ExtensionBlockRegistry.alignableTypes(),
+            isNot(contains(type)),
+          );
         }
         for (final type in _widgetTypes) {
           expect(DashboardWidgetRegistry.definitionFor(type), isNull);
@@ -370,8 +377,11 @@ void main() {
             expect(exported['width'], 678.25);
             expect(exported['height'], 432.5);
             expect(exported['align'], 'right');
-            expect(jsonEncode(node.toJson()), before,
-                reason: 'Export is read-only.');
+            expect(
+              jsonEncode(node.toJson()),
+              before,
+              reason: 'Export is read-only.',
+            );
           }
         }
       } finally {
@@ -436,7 +446,8 @@ void main() {
                       tester
                           .widget<Material>(
                             find.byKey(
-                                const ValueKey('astrology-birth-surface')),
+                              const ValueKey('astrology-birth-surface'),
+                            ),
                           )
                           .color,
                       PaperTheme.editorPreviewBackground,
@@ -500,8 +511,10 @@ void main() {
             .widget<AstrologyChartPanel>(find.byType(AstrologyChartPanel));
         expect(panel.input, same(draft));
         expect(panel.preview, isTrue);
-        expect(astrologyInputFromDashboard(controller.document).name,
-            _input().name);
+        expect(
+          astrologyInputFromDashboard(controller.document).name,
+          _input().name,
+        );
         expect(controller.document, same(document));
         expect(find.byType(VedicChartView), findsNothing);
         expect(tester.takeException(), isNull);
@@ -829,7 +842,8 @@ void main() {
           _expectChart(tester, newChart);
           if (staleFails) {
             first.completeError(
-                const FormatException('Stale calculation failed'));
+              const FormatException('Stale calculation failed'),
+            );
           } else {
             first.complete(oldChart);
           }
@@ -857,8 +871,9 @@ void main() {
         (tester) async {
       final location = _FakeLocationService(
         onCurrent: (force) async {
-          if (!force)
+          if (!force) {
             throw const FormatException('Test location permission denied');
+          }
           return _place;
         },
       );
@@ -888,9 +903,14 @@ void main() {
         expect(location.currentForces, [false, true]);
         expect(location.queries, isEmpty);
         expect(
-            received.single.toJson(), input.copyWith(place: _place).toJson());
-        expect(input.place, isNull,
-            reason: 'Resolved location is not persisted.');
+          received.single.toJson(),
+          input.copyWith(place: _place).toJson(),
+        );
+        expect(
+          input.place,
+          isNull,
+          reason: 'Resolved location is not persisted.',
+        );
         expect(find.text('Retry'), findsNothing);
         expect(find.byType(VedicChartView), findsOneWidget);
         expect(tester.takeException(), isNull);
@@ -976,7 +996,9 @@ void main() {
           ),
         );
         expect(
-            find.text('Enable Vedic astrology in Extensions.'), findsOneWidget);
+          find.text('Enable Vedic astrology in Extensions.'),
+          findsOneWidget,
+        );
         await tester.pump(const Duration(minutes: 2));
         expect(location.currentForces, isEmpty);
 
@@ -993,7 +1015,9 @@ void main() {
         await tester.pump();
         expect(AstrologyRuntime.active.value, isFalse);
         expect(
-            find.text('Enable Vedic astrology in Extensions.'), findsOneWidget);
+          find.text('Enable Vedic astrology in Extensions.'),
+          findsOneWidget,
+        );
         expect(find.text('Retry'), findsNothing);
         await tester.pump(const Duration(minutes: 3));
         expect(location.currentForces, hasLength(2));
@@ -1180,8 +1204,10 @@ void main() {
       final draft = controller.state[astrologyDraftKey] as AstrologyInput;
       expect(draft.style, IndianChartStyle.south);
       expect(controller.document.variableFor(astrologyDraftKey), isNotNull);
-      expect(controller.document.variableFor(astrologyDraftKey)!.initialValue,
-          isNull);
+      expect(
+        controller.document.variableFor(astrologyDraftKey)!.initialValue,
+        isNull,
+      );
       controller
           .edit((document) => document.copyWith(subtitle: 'Later layout edit'));
       await tester.pump();
@@ -1196,8 +1222,10 @@ void main() {
             .input,
         same(draft),
       );
-      expect(controller.document.allWidgets.single.settings,
-          isNot(contains('profile')));
+      expect(
+        controller.document.allWidgets.single.settings,
+        isNot(contains('profile')),
+      );
       expect(find.byType(VedicChartView), findsNothing);
       expect(tester.takeException(), isNull);
       await controller.flush(); // An empty preview id performs no backend IO.
@@ -1233,7 +1261,9 @@ void main() {
       );
       final afterMerge = source.substring(merge.end);
       expect(
-          afterMerge, contains('controller.setValue(astrologyDraftKey, null)'));
+        afterMerge,
+        contains('controller.setValue(astrologyDraftKey, null)'),
+      );
       expect(afterMerge, contains('await controller.flush()'));
     });
 
@@ -1257,10 +1287,14 @@ void main() {
         greaterThan(variable!.end),
       );
       final generate = _dashboardSourceSection(
-          'onGenerate: (input) async {', 'onSave: _save');
+        'onGenerate: (input) async {',
+        'onSave: _save',
+      );
       expect(generate, contains('_setDraft(controller, input)'));
       expect(
-          generate, isNot(contains('controller.setValue(astrologyDraftKey')));
+        generate,
+        isNot(contains('controller.setValue(astrologyDraftKey')),
+      );
     });
   });
 }
@@ -1278,8 +1312,10 @@ Future<DartExtensionContext> _activateAstrology() async {
   return context;
 }
 
-ThemeData _theme(
-        {Brightness brightness = Brightness.light, bool paper = false}) =>
+ThemeData _theme({
+  Brightness brightness = Brightness.light,
+  bool paper = false,
+}) =>
     DesktopAppearance().getThemeData(
       paper
           ? AppTheme.builtins
@@ -1290,17 +1326,23 @@ ThemeData _theme(
       builtInCodeFontFamily,
     );
 
-Widget _app(Widget child,
-        {Size size = const Size(760, 540), ThemeData? theme}) =>
+Widget _app(
+  Widget child, {
+  Size size = const Size(760, 540),
+  ThemeData? theme,
+}) =>
     MaterialApp(
       theme: theme ?? _theme(),
       themeAnimationDuration: Duration.zero,
       home: Scaffold(
-          body: Center(child: SizedBox.fromSize(size: size, child: child))),
+        body: Center(child: SizedBox.fromSize(size: size, child: child)),
+      ),
     );
 
 Widget _dashboardCard(
-        DashboardController controller, DashboardWidgetSpec spec) =>
+  DashboardController controller,
+  DashboardWidgetSpec spec,
+) =>
     Builder(
       builder: (context) {
         final definition = DashboardWidgetRegistry.definitionFor(spec.type)!;
@@ -1347,7 +1389,9 @@ void _expectPreviewCard(
       expect(panel.input.style, input.style);
       expect(panel.input.ayanamsa, input.ayanamsa);
       expect(
-          panel.input.ayanamsaOffsetArcseconds, input.ayanamsaOffsetArcseconds);
+        panel.input.ayanamsaOffsetArcseconds,
+        input.ayanamsaOffsetArcseconds,
+      );
       expect(panel.input.trueNode, input.trueNode);
       expect(panel.input.dashaYearDays, input.dashaYearDays);
     } else {
@@ -1361,33 +1405,42 @@ void _expectPreviewCard(
             tester.widget<AstrologyBirthForm>(find.byType(AstrologyBirthForm));
         expect(form.enabled, isFalse);
         expect(form.input.toJson(), input.toJson());
-        expect(find.text('Preview only · location lookup is disabled.'),
-            findsOneWidget);
+        expect(
+          find.text('Preview only · location lookup is disabled.'),
+          findsOneWidget,
+        );
         for (final id in [
           'astrology-current-location',
           'astrology-search',
           'astrology-generate',
           'astrology-save',
         ]) {
-          expect(tester.widget<TextButton>(find.byKey(ValueKey(id))).onPressed,
-              isNull);
+          expect(
+            tester.widget<TextButton>(find.byKey(ValueKey(id))).onPressed,
+            isNull,
+          );
         }
       case astrologyLibraryWidgetType:
         expect(
-            find.textContaining('Each person appears here and as a subpage.'),
-            findsOneWidget);
+          find.textContaining('Each person appears here and as a subpage.'),
+          findsOneWidget,
+        );
         expect(find.byType(ActionChip), findsNothing);
       case astrologyEventsWidgetType:
-        expect(find.textContaining('Save a named horoscope above'),
-            findsOneWidget);
+        expect(
+          find.textContaining('Save a named horoscope above'),
+          findsOneWidget,
+        );
       case astrologyDateAnalysisWidgetType:
         final analysis = tester.widget<AstrologyDateAnalysisView>(
           find.byType(AstrologyDateAnalysisView),
         );
         expect(analysis.preview, isTrue);
         expect(analysis.natal.toJson(), input.toJson());
-        expect(find.textContaining('No location is requested in a preview'),
-            findsOneWidget);
+        expect(
+          find.textContaining('No location is requested in a preview'),
+          findsOneWidget,
+        );
       default:
         fail('An untested astrology preview type was added: ${spec.type}');
     }
@@ -1418,7 +1471,7 @@ AstrologyChart _chart(AstrologyInput input, {double ascendant = 33}) {
     278.0,
     305.0,
     345.0,
-    165.0
+    165.0,
   ];
   return AstrologyChart(
     input: input,
@@ -1475,12 +1528,14 @@ class _NoNetworkGeocoder implements MapGeocoder {
 
   @override
   Future<GeocodeResult?> lookUp(MapLocation location) => throw StateError(
-      'Unexpected geocoder access in an astrology integration test.');
+        'Unexpected geocoder access in an astrology integration test.',
+      );
 
   @override
   Future<List<GeocodeResult>> search(String query, {int limit = 6}) =>
       throw StateError(
-          'Unexpected geocoder access in an astrology integration test.');
+        'Unexpected geocoder access in an astrology integration test.',
+      );
 }
 
 String _dashboardSourceSection(String start, String end) {
@@ -1488,8 +1543,11 @@ String _dashboardSourceSection(String start, String end) {
     'lib/extensions/dart/built_in/astrology/astrology_dashboard_widgets.dart',
   ).readAsStringSync();
   final from = source.indexOf(start);
-  expect(from, greaterThanOrEqualTo(0),
-      reason: 'Missing source section: $start');
+  expect(
+    from,
+    greaterThanOrEqualTo(0),
+    reason: 'Missing source section: $start',
+  );
   final to = source.indexOf(end, from + start.length);
   expect(to, greaterThan(from), reason: 'Missing section end: $end');
   return source.substring(from, to);

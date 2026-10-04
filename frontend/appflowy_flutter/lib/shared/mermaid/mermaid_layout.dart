@@ -73,8 +73,9 @@ MermaidScene _layoutGraph(
   }
 
   final edges = graph.edges
-      .where((edge) =>
-          placed.containsKey(edge.from) && placed.containsKey(edge.to))
+      .where(
+        (edge) => placed.containsKey(edge.from) && placed.containsKey(edge.to),
+      )
       .toList();
 
   _assignRanks(placed, edges);
@@ -457,7 +458,9 @@ Size _sizeOfNode(MermaidNode node, MermaidTextMeasurer measure) {
             : node.members.length * MermaidMetrics.memberRowHeight + 12);
     return Size(
       math.max(
-          MermaidMetrics.minNodeWidth, width + MermaidMetrics.nodePaddingX * 2),
+        MermaidMetrics.minNodeWidth,
+        width + MermaidMetrics.nodePaddingX * 2,
+      ),
       height,
     );
   }
@@ -671,17 +674,19 @@ List<MermaidShape> _edgeShapes(
   }
 
   cardinality(
-      edge.fromLabel,
-      exit,
-      vertical
-          ? Offset(1.6, downhill ? 0.6 : -0.6)
-          : Offset(downhill ? 0.6 : -0.6, -1.2));
+    edge.fromLabel,
+    exit,
+    vertical
+        ? Offset(1.6, downhill ? 0.6 : -0.6)
+        : Offset(downhill ? 0.6 : -0.6, -1.2),
+  );
   cardinality(
-      edge.toLabel,
-      entry,
-      vertical
-          ? Offset(1.6, downhill ? -0.6 : 0.6)
-          : Offset(downhill ? -0.6 : 0.6, -1.2));
+    edge.toLabel,
+    entry,
+    vertical
+        ? Offset(1.6, downhill ? -0.6 : 0.6)
+        : Offset(downhill ? -0.6 : 0.6, -1.2),
+  );
 
   return shapes;
 }
@@ -790,8 +795,10 @@ MermaidScene _layoutSequence(
               shadow: false,
             ),
           );
-          final tabSize = measure('${block.keyword} ${block.label}'.trim(),
-              MermaidTextRole.caption);
+          final tabSize = measure(
+            '${block.keyword} ${block.label}'.trim(),
+            MermaidTextRole.caption,
+          );
           blockShapes.add(
             MermaidBoxShape(
               rect: Rect.fromLTWH(
@@ -971,7 +978,10 @@ MermaidScene _layoutSequence(
     } else {
       heads.add(
         MermaidBoxShape(
-            rect: rect, shape: MermaidNodeShape.rounded, radius: 12),
+          rect: rect,
+          shape: MermaidNodeShape.rounded,
+          radius: 12,
+        ),
       );
       heads.add(
         MermaidTextShape(
@@ -1251,8 +1261,12 @@ MermaidScene _layoutTimeline(
   for (final section in timeline.sections) {
     final start = x;
     for (final entry in section.entries) {
-      final periodSize = measure(entry.period, MermaidTextRole.label,
-          maxWidth: columnWidth, bold: true);
+      final periodSize = measure(
+        entry.period,
+        MermaidTextRole.label,
+        maxWidth: columnWidth,
+        bold: true,
+      );
       shapes.add(
         MermaidTextShape(
           text: entry.period,
@@ -1265,7 +1279,9 @@ MermaidScene _layoutTimeline(
       shapes.add(
         MermaidBoxShape(
           rect: Rect.fromCircle(
-              center: Offset(x + columnWidth / 2, axisY), radius: 6),
+            center: Offset(x + columnWidth / 2, axisY),
+            radius: 6,
+          ),
           shape: MermaidNodeShape.circle,
           fill: MermaidInk.series,
           stroke: MermaidInk.canvas,
@@ -1412,7 +1428,10 @@ MermaidScene _layoutJourney(
       final rect = Rect.fromLTWH(x, y, cardWidth, height);
       shapes.add(
         MermaidBoxShape(
-            rect: rect, shape: MermaidNodeShape.rounded, radius: 12),
+          rect: rect,
+          shape: MermaidNodeShape.rounded,
+          radius: 12,
+        ),
       );
       shapes.add(
         MermaidTextShape(

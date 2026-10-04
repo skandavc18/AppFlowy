@@ -428,8 +428,10 @@ void main() {
     for (final width in [700.0, 1100.0]) {
       tester.view.physicalSize = Size(width, 1000);
       await tester.pumpAndSettle();
-      expect(tester.widget<TextField>(_key('form-input-username')).controller,
-          same(controller));
+      expect(
+        tester.widget<TextField>(_key('form-input-username')).controller,
+        same(controller),
+      );
       expect(controller!.text, 'unsaved draft');
     }
     expect(backend.writes, isEmpty);
@@ -447,12 +449,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     expect(
-        find.text(
-            'Save or cancel the current field edit before changing fields.'),
-        findsOneWidget);
+      find.text(
+        'Save or cancel the current field edit before changing fields.',
+      ),
+      findsOneWidget,
+    );
     expect(
-        tester.widget<TextField>(_key('form-input-username')).controller!.text,
-        'unsaved draft');
+      tester.widget<TextField>(_key('form-input-username')).controller!.text,
+      'unsaved draft',
+    );
     await tester.pumpWidget(const SizedBox());
   });
 

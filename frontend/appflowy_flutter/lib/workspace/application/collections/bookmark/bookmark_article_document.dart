@@ -45,18 +45,20 @@ String passiveBookmarkHtml(String source) {
     'tbody',
     'tr',
     'th',
-    'td'
+    'td',
   };
   for (final node in document.querySelectorAll('*').reversed) {
     if (node.attributes.containsKey('hidden') ||
         node.attributes['aria-hidden'] == 'true' ||
-        RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden',
-                caseSensitive: false)
-            .hasMatch(node.attributes['style'] ?? '')) {
+        RegExp(
+          r'display\s*:\s*none|visibility\s*:\s*hidden',
+          caseSensitive: false,
+        ).hasMatch(node.attributes['style'] ?? '')) {
       node.remove();
     } else if (!allowed.contains(node.localName)) {
       node.replaceWith(
-          dom.Element.tag('span')..nodes.addAll(node.nodes.toList()));
+        dom.Element.tag('span')..nodes.addAll(node.nodes.toList()),
+      );
     } else {
       node.attributes.clear();
     }
@@ -84,7 +86,7 @@ String bookmarkArticleText(String source) {
     'li',
     'pre',
     'blockquote',
-    'tr'
+    'tr',
   };
   void visit(dom.Node node) {
     if (node is dom.Text) {

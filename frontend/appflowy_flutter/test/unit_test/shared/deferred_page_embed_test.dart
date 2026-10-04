@@ -27,7 +27,9 @@ void main() {
         ),
       );
       expect(
-          find.byType(DeferredPageEmbed, skipOffstage: false), findsOneWidget);
+        find.byType(DeferredPageEmbed, skipOffstage: false),
+        findsOneWidget,
+      );
       final placeholder = tester.element(
         find.byType(FocusableActionDetector, skipOffstage: false),
       );
@@ -61,7 +63,9 @@ void main() {
         ),
       );
       expect(
-          find.byType(DeferredPageEmbed, skipOffstage: false), findsOneWidget);
+        find.byType(DeferredPageEmbed, skipOffstage: false),
+        findsOneWidget,
+      );
       await tester.fling(find.byType(ListView), const Offset(0, -650), 6000);
       expect(controller.position.isScrollingNotifier.value, isTrue);
       for (var frame = 0; frame < 40; frame++) {
@@ -87,8 +91,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 79));
       expect(counts.initialized, isEmpty);
       await tester.pump(const Duration(milliseconds: 1));
-      expect(counts.initialized, isEmpty,
-          reason: 'post-layout queue, not a mount');
+      expect(
+        counts.initialized,
+        isEmpty,
+        reason: 'post-layout queue, not a mount',
+      );
       await tester.pump(const Duration(milliseconds: 1));
       expect(counts.initialized, ['body']);
       expect(tester.getSize(find.byType(DeferredPageEmbed)), frameSize);
@@ -146,15 +153,22 @@ void main() {
               ),
             );
             expect(
-                node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
-            expect(node.getSemanticsData().hasFlag(SemanticsFlag.isButton),
-                isTrue);
+              node.getSemanticsData().hasAction(SemanticsAction.tap),
+              isTrue,
+            );
+            expect(
+              node.getSemanticsData().hasFlag(SemanticsFlag.isButton),
+              isTrue,
+            );
             node.owner!.performAction(node.id, SemanticsAction.tap);
           } else {
             await tester.sendKeyEvent(LogicalKeyboardKey.tab);
             await tester.pump();
-            expect(counts.initialized, isEmpty,
-                reason: 'focus is not activation');
+            expect(
+              counts.initialized,
+              isEmpty,
+              reason: 'focus is not activation',
+            );
             await tester.sendKeyEvent(
               activation == 'Enter'
                   ? LogicalKeyboardKey.enter
@@ -227,7 +241,8 @@ void main() {
               ],
             ),
             theme: ThemeData(
-                brightness: dark ? Brightness.dark : Brightness.light),
+              brightness: dark ? Brightness.dark : Brightness.light,
+            ),
           );
       await tester.pumpWidget(page());
       await _idle(tester);
@@ -426,7 +441,9 @@ void main() {
         await tester.pump(const Duration(milliseconds: 80));
         await tester.pumpWidget(page(false));
         expect(
-            tester.state(find.byKey(key, skipOffstage: false)), same(original));
+          tester.state(find.byKey(key, skipOffstage: false)),
+          same(original),
+        );
         await _idle(tester, frames: 3);
         expect(counts.initialized, isEmpty);
         right.jumpTo(0);
@@ -496,7 +513,7 @@ void main() {
     'no load scope',
     'no marker',
     'marker disabled',
-    'disabled'
+    'disabled',
   ]) {
     testWidgets('$fallback mounts immediately without waiting for visibility', (
       tester,
@@ -521,8 +538,10 @@ void main() {
           ),
         );
         expect(counts.initialized, ['body']);
-        expect(find.byType(FocusableActionDetector, skipOffstage: false),
-            findsNothing);
+        expect(
+          find.byType(FocusableActionDetector, skipOffstage: false),
+          findsNothing,
+        );
       });
     });
   }
@@ -558,7 +577,9 @@ void main() {
       final original = tester.state(find.byKey(key, skipOffstage: false));
       await tester.pumpWidget(page(false));
       expect(
-          tester.state(find.byKey(key, skipOffstage: false)), same(original));
+        tester.state(find.byKey(key, skipOffstage: false)),
+        same(original),
+      );
       expect(counts.initialized, ['body']);
     });
   });
@@ -610,8 +631,11 @@ void main() {
       );
       await _idle(tester);
       expect(find.byType(DeferredPageEmbed), findsNWidgets(2));
-      expect(counts.initialized, ['body'],
-          reason: 'no second deferred admission');
+      expect(
+        counts.initialized,
+        ['body'],
+        reason: 'no second deferred admission',
+      );
       expect(counts.markerEnabled, isFalse);
     });
   });
@@ -668,8 +692,10 @@ void main() {
           ),
         );
         expect(counts.initialized, ['body']);
-        expect(tester.getSize(find.byKey(deferred)),
-            tester.getSize(find.byKey(baseline)));
+        expect(
+          tester.getSize(find.byKey(deferred)),
+          tester.getSize(find.byKey(baseline)),
+        );
         expect(tester.takeException(), isNull);
       });
     });
@@ -731,7 +757,9 @@ void main() {
             controller,
             [
               Transform.translate(
-                  offset: const Offset(500, 0), child: _embed(_Heavy(counts))),
+                offset: const Offset(500, 0),
+                child: _embed(_Heavy(counts)),
+              ),
             ],
           ),
         ),
@@ -784,8 +812,11 @@ void main() {
           ),
         );
         await _idle(tester, frames: 3);
-        expect(counts.initialized, isEmpty,
-            reason: '140px exceeds the 128px cap');
+        expect(
+          counts.initialized,
+          isEmpty,
+          reason: '140px exceeds the 128px cap',
+        );
         controller.jumpTo(20);
         await tester.pump();
         await _idle(tester);
@@ -857,8 +888,11 @@ void main() {
           ),
         );
         await _idle(tester, frames: 3);
-        expect(counts.initialized, isEmpty,
-            reason: 'inside inner but clipped by outer');
+        expect(
+          counts.initialized,
+          isEmpty,
+          reason: 'inside inner but clipped by outer',
+        );
         unawaited(
           outer.animateTo(
             600,
@@ -891,7 +925,8 @@ void main() {
           'offstage' => Offstage(child: frame),
           'opacity' => Opacity(opacity: 0, child: frame),
           _ => _PaintOnlyIndexedStack(
-              children: [frame, const SizedBox(height: 100)]),
+              children: [frame, const SizedBox(height: 100)],
+            ),
         };
         await tester.pumpWidget(_app(_list(controller, [body])));
         await _idle(tester, frames: 3);
@@ -995,8 +1030,12 @@ Future<void> _idle(WidgetTester tester, {int frames = 1}) async {
   }
 }
 
-Widget _app(Widget child,
-        {ThemeData? theme, double width = 320, double height = 200}) =>
+Widget _app(
+  Widget child, {
+  ThemeData? theme,
+  double width = 320,
+  double height = 200,
+}) =>
     MaterialApp(
       theme: theme,
       themeAnimationDuration: Duration.zero,
@@ -1008,8 +1047,11 @@ Widget _app(Widget child,
       ),
     );
 
-Widget _list(ScrollController controller, List<Widget> children,
-    {bool scoped = true}) {
+Widget _list(
+  ScrollController controller,
+  List<Widget> children, {
+  bool scoped = true,
+}) {
   final list = ListView(
     controller: controller,
     padding: EdgeInsets.zero,

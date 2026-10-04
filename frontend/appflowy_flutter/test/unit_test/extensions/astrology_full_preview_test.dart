@@ -476,7 +476,9 @@ DashboardController _expectRealPreview(WidgetTester tester) {
     expect(selector.onChanged, isNull);
     final card = tester.getRect(
       find.ancestor(
-          of: find.byWidget(selector), matching: find.byType(DashboardCard)),
+        of: find.byWidget(selector),
+        matching: find.byType(DashboardCard),
+      ),
     );
     final control = tester.getRect(find.byWidget(selector));
     expect(control.center.dx, greaterThan(card.center.dx));

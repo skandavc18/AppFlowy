@@ -39,8 +39,10 @@ flowchart TD
 
       final graph = document.graph!;
       expect(graph.direction, MermaidDirection.topToBottom);
-      expect(graph.nodes.map((node) => node.id).toSet(),
-          {'A', 'B', 'C', 'D', 'E'});
+      expect(
+        graph.nodes.map((node) => node.id).toSet(),
+        {'A', 'B', 'C', 'D', 'E'},
+      );
       expect(
         graph.nodes.firstWhere((node) => node.id == 'B').shape,
         MermaidNodeShape.diamond,
@@ -269,8 +271,10 @@ gantt
       );
       expect(scene.size.width, greaterThan(0));
       expect(scene.size.height, greaterThan(0));
-      expect(scene.shapes.whereType<MermaidBoxShape>().length,
-          greaterThanOrEqualTo(2));
+      expect(
+        scene.shapes.whereType<MermaidBoxShape>().length,
+        greaterThanOrEqualTo(2),
+      );
       expect(scene.shapes.whereType<MermaidEdgeShape>().length, 1);
     });
 
@@ -302,8 +306,10 @@ gantt
         parseMermaid('sequenceDiagram\n A->>B: hello'),
         measurer(),
       );
-      expect(scene.shapes.whereType<MermaidEdgeShape>().length,
-          greaterThanOrEqualTo(3));
+      expect(
+        scene.shapes.whereType<MermaidEdgeShape>().length,
+        greaterThanOrEqualTo(3),
+      );
     });
 
     test('an empty source lays out to nothing', () {
@@ -341,7 +347,7 @@ gantt
 
     test('adds a child and a sibling in the right places', () {
       var document = MindMapDocument(
-        root: MindMapNode(id: 'r', text: 'Root', children: const []),
+        root: MindMapNode(id: 'r', text: 'Root'),
       );
       document = document.addChild('r', const MindMapNode(id: 'a', text: 'A'));
       document =

@@ -315,7 +315,7 @@ void main() {
       for (final node in [
         selectorNode(),
         radioGroupNode(),
-        multiSelectNode()
+        multiSelectNode(),
       ]) {
         expect(
           decodeInteractiveOptions(

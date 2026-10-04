@@ -608,7 +608,10 @@ void main() {
                 height: 1.15,
               );
               TextPainter measure(
-                      String value, TextStyle style, double width) =>
+                String value,
+                TextStyle style,
+                double width,
+              ) =>
                   TextPainter(
                     text: TextSpan(text: value, style: style),
                     textDirection: Directionality.of(context),
@@ -723,10 +726,16 @@ void main() {
                     .map((node) => node.getSemanticsData())
                     .singleWhere((node) => node.label == 'Cancer · House 4')
                     .value;
-                expect(listing, contains('Saturn (retrograde)'),
-                    reason: reason);
-                expect(listing, contains('Mercury (retrograde)'),
-                    reason: reason);
+                expect(
+                  listing,
+                  contains('Saturn (retrograde)'),
+                  reason: reason,
+                );
+                expect(
+                  listing,
+                  contains('Mercury (retrograde)'),
+                  reason: reason,
+                );
                 expect(listing, contains('D-$division'), reason: reason);
               } finally {
                 overflow.dispose();
@@ -1976,7 +1985,8 @@ List<Rect> _inkRows(ByteData pixels, int width) {
       first ??= y;
     } else if (first != null) {
       rows.add(
-          Rect.fromLTRB(0, first.toDouble(), width.toDouble(), y.toDouble()));
+        Rect.fromLTRB(0, first.toDouble(), width.toDouble(), y.toDouble()),
+      );
       first = null;
     }
   }

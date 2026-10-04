@@ -428,7 +428,9 @@ class _EmbedLayout extends ConstrainedLayoutBuilder<BoxConstraints> {
 
   @override
   void updateRenderObject(
-      BuildContext context, _RenderEmbedLayout renderObject) {
+    BuildContext context,
+    _RenderEmbedLayout renderObject,
+  ) {
     renderObject.onGeometry = onGeometry;
   }
 }

@@ -155,7 +155,6 @@ class AlbumScaffold extends StatelessWidget {
     if (sliverBody) {
       return PreviewToolbarRegion(
         child: CollectionWorkspaceSurface(
-          padding: EdgeInsets.zero,
           child: PremiumScrollScope(
             enabled: true,
             child: FileBrowserScrollView(
@@ -185,7 +184,6 @@ class AlbumScaffold extends StatelessWidget {
     }
     return PreviewToolbarRegion(
       child: CollectionWorkspaceSurface(
-        padding: EdgeInsets.zero,
         child: FileBrowserScrollView(
           controller: CollectionPageScrollScope.maybeOf(context),
           scrollKey: scrollKey,

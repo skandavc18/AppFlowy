@@ -242,9 +242,11 @@ class DashboardFindController extends SurfaceFindController {
   }
 
   void revokeEmbed(String widgetId) {
-    discardMatchesWhere((hit) =>
-        hit.id is DashboardEmbedFindId &&
-        (hit.id as DashboardEmbedFindId).widgetId == widgetId);
+    discardMatchesWhere(
+      (hit) =>
+          hit.id is DashboardEmbedFindId &&
+          (hit.id as DashboardEmbedFindId).widgetId == widgetId,
+    );
     _refreshLater();
   }
 
@@ -271,10 +273,12 @@ class DashboardFindController extends SurfaceFindController {
     final matches = <SurfaceFindMatch>[];
     for (final entry in _embedEntries(delegates)) {
       for (final range in matchesOfPattern(entry.text, pattern)) {
-        if (entry is DashboardEmbedFindEntry && !entry.acceptsMatch(range))
+        if (entry is DashboardEmbedFindEntry && !entry.acceptsMatch(range)) {
           continue;
-        if (matches.length == const DocumentFindLimits().maxEntries)
+        }
+        if (matches.length == const DocumentFindLimits().maxEntries) {
           return matches;
+        }
         matches.add(SurfaceFindMatch(entry, range));
       }
     }
@@ -294,7 +298,9 @@ class DashboardFindController extends SurfaceFindController {
       if (seen.length > limits.maxViews) return;
       for (final entry in entries) {
         if (++count > limits.maxEntries ||
-            (bytes += utf8.encode(entry.text).length) > limits.maxBytes) return;
+            (bytes += utf8.encode(entry.text).length) > limits.maxBytes) {
+          return;
+        }
         yield entry;
       }
     }
@@ -320,9 +326,11 @@ class DashboardFindController extends SurfaceFindController {
     return _embeds.values
         .toList()
         .reversed
-        .where((delegate) =>
-            delegate.widgetId == id.widgetId &&
-            delegate.entries.any((entry) => entry.id == id))
+        .where(
+          (delegate) =>
+              delegate.widgetId == id.widgetId &&
+              delegate.entries.any((entry) => entry.id == id),
+        )
         .firstOrNull;
   }
 

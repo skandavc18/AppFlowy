@@ -98,8 +98,9 @@ class _FolderGalleryFindElement extends InheritedElement {
   void update(covariant FolderGalleryFindScope newWidget) {
     final previous = widget as FolderGalleryFindScope;
     super.update(newWidget);
-    if (previous.snapshotToken != newWidget.snapshotToken)
+    if (previous.snapshotToken != newWidget.snapshotToken) {
       _owner?.contentChanged();
+    }
   }
 
   @override

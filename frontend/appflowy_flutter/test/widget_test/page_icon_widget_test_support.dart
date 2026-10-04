@@ -23,12 +23,21 @@ class _PassivePageIconTestScopeState extends State<PassivePageIconTestScope> {
   void initState() {
     super.initState();
     addTearDown(() {
-      expect(backend.reads, isEmpty,
-          reason: 'Mounting must not read icon metadata');
-      expect(backend.writes, isEmpty,
-          reason: 'Header actions must not resize icons');
-      expect(backend.activeListeners, 0,
-          reason: 'Icon subscriptions must detach');
+      expect(
+        backend.reads,
+        isEmpty,
+        reason: 'Mounting must not read icon metadata',
+      );
+      expect(
+        backend.writes,
+        isEmpty,
+        reason: 'Header actions must not resize icons',
+      );
+      expect(
+        backend.activeListeners,
+        0,
+        reason: 'Icon subscriptions must detach',
+      );
     });
   }
 

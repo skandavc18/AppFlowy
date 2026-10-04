@@ -158,12 +158,16 @@ void main() {
       final now = DateTime(2026, 8, 20, 10);
       expect(
         schedule.isDue(
-            now: now, lastRun: now.subtract(const Duration(minutes: 5))),
+          now: now,
+          lastRun: now.subtract(const Duration(minutes: 5)),
+        ),
         isFalse,
       );
       expect(
         schedule.isDue(
-            now: now, lastRun: now.subtract(const Duration(minutes: 16))),
+          now: now,
+          lastRun: now.subtract(const Duration(minutes: 16)),
+        ),
         isTrue,
       );
     });
@@ -308,7 +312,9 @@ void main() {
 
     test('a bare value is read as yes or no', () {
       expect(
-          ActionCondition.parse('{{ fetch.body }}').evaluate(context), isTrue);
+        ActionCondition.parse('{{ fetch.body }}').evaluate(context),
+        isTrue,
+      );
       expect(ActionCondition.parse('{{ nope }}').evaluate(context), isFalse);
     });
 
@@ -695,7 +701,9 @@ void main() {
         ),
       );
       expect(
-          ExtensionBlockRegistry.alignableTypes(), contains('movable_block'));
+        ExtensionBlockRegistry.alignableTypes(),
+        contains('movable_block'),
+      );
       expect(
         ExtensionBlockRegistry.alignableTypes(),
         isNot(contains('fixed_block')),
@@ -892,7 +900,9 @@ void main() {
       // back to being an ordinary grid rather than rendering nothing.
       expect(TableViewMark.envelopeKeyOf(extra), isNull);
       expect(
-          ExtensionTableViewRegistry.byEnvelopeKey(view.envelopeKey), isNull);
+        ExtensionTableViewRegistry.byEnvelopeKey(view.envelopeKey),
+        isNull,
+      );
     });
 
     test('the add menu offers it only while it is registered', () {
@@ -1174,15 +1184,18 @@ void main() {
     });
 
     test('a page that is not a feed is refused', () {
-      expect(() => NewsChannel.parse('<html><body>hi</body></html>'),
-          throwsStateError);
+      expect(
+        () => NewsChannel.parse('<html><body>hi</body></html>'),
+        throwsStateError,
+      );
       expect(() => NewsChannel.parse('not xml at all'), throwsStateError);
     });
 
     test('a feed with no headlines is refused rather than shown empty', () {
       expect(
         () => NewsChannel.parse(
-            '<rss version="2.0"><channel><title>T</title></channel></rss>'),
+          '<rss version="2.0"><channel><title>T</title></channel></rss>',
+        ),
         throwsStateError,
       );
     });

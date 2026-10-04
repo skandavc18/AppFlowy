@@ -208,15 +208,19 @@ void main() {
         for (final body in [VedicBody.mercury, VedicBody.rahu]) {
           final assignment = result.forBody(body)!;
           expect(assignment.rankDegrees, 25);
-          expect(assignment.karakas,
-              [JaiminiKaraka.amatya, JaiminiKaraka.bhratri]);
+          expect(
+            assignment.karakas,
+            [JaiminiKaraka.amatya, JaiminiKaraka.bhratri],
+          );
           expect(assignment.isTied, isTrue);
           expect(assignment.abbreviation, 'AmK / BK (tie)');
         }
         expect(result.forBody(VedicBody.sun)!.karakas, [JaiminiKaraka.atma]);
         expect(result.forBody(VedicBody.moon)!.karakas, [JaiminiKaraka.matri]);
         expect(
-            result.forBody(VedicBody.jupiter)!.karakas, [JaiminiKaraka.pitri]);
+          result.forBody(VedicBody.jupiter)!.karakas,
+          [JaiminiKaraka.pitri],
+        );
       }
     });
 
@@ -230,7 +234,8 @@ void main() {
       ]) {
         final result = calculateJaiminiKarakas(
           _placements(
-              longitudes: {VedicBody.sun: 0, VedicBody.mercury: sample.$1}),
+            longitudes: {VedicBody.sun: 0, VedicBody.mercury: sample.$1},
+          ),
         );
         expect(result.hasTies, sample.$2, reason: 'Gap ${sample.$1}');
         for (final body in [VedicBody.sun, VedicBody.mercury]) {
@@ -264,7 +269,7 @@ void main() {
       for (final body in [
         VedicBody.moon,
         VedicBody.mercury,
-        VedicBody.jupiter
+        VedicBody.jupiter,
       ]) {
         final assignment = result.forBody(body)!;
         expect(assignment.rankDegrees, 20);
@@ -316,7 +321,7 @@ void main() {
           for (final value in [
             double.nan,
             double.infinity,
-            double.negativeInfinity
+            double.negativeInfinity,
           ]) {
             expect(
               () => calculateJaiminiKarakas(
@@ -338,9 +343,15 @@ void main() {
         _placement(VedicBody.ketu, double.nan),
         _placement(VedicBody.ketu, double.infinity),
         const VedicPlacement(
-            name: 'Lagna', shortName: 'As', longitude: double.nan),
+          name: 'Lagna',
+          shortName: 'As',
+          longitude: double.nan,
+        ),
         const VedicPlacement(
-            name: 'Sun', shortName: 'Su', longitude: double.infinity),
+          name: 'Sun',
+          shortName: 'Su',
+          longitude: double.infinity,
+        ),
       ];
       _expectCalculation(
         calculateJaiminiKarakas(extras, scheme: JaiminiKarakaScheme.eight),
@@ -357,7 +368,8 @@ void main() {
       _expectCalculation(
         calculateJaiminiKarakas(
           extras.where(
-              (p) => p.body != VedicBody.rahu && p.body != VedicBody.ketu),
+            (p) => p.body != VedicBody.rahu && p.body != VedicBody.ketu,
+          ),
         ),
         _seven,
       );
@@ -371,24 +383,35 @@ void main() {
         final result = calculateJaiminiKarakas(input, scheme: entry.key);
         expect(input, orderedEquals(before));
         expect(
-          () => calculateJaiminiKarakas(List.unmodifiable(before),
-              scheme: entry.key),
+          () => calculateJaiminiKarakas(
+            List.unmodifiable(before),
+            scheme: entry.key,
+          ),
           returnsNormally,
         );
-        expect(() => result.assignments.add(result.assignments.first),
-            throwsUnsupportedError);
-        expect(() => result.assignments[0] = result.assignments.last,
-            throwsUnsupportedError);
+        expect(
+          () => result.assignments.add(result.assignments.first),
+          throwsUnsupportedError,
+        );
+        expect(
+          () => result.assignments[0] = result.assignments.last,
+          throwsUnsupportedError,
+        );
         for (final assignment in result.assignments) {
           expect(
             assignment.placement,
             same(
-                before.singleWhere((p) => p.body == assignment.placement.body)),
+              before.singleWhere((p) => p.body == assignment.placement.body),
+            ),
           );
-          expect(() => assignment.karakas.add(JaiminiKaraka.pitri),
-              throwsUnsupportedError);
-          expect(() => assignment.karakas[0] = JaiminiKaraka.dara,
-              throwsUnsupportedError);
+          expect(
+            () => assignment.karakas.add(JaiminiKaraka.pitri),
+            throwsUnsupportedError,
+          );
+          expect(
+            () => assignment.karakas[0] = JaiminiKaraka.dara,
+            throwsUnsupportedError,
+          );
         }
         expect(input, orderedEquals(before));
         input.clear();
@@ -400,212 +423,261 @@ void main() {
 
   group('AstrologyPlacementsTable Jaimini readings', () {
     testWidgets(
-        'seven/eight readings fit 280/900 in real light, dark and paper themes',
-        (tester) async {
-      _setViewport(tester);
-      final chart = _chart();
-      for (final appearance in const [
-        (Brightness.light, false),
-        (Brightness.dark, false),
-        (Brightness.light, true),
-      ]) {
-        for (final width in [280.0, 900.0]) {
-          // Fresh state per layout: selecting eight must not leak into the next case.
-          await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pumpWidget(
-            _app(chart,
-                width: width, brightness: appearance.$1, paper: appearance.$2),
-          );
-          final surface = _key('astrology-placements-surface');
-          final context = tester.element(surface);
-          final palette = AstrologyPalette.of(context);
-          expect(tester.getSize(surface), Size(width, 500));
-          expect(Theme.of(context).brightness, appearance.$1);
-          expect(PaperTheme.isEnabled(context), appearance.$2);
-          expect(tester.widget<ColoredBox>(surface).color, palette.surface);
-          if (appearance.$2) {
-            expect(palette.surface, PaperTheme.editorPreviewBackground);
+      'seven/eight readings fit 280/900 in real light, dark and paper themes',
+      (tester) async {
+        _setViewport(tester);
+        final chart = _chart();
+        for (final appearance in const [
+          (Brightness.light, false),
+          (Brightness.dark, false),
+          (Brightness.light, true),
+        ]) {
+          for (final width in [280.0, 900.0]) {
+            // Fresh state per layout: selecting eight must not leak into the next case.
+            await tester.pumpWidget(const SizedBox.shrink());
+            await tester.pumpWidget(
+              _app(
+                chart,
+                width: width,
+                brightness: appearance.$1,
+                paper: appearance.$2,
+              ),
+            );
+            final surface = _key('astrology-placements-surface');
+            final context = tester.element(surface);
+            final palette = AstrologyPalette.of(context);
+            expect(tester.getSize(surface), Size(width, 500));
+            expect(Theme.of(context).brightness, appearance.$1);
+            expect(PaperTheme.isEnabled(context), appearance.$2);
+            expect(tester.widget<ColoredBox>(surface).color, palette.surface);
+            if (appearance.$2) {
+              expect(palette.surface, PaperTheme.editorPreviewBackground);
+            }
+            final selector = tester.widget<DropdownButton<JaiminiKarakaScheme>>(
+              _key('jaimini-karaka-scheme'),
+            );
+            expect(selector.value, JaiminiKarakaScheme.seven);
+            expect(selector.dropdownColor, palette.raised);
+            expect(selector.focusColor, palette.hover);
+            expect(
+              _textIn('placements-table', 'Jaimini karaka'),
+              findsOneWidget,
+            );
+            expect(
+              tester.widget<Table>(_key('placements-table')).children,
+              hasLength(13),
+            );
+            _expectReading(tester, _seven);
+            for (final point in ['As', 'Ra', 'Ke', 'BL', 'HL']) {
+              expect(_value(tester, 'placements-$point-karaka'), '—');
+            }
+            expect(
+              _value(tester, 'jaimini-karaka-heading'),
+              'Jaimini Karaka details',
+            );
+            expect(
+              tester.getTopLeft(_key('jaimini-karakas-table')).dy,
+              greaterThan(tester.getBottomLeft(_key('placements-table')).dy),
+            );
+            expect(_key('jaimini-karaka-error'), findsNothing);
+            expect(_key('jaimini-karaka-tie-warning'), findsNothing);
+            final vertical = _controller(tester, 'astrology-placements-scroll');
+            final details =
+                _controller(tester, 'jaimini-karakas-horizontal-scroll');
+            expect(vertical.position.maxScrollExtent, greaterThan(0));
+            expect(identical(vertical, details), isFalse);
+            expect(
+              identical(
+                details,
+                _controller(tester, 'placements-horizontal-scroll'),
+              ),
+              isFalse,
+            );
+            _expectHealthy(tester);
+            await _panTable(tester, 'placements-horizontal-scroll');
+            await _chooseScheme(tester, JaiminiKarakaScheme.eight);
+            _expectReading(tester, _eight);
+            expect(_value(tester, 'placements-Ra-karaka'), 'BK');
+            expect(_value(tester, 'placements-Ju-karaka'), 'PiK');
+            expect(_value(tester, 'placements-Ke-karaka'), '—');
+            expect(
+              _value(tester, 'jaimini-karaka-method'),
+              contains('Rahu uses 30° minus'),
+            );
+            if (width == 280) {
+              await _panTable(tester, 'jaimini-karakas-horizontal-scroll');
+            } else {
+              expect(details.position.maxScrollExtent, 0);
+            }
+            _expectHealthy(tester);
           }
-          final selector = tester.widget<DropdownButton<JaiminiKarakaScheme>>(
-            _key('jaimini-karaka-scheme'),
-          );
-          expect(selector.value, JaiminiKarakaScheme.seven);
-          expect(selector.dropdownColor, palette.raised);
-          expect(selector.focusColor, palette.hover);
-          expect(_textIn('placements-table', 'Jaimini karaka'), findsOneWidget);
-          expect(tester.widget<Table>(_key('placements-table')).children,
-              hasLength(13));
-          _expectReading(tester, _seven);
-          for (final point in ['As', 'Ra', 'Ke', 'BL', 'HL']) {
-            expect(_value(tester, 'placements-$point-karaka'), '—');
-          }
-          expect(_value(tester, 'jaimini-karaka-heading'),
-              'Jaimini Karaka details');
-          expect(
-            tester.getTopLeft(_key('jaimini-karakas-table')).dy,
-            greaterThan(tester.getBottomLeft(_key('placements-table')).dy),
-          );
-          expect(_key('jaimini-karaka-error'), findsNothing);
-          expect(_key('jaimini-karaka-tie-warning'), findsNothing);
-          final vertical = _controller(tester, 'astrology-placements-scroll');
-          final details =
-              _controller(tester, 'jaimini-karakas-horizontal-scroll');
-          expect(vertical.position.maxScrollExtent, greaterThan(0));
-          expect(identical(vertical, details), isFalse);
-          expect(
-            identical(
-                details, _controller(tester, 'placements-horizontal-scroll')),
-            isFalse,
-          );
-          _expectHealthy(tester);
-          await _panTable(tester, 'placements-horizontal-scroll');
-          await _chooseScheme(tester, JaiminiKarakaScheme.eight);
-          _expectReading(tester, _eight);
-          expect(_value(tester, 'placements-Ra-karaka'), 'BK');
-          expect(_value(tester, 'placements-Ju-karaka'), 'PiK');
-          expect(_value(tester, 'placements-Ke-karaka'), '—');
-          expect(_value(tester, 'jaimini-karaka-method'),
-              contains('Rahu uses 30° minus'));
-          if (width == 280) {
-            await _panTable(tester, 'jaimini-karakas-horizontal-scroll');
-          } else {
-            expect(details.position.maxScrollExtent, 0);
-          }
-          _expectHealthy(tester);
         }
-      }
-    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
 
     testWidgets(
-        'a new eight-karaka reading updates rows without resetting the scheme',
-        (tester) async {
-      _setViewport(tester);
-      await tester.pumpWidget(_app(_chart()));
-      await _chooseScheme(tester, JaiminiKarakaScheme.eight);
-      await tester.pumpWidget(
-        _app(
-          _chart(
-            planets: _placements(
-              longitudes: {
-                VedicBody.sun: 2,
-                VedicBody.venus: 59,
-                VedicBody.rahu: 89
-              },
+      'a new eight-karaka reading updates rows without resetting the scheme',
+      (tester) async {
+        _setViewport(tester);
+        await tester.pumpWidget(_app(_chart()));
+        await _chooseScheme(tester, JaiminiKarakaScheme.eight);
+        await tester.pumpWidget(
+          _app(
+            _chart(
+              planets: _placements(
+                longitudes: {
+                  VedicBody.sun: 2,
+                  VedicBody.venus: 59,
+                  VedicBody.rahu: 89,
+                },
+              ),
             ),
           ),
-        ),
-      );
-      expect(
-        tester
-            .widget<DropdownButton<JaiminiKarakaScheme>>(
-                _key('jaimini-karaka-scheme'))
-            .value,
-        JaiminiKarakaScheme.eight,
-      );
-      _expectReading(tester, const [
-        (VedicBody.venus, JaiminiKaraka.atma, 29.0),
-        (VedicBody.mercury, JaiminiKaraka.amatya, 25.0),
-        (VedicBody.moon, JaiminiKaraka.bhratri, 20.0),
-        (VedicBody.jupiter, JaiminiKaraka.matri, 15.0),
-        (VedicBody.mars, JaiminiKaraka.pitri, 12.0),
-        (VedicBody.saturn, JaiminiKaraka.putra, 8.0),
-        (VedicBody.sun, JaiminiKaraka.gnati, 2.0),
-        (VedicBody.rahu, JaiminiKaraka.dara, 1.0),
-      ]);
-      await _chooseScheme(tester, JaiminiKarakaScheme.seven);
-      expect(_value(tester, 'placements-Ra-karaka'), '—');
-      expect(_value(tester, 'placements-Su-karaka'), 'DK');
-      expect(_value(tester, 'placements-Ma-karaka'), 'PK');
-      expect(_key('jaimini-rahu-role'), findsNothing);
-      expect(
-          _textIn('jaimini-karakas-table', 'PiK · Pitrikaraka'), findsNothing);
-      _expectHealthy(tester);
-    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-    testWidgets(
-        'missing planets show a recoverable karaka error, not a broken placements list',
-        (tester) async {
-      _setViewport(tester);
-      final missingSaturn = _chart(
-        planets:
-            _placements().where((p) => p.body != VedicBody.saturn).toList(),
-      );
-      await tester.pumpWidget(_app(missingSaturn));
-      _expectUnavailable(
-          tester, missingSaturn, VedicBody.saturn, JaiminiKarakaScheme.seven);
-      await tester.ensureVisible(_key('jaimini-karaka-error'));
-      await tester.pumpAndSettle();
-
-      final missingRahu = _chart(
-        planets: _placements().where((p) => p.body != VedicBody.rahu).toList(),
-      );
-      await tester.pumpWidget(_app(missingRahu));
-      _expectReading(tester, _seven);
-      expect(_key('jaimini-karaka-error'), findsNothing);
-      await _chooseScheme(tester, JaiminiKarakaScheme.eight);
-      _expectUnavailable(
-          tester, missingRahu, VedicBody.rahu, JaiminiKarakaScheme.eight);
-      await tester.pumpWidget(_app(_chart()));
-      _expectReading(tester, _eight);
-      expect(_key('jaimini-karaka-error'), findsNothing);
-      _expectHealthy(tester);
-    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-    testWidgets(
-        'ties show an unresolved-role note instead of false exact assignments',
-        (tester) async {
-      _setViewport(tester);
-      await tester.pumpWidget(
-        _app(_chart(planets: _placements(longitudes: {VedicBody.rahu: 65}))),
-      );
-      expect(_key('jaimini-karaka-tie-warning'), findsNothing);
-      expect(_value(tester, 'placements-Me-karaka'), 'AmK');
-      await _chooseScheme(tester, JaiminiKarakaScheme.eight);
-      for (final body in [VedicBody.mercury, VedicBody.rahu]) {
-        expect(_value(tester, 'placements-${body.shortName}-karaka'),
-            'AmK / BK (tie)');
-        expect(
-          _value(tester, 'jaimini-${body.name}-role'),
-          'AmK · Amatyakaraka / BK · Bhratrikaraka (tie)',
         );
-        expect(_value(tester, 'jaimini-${body.name}-degree'), '25.00000000°');
-      }
-      expect(
-        _textIn(
-            'jaimini-karakas-table', 'Counsel / vocation / Siblings / courage'),
-        findsNWidgets(2),
-      );
-      expect(
-          _textIn('jaimini-karakas-table', 'AmK · Amatyakaraka'), findsNothing);
-      expect(
-          _textIn('jaimini-karakas-table', 'BK · Bhratrikaraka'), findsNothing);
-      expect(_value(tester, 'placements-Mo-karaka'), 'MK');
-      expect(_value(tester, 'placements-Ju-karaka'), 'PiK');
-      expect(tester.widget<Table>(_key('jaimini-karakas-table')).children,
-          hasLength(9));
-      final note = _value(tester, 'jaimini-karaka-tie-warning');
-      expect(note, contains('affected roles are unresolved'));
-      expect(note, contains('not arbitrarily assigned'));
-      expect(note, contains('No secondary tie-breaking convention'));
-      await tester.ensureVisible(_key('jaimini-karaka-tie-warning'));
-      await tester.pumpAndSettle();
-      _expectHealthy(tester);
-      await tester.pumpWidget(_app(_chart()));
-      expect(_key('jaimini-karaka-tie-warning'), findsNothing);
-      _expectReading(tester, _eight);
-      _expectHealthy(tester);
-    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+        expect(
+          tester
+              .widget<DropdownButton<JaiminiKarakaScheme>>(
+                _key('jaimini-karaka-scheme'),
+              )
+              .value,
+          JaiminiKarakaScheme.eight,
+        );
+        _expectReading(tester, const [
+          (VedicBody.venus, JaiminiKaraka.atma, 29.0),
+          (VedicBody.mercury, JaiminiKaraka.amatya, 25.0),
+          (VedicBody.moon, JaiminiKaraka.bhratri, 20.0),
+          (VedicBody.jupiter, JaiminiKaraka.matri, 15.0),
+          (VedicBody.mars, JaiminiKaraka.pitri, 12.0),
+          (VedicBody.saturn, JaiminiKaraka.putra, 8.0),
+          (VedicBody.sun, JaiminiKaraka.gnati, 2.0),
+          (VedicBody.rahu, JaiminiKaraka.dara, 1.0),
+        ]);
+        await _chooseScheme(tester, JaiminiKarakaScheme.seven);
+        expect(_value(tester, 'placements-Ra-karaka'), '—');
+        expect(_value(tester, 'placements-Su-karaka'), 'DK');
+        expect(_value(tester, 'placements-Ma-karaka'), 'PK');
+        expect(_key('jaimini-rahu-role'), findsNothing);
+        expect(
+          _textIn('jaimini-karakas-table', 'PiK · Pitrikaraka'),
+          findsNothing,
+        );
+        _expectHealthy(tester);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+
+    testWidgets(
+      'missing planets show a recoverable karaka error, not a broken placements list',
+      (tester) async {
+        _setViewport(tester);
+        final missingSaturn = _chart(
+          planets:
+              _placements().where((p) => p.body != VedicBody.saturn).toList(),
+        );
+        await tester.pumpWidget(_app(missingSaturn));
+        _expectUnavailable(
+          tester,
+          missingSaturn,
+          VedicBody.saturn,
+          JaiminiKarakaScheme.seven,
+        );
+        await tester.ensureVisible(_key('jaimini-karaka-error'));
+        await tester.pumpAndSettle();
+
+        final missingRahu = _chart(
+          planets:
+              _placements().where((p) => p.body != VedicBody.rahu).toList(),
+        );
+        await tester.pumpWidget(_app(missingRahu));
+        _expectReading(tester, _seven);
+        expect(_key('jaimini-karaka-error'), findsNothing);
+        await _chooseScheme(tester, JaiminiKarakaScheme.eight);
+        _expectUnavailable(
+          tester,
+          missingRahu,
+          VedicBody.rahu,
+          JaiminiKarakaScheme.eight,
+        );
+        await tester.pumpWidget(_app(_chart()));
+        _expectReading(tester, _eight);
+        expect(_key('jaimini-karaka-error'), findsNothing);
+        _expectHealthy(tester);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+
+    testWidgets(
+      'ties show an unresolved-role note instead of false exact assignments',
+      (tester) async {
+        _setViewport(tester);
+        await tester.pumpWidget(
+          _app(_chart(planets: _placements(longitudes: {VedicBody.rahu: 65}))),
+        );
+        expect(_key('jaimini-karaka-tie-warning'), findsNothing);
+        expect(_value(tester, 'placements-Me-karaka'), 'AmK');
+        await _chooseScheme(tester, JaiminiKarakaScheme.eight);
+        for (final body in [VedicBody.mercury, VedicBody.rahu]) {
+          expect(
+            _value(tester, 'placements-${body.shortName}-karaka'),
+            'AmK / BK (tie)',
+          );
+          expect(
+            _value(tester, 'jaimini-${body.name}-role'),
+            'AmK · Amatyakaraka / BK · Bhratrikaraka (tie)',
+          );
+          expect(_value(tester, 'jaimini-${body.name}-degree'), '25.00000000°');
+        }
+        expect(
+          _textIn(
+            'jaimini-karakas-table',
+            'Counsel / vocation / Siblings / courage',
+          ),
+          findsNWidgets(2),
+        );
+        expect(
+          _textIn('jaimini-karakas-table', 'AmK · Amatyakaraka'),
+          findsNothing,
+        );
+        expect(
+          _textIn('jaimini-karakas-table', 'BK · Bhratrikaraka'),
+          findsNothing,
+        );
+        expect(_value(tester, 'placements-Mo-karaka'), 'MK');
+        expect(_value(tester, 'placements-Ju-karaka'), 'PiK');
+        expect(
+          tester.widget<Table>(_key('jaimini-karakas-table')).children,
+          hasLength(9),
+        );
+        final note = _value(tester, 'jaimini-karaka-tie-warning');
+        expect(note, contains('affected roles are unresolved'));
+        expect(note, contains('not arbitrarily assigned'));
+        expect(note, contains('No secondary tie-breaking convention'));
+        await tester.ensureVisible(_key('jaimini-karaka-tie-warning'));
+        await tester.pumpAndSettle();
+        _expectHealthy(tester);
+        await tester.pumpWidget(_app(_chart()));
+        expect(_key('jaimini-karaka-tie-warning'), findsNothing);
+        _expectReading(tester, _eight);
+        _expectHealthy(tester);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
   });
 }
 
-VedicPlacement _placement(VedicBody body, double longitude,
-        {double speed = 0.1}) =>
+VedicPlacement _placement(
+  VedicBody body,
+  double longitude, {
+  double speed = 0.1,
+}) =>
     VedicPlacement(
-        name: body.label,
-        shortName: body.shortName,
-        body: body,
-        longitude: longitude,
-        speed: speed);
+      name: body.label,
+      shortName: body.shortName,
+      body: body,
+      longitude: longitude,
+      speed: speed,
+    );
 
 List<VedicPlacement> _placements({
   Map<VedicBody, double> longitudes = const {},
@@ -613,8 +685,11 @@ List<VedicPlacement> _placements({
 }) =>
     [
       for (final entry in _longitudes.entries)
-        _placement(entry.key, longitudes[entry.key] ?? entry.value,
-            speed: speeds[entry.key] ?? 0.1),
+        _placement(
+          entry.key,
+          longitudes[entry.key] ?? entry.value,
+          speed: speeds[entry.key] ?? 0.1,
+        ),
     ];
 
 void _expectCalculation(
@@ -622,8 +697,10 @@ void _expectCalculation(
   List<(VedicBody, JaiminiKaraka, double)> expected,
 ) {
   expect(result.hasTies, isFalse);
-  expect(result.assignments.map((a) => a.placement.body),
-      expected.map((row) => row.$1));
+  expect(
+    result.assignments.map((a) => a.placement.body),
+    expected.map((row) => row.$1),
+  );
   expect(result.forBody(null), isNull);
   expect(result.forBody(VedicBody.ketu), isNull);
   for (final (body, role, rank) in expected) {
@@ -642,7 +719,11 @@ AstrologyChart _chart({List<VedicPlacement>? planets}) {
       name: 'Hand-authored Jaimini fixture',
       utc: utc,
       place: const AstrologyPlace(
-          name: 'Fixture city', latitude: 0, longitude: 0, timeZone: 'Etc/UTC'),
+        name: 'Fixture city',
+        latitude: 0,
+        longitude: 0,
+        timeZone: 'Etc/UTC',
+      ),
       utcOffsetMinutes: 0,
     ),
     utc: utc,
@@ -685,7 +766,7 @@ Widget _app(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: AstrologyPlacementsTable(chart: chart))
+                Expanded(child: AstrologyPlacementsTable(chart: chart)),
               ],
             ),
           ),
@@ -705,33 +786,45 @@ Finder _key(String key) => find.byKey(ValueKey(key));
 String _value(WidgetTester tester, String key) => tester
     .widget<SelectableText>(
       find.descendant(
-          of: _key(key),
-          matching: find.byType(SelectableText),
-          matchRoot: true),
+        of: _key(key),
+        matching: find.byType(SelectableText),
+        matchRoot: true,
+      ),
     )
     .data!;
 
 Finder _textIn(String table, String text) => find.descendant(
       of: _key(table),
       matching: find.byWidgetPredicate(
-          (widget) => widget is SelectableText && widget.data == text),
+        (widget) => widget is SelectableText && widget.data == text,
+      ),
     );
 
 void _expectReading(
-    WidgetTester tester, List<(VedicBody, JaiminiKaraka, double)> expected) {
-  expect(tester.widget<Table>(_key('jaimini-karakas-table')).children,
-      hasLength(expected.length + 1));
+  WidgetTester tester,
+  List<(VedicBody, JaiminiKaraka, double)> expected,
+) {
+  expect(
+    tester.widget<Table>(_key('jaimini-karakas-table')).children,
+    hasLength(expected.length + 1),
+  );
   // These tables eagerly build clipped cells. Inspect their values without
   // pretending every cell is hit-testable before scrolling it into view.
   for (final (body, role, rank) in expected) {
     final (abbreviation, label, signification) = _roleText[role]!;
     expect(_value(tester, 'placements-${body.shortName}-karaka'), abbreviation);
     expect(
-        _value(tester, 'jaimini-${body.name}-role'), '$abbreviation · $label');
-    expect(_value(tester, 'jaimini-${body.name}-degree'),
-        '${rank.toStringAsFixed(8)}°');
-    expect(_textIn('jaimini-karakas-table', '$abbreviation · $label'),
-        findsOneWidget);
+      _value(tester, 'jaimini-${body.name}-role'),
+      '$abbreviation · $label',
+    );
+    expect(
+      _value(tester, 'jaimini-${body.name}-degree'),
+      '${rank.toStringAsFixed(8)}°',
+    );
+    expect(
+      _textIn('jaimini-karakas-table', '$abbreviation · $label'),
+      findsOneWidget,
+    );
     expect(_textIn('jaimini-karakas-table', signification), findsOneWidget);
   }
 }
@@ -756,14 +849,18 @@ Future<void> _panTable(WidgetTester tester, String id) async {
       .intersect(tester.getRect(_key('astrology-placements-surface')));
   // Header padding avoids SelectableText's selection gesture recognizers.
   await tester.dragFrom(
-      visible.topRight + const Offset(-16, 4), const Offset(-160, 0));
+    visible.topRight + const Offset(-16, 4),
+    const Offset(-160, 0),
+  );
   await tester.pumpAndSettle();
   expect(horizontal.offset, greaterThan(before));
   expect(vertical.offset, verticalBefore);
 }
 
 Future<void> _chooseScheme(
-    WidgetTester tester, JaiminiKarakaScheme scheme) async {
+  WidgetTester tester,
+  JaiminiKarakaScheme scheme,
+) async {
   await tester.ensureVisible(_key('jaimini-karaka-scheme'));
   await tester.pumpAndSettle();
   await tester.tap(_key('jaimini-karaka-scheme'));
@@ -776,7 +873,8 @@ Future<void> _chooseScheme(
   expect(
     tester
         .widget<DropdownButton<JaiminiKarakaScheme>>(
-            _key('jaimini-karaka-scheme'))
+          _key('jaimini-karaka-scheme'),
+        )
         .value,
     scheme,
   );
@@ -788,17 +886,23 @@ void _expectUnavailable(
   VedicBody missing,
   JaiminiKarakaScheme scheme,
 ) {
-  expect(_value(tester, 'jaimini-karaka-error'),
-      '${missing.label} is missing; Jaimini Karakas are unavailable.');
+  expect(
+    _value(tester, 'jaimini-karaka-error'),
+    '${missing.label} is missing; Jaimini Karakas are unavailable.',
+  );
   expect(_key('placements-${missing.shortName}-name'), findsNothing);
   expect(_key('jaimini-karakas-table'), findsNothing);
   expect(_key('jaimini-karaka-tie-warning'), findsNothing);
-  expect(tester.widget<Table>(_key('placements-table')).children,
-      hasLength(chart.placements.length + 1));
+  expect(
+    tester.widget<Table>(_key('placements-table')).children,
+    hasLength(chart.placements.length + 1),
+  );
   for (final placement in chart.placements) {
     final key = 'placements-${placement.shortName}';
     expect(
-        _value(tester, '$key-name'), placement.body?.label ?? placement.name);
+      _value(tester, '$key-name'),
+      placement.body?.label ?? placement.name,
+    );
     expect(_value(tester, '$key-longitude'), placement.formatted);
     final required = _readings[scheme]!.any((row) => row.$1 == placement.body);
     expect(_value(tester, '$key-karaka'), required ? 'Unavailable' : '—');

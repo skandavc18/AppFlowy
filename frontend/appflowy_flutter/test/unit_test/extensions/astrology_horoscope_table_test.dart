@@ -754,8 +754,11 @@ void main() {
                 index < _fields.length ? target : palette.surface,
                 reason: reason,
               );
-              expect(tester.getRect(inks[index]), bounds[index],
-                  reason: reason);
+              expect(
+                tester.getRect(inks[index]),
+                bounds[index],
+                reason: reason,
+              );
               final current =
                   tester.getSemantics(inks[index]).getSemanticsData();
               expect(current.rect, semantics[index].rect, reason: reason);
@@ -767,8 +770,11 @@ void main() {
               expect(current.hasAction(ui.SemanticsAction.tap), isTrue);
               expect(current.hasFlag(ui.SemanticsFlag.isSelected), isFalse);
             }
-            expect(opened, isEmpty,
-                reason: '$phase alone must not open a row.');
+            expect(
+              opened,
+              isEmpty,
+              reason: '$phase alone must not open a row.',
+            );
             _expectNoSelection(tester);
             return colors;
           }

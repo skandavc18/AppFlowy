@@ -31,8 +31,10 @@ class AlbumPlaylistView extends StatelessWidget {
           PreviewToolbarRegion(
         child: CollectionWorkspaceToolbar(
           keepVisible: true,
-          identity: Text(albumContentsSummary(controller),
-              style: collectionWorkspaceLabel(context, size: 12)),
+          identity: Text(
+            albumContentsSummary(controller),
+            style: collectionWorkspaceLabel(context, size: 12),
+          ),
           actions: albumArrangementControls(
             context: context,
             controller: controller,
@@ -44,7 +46,6 @@ class AlbumPlaylistView extends StatelessWidget {
       builder: (context, controller, palette) {
         final playable = controller.playable;
         return CollectionWorkspaceSurface(
-          padding: EdgeInsets.zero,
           child: playable.isEmpty
               ? FileBrowserScrollView(
                   controller: CollectionPageScrollScope.maybeOf(context),
@@ -60,7 +61,7 @@ class AlbumPlaylistView extends StatelessWidget {
                             .collections_album_nothingToPlayDescription
                             .tr(),
                       ),
-                    )
+                    ),
                   ],
                 )
               : _Playlist(
@@ -275,18 +276,19 @@ class _PlaylistState extends State<_Playlist> {
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                      (context, position) => _QueueRow(
-                        item: widget.items[position],
-                        palette: palette,
-                        number: position + 1,
-                        playing: position == index,
-                        onTap: () => _play(position),
-                        onContextMenu: _itemMenu,
+                      delegate: SliverChildBuilderDelegate(
+                        (context, position) => _QueueRow(
+                          item: widget.items[position],
+                          palette: palette,
+                          number: position + 1,
+                          playing: position == index,
+                          onTap: () => _play(position),
+                          onContextMenu: _itemMenu,
+                        ),
+                        childCount: widget.items.length,
                       ),
-                      childCount: widget.items.length,
-                    )),
-                  )
+                    ),
+                  ),
                 ],
               ),
             ),

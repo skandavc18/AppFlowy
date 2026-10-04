@@ -65,7 +65,9 @@ void main() {
           final grid = tester.widget<CustomScrollView>(find.byKey(_gridKey));
           final sliver = tester.widget<SliverGrid>(
             find.descendant(
-                of: find.byKey(_gridKey), matching: find.byType(SliverGrid)),
+              of: find.byKey(_gridKey),
+              matching: find.byType(SliverGrid),
+            ),
           );
           final delegate =
               sliver.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;

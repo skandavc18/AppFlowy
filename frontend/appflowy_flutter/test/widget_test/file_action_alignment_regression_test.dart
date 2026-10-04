@@ -24,40 +24,46 @@ void main() {
                 ? _pdfToolbar()
                 : DocumentViewportHeader(
                     identity: const DocumentIdentity(
-                        title: 'A retained long filename.txt',
-                        icon: Icons.description_rounded),
+                      title: 'A retained long filename.txt',
+                      icon: Icons.description_rounded,
+                    ),
                     keepActionsVisible: true,
                     toolbar: TextButton(
-                        key: const ValueKey('fallback-toolbar-tool'),
-                        onPressed: () {},
-                        child: const Text('Format')),
+                      key: const ValueKey('fallback-toolbar-tool'),
+                      onPressed: () {},
+                      child: const Text('Format'),
+                    ),
                     actions: [
                       for (var i = 0; i < 5; i++)
                         TextButton(
-                            key: ValueKey('fallback-action-$i'),
-                            onPressed: () {},
-                            child: Text('Action $i')),
+                          key: ValueKey('fallback-action-$i'),
+                          onPressed: () {},
+                          child: Text('Action $i'),
+                        ),
                     ],
                   );
             await mountFileControls(
-                tester,
-                Directionality(
-                    textDirection: direction,
-                    child:
-                        Align(alignment: Alignment.topCenter, child: header)),
-                mode: theme,
-                width: width,
-                height: 900,
-                textScale: 2,
-                reduced: true,
-                accessible: true);
+              tester,
+              Directionality(
+                textDirection: direction,
+                child: Align(alignment: Alignment.topCenter, child: header),
+              ),
+              mode: theme,
+              width: width,
+              height: 900,
+              textScale: 2,
+              reduced: true,
+              accessible: true,
+            );
             final bar = tester.getRect(find.byType(DocumentViewportBar));
             final bounds = bar.deflate(DocumentViewportStyle.horizontalPadding);
-            final controls = find.byWidgetPredicate((w) =>
-                w is TextButton ||
-                w is IconButton ||
-                w is WorkspaceControlButton ||
-                w is PdfPageNumberField);
+            final controls = find.byWidgetPredicate(
+              (w) =>
+                  w is TextButton ||
+                  w is IconButton ||
+                  w is WorkspaceControlButton ||
+                  w is PdfPageNumberField,
+            );
             expect(controls, findsWidgets);
             var right = double.negativeInfinity;
             for (final element in controls.evaluate()) {
@@ -68,9 +74,12 @@ void main() {
               expect(rect.right, lessThanOrEqualTo(bounds.right + .01));
               expect(rect.top, greaterThanOrEqualTo(bar.top));
               expect(rect.bottom, lessThanOrEqualTo(bar.bottom));
-              expect(target.hitTestable(), findsOneWidget,
-                  reason:
-                      'No ensureVisible or horizontal scrolling to find tools');
+              expect(
+                target.hitTestable(),
+                findsOneWidget,
+                reason:
+                    'No ensureVisible or horizontal scrolling to find tools',
+              );
               if (rect.right > right) right = rect.right;
             }
             // PDF groups have a 1px border and 3px padding; the action itself,
@@ -92,28 +101,35 @@ void main() {
               (tester) async {
             final file = MemoryCodeFile('print("unchanged")');
             final backend = FileControlBackend(
-                fileControlView('alignment',
-                    'A long localized filename — source.py', file.path),
-                file);
+              fileControlView(
+                'alignment',
+                'A long localized filename — source.py',
+                file.path,
+              ),
+              file,
+            );
             await mountFileControls(
-                tester,
-                Directionality(
-                    textDirection: direction,
-                    child: backend.viewer(editable: false)),
-                mode: theme,
-                width: width,
-                height: 900,
-                textScale: scale,
-                reduced: true);
+              tester,
+              Directionality(
+                textDirection: direction,
+                child: backend.viewer(editable: false),
+              ),
+              mode: theme,
+              width: width,
+              height: 900,
+              textScale: scale,
+              reduced: true,
+            );
             await tester.binding.setSurfaceSize(Size(width + 64, 1000));
             await settleFileControls(tester);
             final band =
                 find.byKey(const ValueKey('workspace-file-toolbar-scroll'));
             expect(
-                tester
-                    .widget<FileActionBand>(find.byType(FileActionBand))
-                    .responsive,
-                isTrue);
+              tester
+                  .widget<FileActionBand>(find.byType(FileActionBand))
+                  .responsive,
+              isTrue,
+            );
             expectFileToolsBesideOrBelowTitle(
               tester,
               beside: width == 300
@@ -123,27 +139,34 @@ void main() {
                       : null,
             );
             final nativeButtons = find.descendant(
-                of: band,
-                matching: find.byWidgetPredicate(
-                    (w) => w is TextButton || w is IconButton));
+              of: band,
+              matching: find.byWidgetPredicate(
+                (w) => w is TextButton || w is IconButton,
+              ),
+            );
             expect(nativeButtons, findsWidgets);
             final bounds = tester.getRect(band);
             final runs = <double, double>{};
             for (final element in nativeButtons.evaluate()) {
               final target = find.byElementPredicate(
-                  (candidate) => identical(element, candidate));
+                (candidate) => identical(element, candidate),
+              );
               final rect = tester.getRect(target);
               expect(rect.left, greaterThanOrEqualTo(bounds.left - .01));
               expect(rect.right, lessThanOrEqualTo(bounds.right + .01));
               final run = rect.center.dy.roundToDouble();
               runs.update(
-                  run, (right) => right > rect.right ? right : rect.right,
-                  ifAbsent: () => rect.right);
+                run,
+                (right) => right > rect.right ? right : rect.right,
+                ifAbsent: () => rect.right,
+              );
             }
             final pane = tester
                 .getRect(find.byKey(const ValueKey('workspace-file-canvas')));
-            expect(bounds.right,
-                closeTo(pane.right - WorkspaceTokens.pageInset(width), .01));
+            expect(
+              bounds.right,
+              closeTo(pane.right - WorkspaceTokens.pageInset(width), .01),
+            );
             // The actual controls, not an allocated 620px shell, end at the
             // toolbar's intentional 4/6px inner padding.
             expect(
@@ -153,8 +176,10 @@ void main() {
                 .01,
               ),
             );
-            expect(find.byKey(const ValueKey('workspace-file-rename')),
-                findsNothing);
+            expect(
+              find.byKey(const ValueKey('workspace-file-rename')),
+              findsNothing,
+            );
             expect(file.reads, 1);
             expect(file.writes, 0);
             expect(tester.takeException(), isNull);

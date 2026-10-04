@@ -1436,7 +1436,9 @@ void main() {
           await _pumpForm(
             tester,
             input: const AstrologyInput(
-                name: 'A named horoscope', place: _newYork),
+              name: 'A named horoscope',
+              place: _newYork,
+            ),
             service: service,
             onSave: _ignoreInput,
             width: 280,

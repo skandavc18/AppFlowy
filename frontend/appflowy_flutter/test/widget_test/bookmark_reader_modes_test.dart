@@ -29,7 +29,7 @@ String _payload({String url = _url}) => jsonEncode({
       'url': url,
       'html': '<article><h1>Reading</h1>'
           '<p>Visible needle in an ordinary article paragraph that is long enough to read.</p>'
-          '<p>Another needle in a second visible paragraph.</p></article>'
+          '<p>Another needle in a second visible paragraph.</p></article>',
     });
 
 void main() {
@@ -61,29 +61,39 @@ void main() {
         expect(fixture.focus.hasFocus, isFalse);
         expect(find.byKey(const ValueKey('live-probe')), findsNothing);
         expect(
-            tester.element(
-                find.byKey(const ValueKey('live-probe'), skipOffstage: false)),
-            same(leaf));
+          tester.element(
+            find.byKey(const ValueKey('live-probe'), skipOffstage: false),
+          ),
+          same(leaf),
+        );
         final hidden = tester.element(
-            find.byKey(const ValueKey('live-field'), skipOffstage: false));
+          find.byKey(const ValueKey('live-field'), skipOffstage: false),
+        );
         expect(TickerMode.of(hidden), isFalse);
         expect(
-            find
-                .byKey(const ValueKey('live-field'), skipOffstage: false)
-                .hitTestable(),
-            findsNothing);
+          find
+              .byKey(const ValueKey('live-field'), skipOffstage: false)
+              .hitTestable(),
+          findsNothing,
+        );
         final local = tester.element(
-            find.byKey(const ValueKey('bookmark-local-article-scroll')));
+          find.byKey(const ValueKey('bookmark-local-article-scroll')),
+        );
         final canvas = tester
-            .widgetList<ColoredBox>(find.descendant(
+            .widgetList<ColoredBox>(
+              find.descendant(
                 of: find.byType(BookmarkArticleView),
-                matching: find.byType(ColoredBox)))
+                matching: find.byType(ColoredBox),
+              ),
+            )
             .first;
         expect(canvas.color, EditorSurfaceStyle.canvasBackground(local));
         expect(ContextualFindRegion.dispatch(local), isTrue);
         await tester.pump();
         await tester.enterText(
-            find.byKey(const ValueKey('findTextField')), 'needle');
+          find.byKey(const ValueKey('findTextField')),
+          'needle',
+        );
         await tester.pump();
         final bar = tester.widget<FindReplaceBar>(find.byType(FindReplaceBar));
         expect(bar.matchCount, 2);
@@ -92,25 +102,31 @@ void main() {
         bar.onNext!();
         await tester.pump();
         expect(
-            tester
-                .widget<FindReplaceBar>(find.byType(FindReplaceBar))
-                .currentMatch,
-            2);
+          tester
+              .widget<FindReplaceBar>(find.byType(FindReplaceBar))
+              .currentMatch,
+          2,
+        );
         fixture.action(tester, 'offline')();
         await tester.pump();
         expect(
-            tester
-                .widget<BookmarkArticleView>(find.byType(BookmarkArticleView))
-                .text,
-            contains('Offline article'));
+          tester
+              .widget<BookmarkArticleView>(find.byType(BookmarkArticleView))
+              .text,
+          contains('Offline article'),
+        );
         fixture.action(tester, 'live')();
         await tester.pump();
-        expect(tester.element(find.byKey(const ValueKey('live-probe'))),
-            same(leaf));
         expect(
-            TickerMode.of(
-                tester.element(find.byKey(const ValueKey('live-field')))),
-            isTrue);
+          tester.element(find.byKey(const ValueKey('live-probe'))),
+          same(leaf),
+        );
+        expect(
+          TickerMode.of(
+            tester.element(find.byKey(const ValueKey('live-field'))),
+          ),
+          isTrue,
+        );
       } finally {
         await fixture.dispose(tester);
       }
@@ -135,28 +151,40 @@ void main() {
       }
       expect(tester.takeException(), isNull);
       expect(
-          tester
-              .widget<BookmarkAction>(
-                  find.byKey(const ValueKey('bookmark-reader-offline')))
-              .onPressed,
-          isNull);
+        tester
+            .widget<BookmarkAction>(
+              find.byKey(const ValueKey('bookmark-reader-offline')),
+            )
+            .onPressed,
+        isNull,
+      );
       fixture.action(tester, 'reader')();
       await tester.pump();
       await tester.pump();
       expect(find.byType(BookmarkArticleView), findsOneWidget);
       expect(
-          ContextualFindRegion.dispatch(tester.element(
-              find.byKey(const ValueKey('bookmark-local-article-scroll')))),
-          isTrue);
+        ContextualFindRegion.dispatch(
+          tester.element(
+            find.byKey(const ValueKey('bookmark-local-article-scroll')),
+          ),
+        ),
+        isTrue,
+      );
       await tester.pump();
       await tester.enterText(
-          find.byKey(const ValueKey('findTextField')), 'needle');
+        find.byKey(const ValueKey('findTextField')),
+        'needle',
+      );
       await tester.pump();
       expect(
-          tester.widget<FindReplaceBar>(find.byType(FindReplaceBar)).matchCount,
-          2);
-      final download = tester.widget<BookmarkAction>(find.byWidgetPredicate(
-          (w) => w is BookmarkAction && w.icon == Icons.download_rounded));
+        tester.widget<FindReplaceBar>(find.byType(FindReplaceBar)).matchCount,
+        2,
+      );
+      final download = tester.widget<BookmarkAction>(
+        find.byWidgetPredicate(
+          (w) => w is BookmarkAction && w.icon == Icons.download_rounded,
+        ),
+      );
       expect(download.onPressed, isNull);
       expect(fixture.saves, 0);
     } finally {
@@ -173,11 +201,13 @@ void main() {
         await fixture.mount(tester);
         fixture.action(tester, 'reader')();
         await tester.pump();
-        if (change == 'navigate')
+        if (change == 'navigate') {
           fixture.session.navigationStarted('https://reader.example/other');
+        }
         if (change == 'live') fixture.action(tester, 'live')();
-        if (change == 'dispose')
+        if (change == 'dispose') {
           await tester.pumpWidget(const SizedBox.shrink());
+        }
         gate.complete(_payload());
         await tester.pump();
         await tester.pump();
@@ -192,31 +222,48 @@ void main() {
   testWidgets('local Ctrl+F works on a narrow scaled reading surface',
       (tester) async {
     try {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(
+        MaterialApp(
           home: Scaffold(
-              body: Center(
-                  child: SizedBox(
-        width: 280,
-        child: MediaQuery(
-            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-            child: const ContextualFindScope(
-                child: BookmarkArticleView(
-                    text: 'A readable needle.\n\nAnother needle.'))),
-      )))));
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-          physicalKey: PhysicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyF,
-          physicalKey: PhysicalKeyboardKey.keyF);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-          physicalKey: PhysicalKeyboardKey.controlLeft);
+            body: Center(
+              child: SizedBox(
+                width: 280,
+                child: MediaQuery(
+                  data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+                  child: const ContextualFindScope(
+                    child: BookmarkArticleView(
+                      text: 'A readable needle.\n\nAnother needle.',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        physicalKey: PhysicalKeyboardKey.controlLeft,
+      );
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.keyF,
+        physicalKey: PhysicalKeyboardKey.keyF,
+      );
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        physicalKey: PhysicalKeyboardKey.controlLeft,
+      );
       await tester.pump();
       expect(find.byType(FindReplaceBar), findsOneWidget);
       await tester.enterText(
-          find.byKey(const ValueKey('findTextField')), 'needle');
+        find.byKey(const ValueKey('findTextField')),
+        'needle',
+      );
       await tester.pump();
       expect(
-          tester.widget<FindReplaceBar>(find.byType(FindReplaceBar)).matchCount,
-          2);
+        tester.widget<FindReplaceBar>(find.byType(FindReplaceBar)).matchCount,
+        2,
+      );
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -224,161 +271,189 @@ void main() {
   });
 
   for (final failure in ['error', 'timeout']) {
-    testWidgets('$failure releases Reader controls without saving',
-        (tester) async {
+    testWidgets(
+      '$failure releases Reader controls without saving',
+      (tester) async {
+        final fixture = _Fixture();
+        final gate = fixture.captureGate = Completer<dynamic>();
+        try {
+          await fixture.mount(tester);
+          fixture.action(tester, 'reader')();
+          await tester.pump();
+          if (failure == 'error') {
+            gate.completeError(StateError('capture failed'));
+          } else {
+            await tester
+                .pump(bookmarkReaderDeadline + const Duration(milliseconds: 1));
+          }
+          await tester.pump();
+          expect(find.text(BookmarkReaderStrings.unavailable), findsOneWidget);
+          expect(
+            tester
+                .widget<BookmarkAction>(
+                  find.byKey(const ValueKey('bookmark-reader-reader')),
+                )
+                .onPressed,
+            isNotNull,
+          );
+          expect(fixture.saves, 0);
+          expect(find.byType(BookmarkArticleView), findsNothing);
+          if (!gate.isCompleted) gate.complete(_payload());
+          await tester.pump();
+          expect(find.byType(BookmarkArticleView), findsNothing);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
+  }
+
+  testWidgets(
+    'a visible access gate is named rather than unavailable',
+    (tester) async {
       final fixture = _Fixture();
       final gate = fixture.captureGate = Completer<dynamic>();
       try {
         await fixture.mount(tester);
         fixture.action(tester, 'reader')();
         await tester.pump();
-        if (failure == 'error') {
-          gate.completeError(StateError('capture failed'));
-        } else {
-          await tester
-              .pump(bookmarkReaderDeadline + const Duration(milliseconds: 1));
-        }
+        gate.complete(jsonEncode({'url': _url, 'gate': true}));
         await tester.pump();
-        expect(find.text(BookmarkReaderStrings.unavailable), findsOneWidget);
-        expect(
-            tester
-                .widget<BookmarkAction>(
-                    find.byKey(const ValueKey('bookmark-reader-reader')))
-                .onPressed,
-            isNotNull);
+        await tester.pump();
+        expect(find.text(BookmarkReaderStrings.gated), findsOneWidget);
+        expect(find.text(BookmarkReaderStrings.unavailable), findsNothing);
+        expect(find.byType(BookmarkArticleView), findsNothing);
+        expect(fixture.action(tester, 'reader'), isNotNull);
         expect(fixture.saves, 0);
-        expect(find.byType(BookmarkArticleView), findsNothing);
-        if (!gate.isCompleted) gate.complete(_payload());
-        await tester.pump();
-        expect(find.byType(BookmarkArticleView), findsNothing);
         expect(tester.takeException(), isNull);
       } finally {
         await fixture.dispose(tester);
       }
-    }, timeout: const Timeout(Duration(seconds: 30)));
-  }
-
-  testWidgets('a visible access gate is named rather than unavailable',
-      (tester) async {
-    final fixture = _Fixture();
-    final gate = fixture.captureGate = Completer<dynamic>();
-    try {
-      await fixture.mount(tester);
-      fixture.action(tester, 'reader')();
-      await tester.pump();
-      gate.complete(jsonEncode({'url': _url, 'gate': true}));
-      await tester.pump();
-      await tester.pump();
-      expect(find.text(BookmarkReaderStrings.gated), findsOneWidget);
-      expect(find.text(BookmarkReaderStrings.unavailable), findsNothing);
-      expect(find.byType(BookmarkArticleView), findsNothing);
-      expect(fixture.action(tester, 'reader'), isNotNull);
-      expect(fixture.saves, 0);
-      expect(tester.takeException(), isNull);
-    } finally {
-      await fixture.dispose(tester);
-    }
-  }, timeout: const Timeout(Duration(seconds: 30)));
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 
   for (final appearance in ['light', 'dark', 'paper']) {
-    testWidgets('$appearance: Reader reads a page still loading, saying so',
-        (tester) async {
-      final fixture = _Fixture();
-      try {
-        await fixture.mount(tester, appearance: appearance);
-        // Loading again: not finished, but already on its way.
-        fixture.session.navigationStarted(_url);
-        fixture.captureGate = Completer<dynamic>()
-          ..complete(jsonEncode({'url': _url, 'loading': true}));
-        fixture.action(tester, 'reader')();
-        await tester.pump();
-        await tester.pump();
-        expect(fixture.captureCalls, 1);
-        final chip = find.byKey(const ValueKey('bookmark-reader-preparing'));
-        expect(chip, findsOneWidget);
-        expect(find.text(BookmarkReaderStrings.preparing), findsOneWidget);
-        // The workspace's own surface, warm in paper mode, like the error.
-        expect(tester.widget<Material>(chip).color,
-            bookmarkThemeOf(tester.element(chip)).panel);
-        expect(find.byType(BookmarkArticleView), findsNothing);
-        // The live page stays usable underneath while Reader waits.
-        expect(find.byKey(const ValueKey('live-field')).hitTestable(),
-            findsOneWidget);
-        expect(
+    testWidgets(
+      '$appearance: Reader reads a page still loading, saying so',
+      (tester) async {
+        final fixture = _Fixture();
+        try {
+          await fixture.mount(tester, appearance: appearance);
+          // Loading again: not finished, but already on its way.
+          fixture.session.navigationStarted(_url);
+          fixture.captureGate = Completer<dynamic>()
+            ..complete(jsonEncode({'url': _url, 'loading': true}));
+          fixture.action(tester, 'reader')();
+          await tester.pump();
+          await tester.pump();
+          expect(fixture.captureCalls, 1);
+          final chip = find.byKey(const ValueKey('bookmark-reader-preparing'));
+          expect(chip, findsOneWidget);
+          expect(find.text(BookmarkReaderStrings.preparing), findsOneWidget);
+          // The workspace's own surface, warm in paper mode, like the error.
+          expect(
+            tester.widget<Material>(chip).color,
+            bookmarkThemeOf(tester.element(chip)).panel,
+          );
+          expect(find.byType(BookmarkArticleView), findsNothing);
+          // The live page stays usable underneath while Reader waits.
+          expect(
+            find.byKey(const ValueKey('live-field')).hitTestable(),
+            findsOneWidget,
+          );
+          expect(
             tester
                 .widget<BookmarkAction>(
-                    find.byKey(const ValueKey('bookmark-reader-reader')))
+                  find.byKey(const ValueKey('bookmark-reader-reader')),
+                )
                 .onPressed,
-            isNull);
+            isNull,
+          );
 
-        fixture.captureGate = null;
-        await tester.pump(bookmarkReaderRetryInterval);
+          fixture.captureGate = null;
+          await tester.pump(bookmarkReaderRetryInterval);
+          await tester.pump();
+          await tester.pump();
+          expect(fixture.captureCalls, 2);
+          expect(find.byType(BookmarkArticleView), findsOneWidget);
+          expect(chip, findsNothing);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
+  }
+
+  testWidgets(
+    'Reader follows a page that moves on while it is read',
+    (tester) async {
+      final fixture = _Fixture();
+      final gate = fixture.captureGate = Completer<dynamic>();
+      try {
+        await fixture.mount(tester);
+        fixture.action(tester, 'reader')();
+        await tester.pump();
+        expect(fixture.captureCalls, 1);
+        // A redirect, or a route the site pushes as it loads.
+        const moved = 'https://reader.example/article?view=full';
+        fixture.session.navigationStarted(moved);
+        fixture.captureGate = Completer<dynamic>()
+          ..complete(_payload(url: moved));
+        gate.complete(_payload());
+        await tester.pump();
         await tester.pump();
         await tester.pump();
         expect(fixture.captureCalls, 2);
         expect(find.byType(BookmarkArticleView), findsOneWidget);
-        expect(chip, findsNothing);
-        expect(tester.takeException(), isNull);
+        expect(find.text(BookmarkReaderStrings.unavailable), findsNothing);
+        expect(fixture.saves, 0);
       } finally {
         await fixture.dispose(tester);
       }
-    }, timeout: const Timeout(Duration(seconds: 30)));
-  }
-
-  testWidgets('Reader follows a page that moves on while it is read',
-      (tester) async {
-    final fixture = _Fixture();
-    final gate = fixture.captureGate = Completer<dynamic>();
-    try {
-      await fixture.mount(tester);
-      fixture.action(tester, 'reader')();
-      await tester.pump();
-      expect(fixture.captureCalls, 1);
-      // A redirect, or a route the site pushes as it loads.
-      const moved = 'https://reader.example/article?view=full';
-      fixture.session.navigationStarted(moved);
-      fixture.captureGate = Completer<dynamic>()
-        ..complete(_payload(url: moved));
-      gate.complete(_payload());
-      await tester.pump();
-      await tester.pump();
-      await tester.pump();
-      expect(fixture.captureCalls, 2);
-      expect(find.byType(BookmarkArticleView), findsOneWidget);
-      expect(find.text(BookmarkReaderStrings.unavailable), findsNothing);
-      expect(fixture.saves, 0);
-    } finally {
-      await fixture.dispose(tester);
-    }
-  }, timeout: const Timeout(Duration(seconds: 30)));
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 
   for (final invalidation in ['source', 'permission']) {
-    testWidgets('$invalidation during capture cannot save bookmark metadata',
-        (tester) async {
-      final fixture = _Fixture(readOnly: false);
-      final gate = fixture.captureGate = Completer<dynamic>();
-      try {
-        await fixture.mount(tester);
-        final url =
-            invalidation == 'source' ? 'https://reader.example/followed' : _url;
-        fixture.session.navigationStarted(url);
-        fixture.session.navigationFinished(url);
-        tester
-            .widget<BookmarkAction>(find.byWidgetPredicate(
-                (w) => w is BookmarkAction && w.icon == Icons.download_rounded))
-            .onPressed!();
-        await tester.pump();
-        if (invalidation == 'permission') fixture.canEdit = false;
-        gate.complete(_payload(url: url));
-        await tester.pump();
-        await tester.pump();
-        expect(fixture.captureCalls, 1);
-        expect(fixture.saves, 0);
-        expect(tester.takeException(), isNull);
-      } finally {
-        await fixture.dispose(tester);
-      }
-    }, timeout: const Timeout(Duration(seconds: 30)));
+    testWidgets(
+      '$invalidation during capture cannot save bookmark metadata',
+      (tester) async {
+        final fixture = _Fixture(readOnly: false);
+        final gate = fixture.captureGate = Completer<dynamic>();
+        try {
+          await fixture.mount(tester);
+          final url = invalidation == 'source'
+              ? 'https://reader.example/followed'
+              : _url;
+          fixture.session.navigationStarted(url);
+          fixture.session.navigationFinished(url);
+          tester
+              .widget<BookmarkAction>(
+                find.byWidgetPredicate(
+                  (w) =>
+                      w is BookmarkAction && w.icon == Icons.download_rounded,
+                ),
+              )
+              .onPressed!();
+          await tester.pump();
+          if (invalidation == 'permission') fixture.canEdit = false;
+          gate.complete(_payload(url: url));
+          await tester.pump();
+          await tester.pump();
+          expect(fixture.captureCalls, 1);
+          expect(fixture.saves, 0);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
   }
 }
 
@@ -388,13 +463,14 @@ class _Fixture {
     controller = _Controller()
       ..setViews([
         ViewPB(
-            id: 'bookmark',
-            name: 'Saved page',
-            extra: const BookmarkMetadata(
-                    url: _url,
-                    readState: BookmarkReadState.reading,
-                    snapshotPath: 'local-copy')
-                .mergeIntoExtra(''))
+          id: 'bookmark',
+          name: 'Saved page',
+          extra: const BookmarkMetadata(
+            url: _url,
+            readState: BookmarkReadState.reading,
+            snapshotPath: 'local-copy',
+          ).mergeIntoExtra(''),
+        ),
       ]);
     session.attach(this, (_) {
       captureCalls++;
@@ -419,30 +495,41 @@ class _Fixture {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final theme = DesktopAppearance().getThemeData(
-        appearance == 'paper'
-            ? AppTheme.builtins
-                .firstWhere((t) => t.themeName == BuiltInTheme.paper)
-            : AppTheme.fallback,
-        appearance == 'dark' ? Brightness.dark : Brightness.light,
-        'DM Sans',
-        builtInCodeFontFamily);
-    await tester.pumpWidget(BookmarkReaderTestLocalizations.wrap(
+      appearance == 'paper'
+          ? AppTheme.builtins
+              .firstWhere((t) => t.themeName == BuiltInTheme.paper)
+          : AppTheme.fallback,
+      appearance == 'dark' ? Brightness.dark : Brightness.light,
+      'DM Sans',
+      builtInCodeFontFamily,
+    );
+    await tester.pumpWidget(
+      BookmarkReaderTestLocalizations.wrap(
         theme: theme,
         home: Scaffold(
-            body: ContextualFindScope(
-                child: BookmarkReader(
-          entryId: 'bookmark',
-          controller: controller,
-          standalone: true,
-          readOnly: readOnly,
-          canEdit: () => canEdit,
-          readingSession: session,
-          snapshots: snapshots,
-          webPageBuilder: (_) =>
-              Column(key: const ValueKey('live-probe'), children: [
-            TextField(key: const ValueKey('live-field'), focusNode: focus),
-          ]),
-        )))));
+          body: ContextualFindScope(
+            child: BookmarkReader(
+              entryId: 'bookmark',
+              controller: controller,
+              standalone: true,
+              readOnly: readOnly,
+              canEdit: () => canEdit,
+              readingSession: session,
+              snapshots: snapshots,
+              webPageBuilder: (_) => Column(
+                key: const ValueKey('live-probe'),
+                children: [
+                  TextField(
+                    key: const ValueKey('live-field'),
+                    focusNode: focus,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump();
     await tester.pump();
@@ -474,7 +561,8 @@ class _Snapshots extends BookmarkSnapshotStore {
           directory: 'local-copy',
           savedAt: DateTime(2026),
           bytes: 64,
-          articlePath: 'local-copy/article.md')
+          articlePath: 'local-copy/article.md',
+        )
       : null;
   @override
   Future<String?> readArticleText(BookmarkSnapshot snapshot) async =>
@@ -485,9 +573,11 @@ class _Controller extends BookmarkController {
   int saves = 0;
   @override
   Future<bool> saveReaderCapture(
-      BookmarkEntry entry, BookmarkReaderCapture capture,
-      {required bool Function() isCurrent,
-      BookmarkSnapshotStore? store}) async {
+    BookmarkEntry entry,
+    BookmarkReaderCapture capture, {
+    required bool Function() isCurrent,
+    BookmarkSnapshotStore? store,
+  }) async {
     saves++;
     return false;
   }

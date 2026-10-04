@@ -151,9 +151,13 @@ void main() {
           void expectRetainedToolbar() {
             expect(tester.state(find.byType(ArchiveExplorer)), same(explorer));
             expect(
-                tester.state(find.byType(MediaActionButtons)), same(actions));
+              tester.state(find.byType(MediaActionButtons)),
+              same(actions),
+            );
             expect(
-                tester.element(find.byKey(_controls)), same(controlsElement));
+              tester.element(find.byKey(_controls)),
+              same(controlsElement),
+            );
             expect(
               tester
                   .widget<SingleChildScrollView>(find.byKey(_toolbarScroll))
@@ -356,8 +360,10 @@ Future<void> _revealArchiveControl(
   final currentHeader = tester.getRect(find.byKey(_header));
   expect(currentHeader.size, headerBounds.size);
   expect(currentHeader.left, headerBounds.left);
-  expect(currentHeader.top,
-      closeTo(headerBounds.top + beforeOffset - outer.offset, .01));
+  expect(
+    currentHeader.top,
+    closeTo(headerBounds.top + beforeOffset - outer.offset, .01),
+  );
   expect(_archiveControlPoint(tester, control), point);
   expect(control.hitTestable(), findsOneWidget);
   expectFileControlPainted(tester, control);

@@ -38,11 +38,15 @@ void main() {
         )!;
     expect(size(701), size(702));
     const source = AssetImage('cover.png');
-    expect(CoverImageProvider(source, size(701), BoxFit.cover),
-        CoverImageProvider(source, size(702), BoxFit.cover));
+    expect(
+      CoverImageProvider(source, size(701), BoxFit.cover),
+      CoverImageProvider(source, size(702), BoxFit.cover),
+    );
     expect(size(768), isNot(size(769)));
-    expect(CoverImageKey('source', size(701), BoxFit.cover),
-        isNot(CoverImageKey('source', size(701), BoxFit.contain)));
+    expect(
+      CoverImageKey('source', size(701), BoxFit.cover),
+      isNot(CoverImageKey('source', size(701), BoxFit.contain)),
+    );
   });
 
   test('contain and crop use the encoded aspect, stretch remains a paint fit',
@@ -91,8 +95,10 @@ void main() {
             .target(source.$1, source.$2, fit);
         expect(result.width, inInclusiveRange(1, 4096));
         expect(result.height, inInclusiveRange(1, 4096));
-        expect(result.width! / result.height!,
-            closeTo(source.$1 / source.$2, 2.5));
+        expect(
+          result.width! / result.height!,
+          closeTo(source.$1 / source.$2, 2.5),
+        );
       }
     }
   });
@@ -100,17 +106,18 @@ void main() {
   test('invalid or unbounded layouts do not invent a screen-sized target', () {
     for (final constraints in [
       const BoxConstraints(),
-      const BoxConstraints.tightFor(width: 0, height: 200)
+      const BoxConstraints.tightFor(width: 0, height: 200),
     ]) {
       expect(CoverImageDecodeSize.fromConstraints(constraints, 2), isNull);
     }
     for (final dpr in [0.0, double.nan, double.infinity]) {
       expect(
-          CoverImageDecodeSize.fromConstraints(
-            const BoxConstraints.tightFor(width: 100, height: 100),
-            dpr,
-          ),
-          isNull);
+        CoverImageDecodeSize.fromConstraints(
+          const BoxConstraints.tightFor(width: 100, height: 100),
+          dpr,
+        ),
+        isNull,
+      );
     }
     final huge = CoverImageDecodeSize.fromConstraints(
       const BoxConstraints.tightFor(width: 1e20, height: 1e20),

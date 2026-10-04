@@ -450,9 +450,10 @@ class MermaidDocument {
     this.error,
   });
 
-  const MermaidDocument.failed(this.error,
-      {this.kind = MermaidDiagramKind.unsupported})
-      : title = '',
+  const MermaidDocument.failed(
+    this.error, {
+    this.kind = MermaidDiagramKind.unsupported,
+  })  : title = '',
         graph = null,
         sequence = null,
         pie = null,

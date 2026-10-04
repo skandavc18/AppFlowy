@@ -59,8 +59,11 @@ void main() {
           expect(inner.offset, 0);
           final pageOffset = outer.offset;
           await _click(tester, _key('header0'));
-          expect(inner.offset, 0,
-              reason: 'Activation must not reposition content.');
+          expect(
+            inner.offset,
+            0,
+            reason: 'Activation must not reposition content.',
+          );
           await _wheel(tester, target, delta);
           final firstInnerOffset = inner.offset;
           expect(firstInnerOffset, greaterThan(0));
@@ -158,8 +161,10 @@ void main() {
     await _click(tester, _key('field0'));
     expect(FocusManager.instance.primaryFocus, same(h.fields[0]));
     await tester.enterText(_key('field0'), 'ab');
-    await tester.sendKeyEvent(LogicalKeyboardKey.backspace,
-        platform: 'windows');
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.backspace,
+      platform: 'windows',
+    );
     await tester.pump();
     expect(h.text[0].text, 'a');
     tester.testTextInput.enterText('a typed');
@@ -221,8 +226,10 @@ void main() {
     await _wheel(tester, _key('v1'), const Offset(0, 40));
     expect(h.v[1].offset, greaterThan(0));
     expect(tester.widget<ListView>(_key('v0')).controller, same(h.v[0]));
-    expect(tester.widget<SingleChildScrollView>(_key('h0')).controller,
-        same(h.h[0]));
+    expect(
+      tester.widget<SingleChildScrollView>(_key('h0')).controller,
+      same(h.h[0]),
+    );
     expect(
       tester.state<ScrollableState>(
         find.descendant(of: _key('v0'), matching: find.byType(Scrollable)),
@@ -403,8 +410,11 @@ void main() {
           kind: PointerDeviceKind.mouse,
         );
         await tester.pump();
-        expect(h.requests[0], isEmpty,
-            reason: 'Pointer down is not selection.');
+        expect(
+          h.requests[0],
+          isEmpty,
+          reason: 'Pointer down is not selection.',
+        );
         expect(h.taps, 0);
         await press.up();
         await tester.pumpAndSettle();
@@ -473,7 +483,9 @@ void main() {
         expect(regionSemantics, findsOneWidget);
         final node = tester.getSemantics(regionSemantics);
         expect(
-            node.getSemanticsData().hasAction(ui.SemanticsAction.tap), isTrue);
+          node.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+          isTrue,
+        );
         expect(
           node.getSemanticsData().hasFlag(ui.SemanticsFlag.isSelected),
           isFalse,
@@ -551,8 +563,11 @@ void main() {
             expect(h.active[0].value, isTrue);
             await tester.sendKeyEvent(LogicalKeyboardKey.escape);
             await tester.pumpAndSettle();
-            expect(h.escapes, 2,
-                reason: 'The outer handler still sees Escape.');
+            expect(
+              h.escapes,
+              2,
+              reason: 'The outer handler still sees Escape.',
+            );
             expect(h.fields[0].hasPrimaryFocus, isTrue);
           case 'focus leave':
             h.outside.requestFocus();
@@ -903,7 +918,9 @@ class _Harness {
                         primary: false,
                         scrollDirection: Axis.horizontal,
                         child: const SizedBox(
-                            width: 1800, child: Text('Wide reading')),
+                          width: 1800,
+                          child: Text('Wide reading'),
+                        ),
                       ),
                     ),
                   ],

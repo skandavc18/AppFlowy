@@ -311,7 +311,9 @@ void main() {
             );
             expect(scroll.position, same(position));
             expect(
-                tester.state(find.byType(SandboxedCodeRunner)), same(before));
+              tester.state(find.byType(SandboxedCodeRunner)),
+              same(before),
+            );
             expect(tester.state(find.byType(FilePreview)), same(renderer));
           }
           await tester.ensureVisible(find.byKey(_lineNumbers));
@@ -573,8 +575,10 @@ void main() {
       final renderer = tester.state(find.byType(FilePreview));
       final copy = find.byKey(_copy, skipOffstage: false);
       final copyElement = tester.element(copy);
-      final header = find.byKey(const ValueKey('workspace-file-identity'),
-          skipOffstage: false);
+      final header = find.byKey(
+        const ValueKey('workspace-file-identity'),
+        skipOffstage: false,
+      );
       final headerTop = tester.getTopLeft(header).dy;
       final outer = tester
           .state<NestedScrollViewState>(find.byType(NestedScrollView))
@@ -583,13 +587,16 @@ void main() {
       await settleFileControls(tester);
       expect(outer.offset, greaterThan(0));
       expect(
-          tester.getTopLeft(header).dy, closeTo(headerTop - outer.offset, .01));
+        tester.getTopLeft(header).dy,
+        closeTo(headerTop - outer.offset, .01),
+      );
       expect(copy.hitTestable(), findsNothing);
       expect(tester.element(copy), same(copyElement));
       expect(tester.renderObject(copy).attached, isTrue);
       final fades = find.ancestor(
-          of: copy,
-          matching: find.byType(AnimatedOpacity, skipOffstage: false));
+        of: copy,
+        matching: find.byType(AnimatedOpacity, skipOffstage: false),
+      );
       expect(fades, findsWidgets);
       for (final fade in tester.widgetList<AnimatedOpacity>(fades)) {
         expect(fade.opacity, 1);

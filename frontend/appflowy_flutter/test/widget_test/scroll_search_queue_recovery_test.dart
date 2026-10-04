@@ -22,22 +22,31 @@ void main() {
       await page.mount(tester);
       await page.open(tester, hover: false);
       final field = find.descendant(
-          of: find.byKey(const ValueKey('findTextField')),
-          matching: find.byType(EditableText));
+        of: find.byKey(const ValueKey('findTextField')),
+        matching: find.byType(EditableText),
+      );
       final element = tester.element(field);
       final state = tester.state<EditableTextState>(field);
       for (var i = 1; i <= query.length; i++) {
         expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
         expect(tester.testTextInput.hasAnyClients, isTrue);
-        if (i > 1)
-          expect(state.widget.controller.selection,
-              TextSelection.collapsed(offset: i - 1));
-        tester.testTextInput.updateEditingValue(TextEditingValue(
+        if (i > 1) {
+          expect(
+            state.widget.controller.selection,
+            TextSelection.collapsed(offset: i - 1),
+          );
+        }
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
             text: query.substring(0, i),
-            selection: TextSelection.collapsed(offset: i)));
-        await tester.pump(i == 3
-            ? DatabaseFindSession.debounce
-            : const Duration(milliseconds: 20));
+            selection: TextSelection.collapsed(offset: i),
+          ),
+        );
+        await tester.pump(
+          i == 3
+              ? DatabaseFindSession.debounce
+              : const Duration(milliseconds: 20),
+        );
         expect(tester.element(field), same(element));
         expect(tester.state(field), same(state));
         expect(state.widget.controller.text, query.substring(0, i));
@@ -49,12 +58,16 @@ void main() {
       await tester.pump();
       await tester.pump(DatabaseFindSession.debounce);
       await databaseFindUntil(
-          tester, () => !databaseFindSession(tester).loading);
+        tester,
+        () => !databaseFindSession(tester).loading,
+      );
       expect(databaseFindBar(tester).matchCount, 1);
       expect(tester.element(field), same(element));
       expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
-      expect(state.widget.controller.selection,
-          TextSelection.collapsed(offset: query.length));
+      expect(
+        state.widget.controller.selection,
+        TextSelection.collapsed(offset: query.length),
+      );
       expect(page.reads.maxInFlight, 1);
     } finally {
       await page.dispose(tester);
@@ -72,15 +85,17 @@ void main() {
     reads.scheduler.schedule(Object(), () => true, () => held.future);
     final scope = StreamController<String>.broadcast(sync: true);
     final controller = WorkspaceTitleSearchController(
-        provider: reads.provider(),
-        scopeChanges: scope.stream,
-        isWorkspaceCurrent: (_) => true);
+      provider: reads.provider(),
+      scopeChanges: scope.stream,
+      isWorkspaceCurrent: (_) => true,
+    );
     try {
       controller.updateSource(
-          workspaceId: 'workspace',
-          cachedViews: {databaseFindViewId: reads.views[databaseFindViewId]!},
-          excludedViewIds: [],
-          ready: true);
+        workspaceId: 'workspace',
+        cachedViews: {databaseFindViewId: reads.views[databaseFindViewId]!},
+        excludedViewIds: [],
+        ready: true,
+      );
       controller.search('native', const CommandPaletteFilter(), []);
       await tester.pump(const Duration(seconds: 3));
       expect(controller.timedOut, isTrue);
@@ -88,10 +103,11 @@ void main() {
       reads.changes.add('native');
       scope.add('folder');
       controller.updateSource(
-          workspaceId: 'workspace',
-          cachedViews: {databaseFindViewId: reads.views[databaseFindViewId]!},
-          excludedViewIds: [],
-          ready: true);
+        workspaceId: 'workspace',
+        cachedViews: {databaseFindViewId: reads.views[databaseFindViewId]!},
+        excludedViewIds: [],
+        ready: true,
+      );
       held.complete();
       await tester.pump(const Duration(seconds: 5));
       expect(reads.calls, isEmpty);
@@ -114,9 +130,10 @@ void main() {
       ..setText(databaseFindViewId, 'native documentation');
     final old = reads.hold(databaseFindCellStage);
     final session = DatabaseFindSession(
-        viewId: databaseFindViewId,
-        provider: reads.provider(),
-        isOwnerActive: () => true);
+      viewId: databaseFindViewId,
+      provider: reads.provider(),
+      isOwnerActive: () => true,
+    );
     try {
       session.search('nat', const FindOptions());
       await tester.pump(DatabaseFindSession.debounce);
@@ -130,8 +147,9 @@ void main() {
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 20));
       }
-      print(
-          'SCROLL_SEARCH database recovery status=${session.status.name} hits=${session.matches.length} maxInFlight=${reads.maxInFlight}');
+      debugPrint(
+        'SCROLL_SEARCH database recovery status=${session.status.name} hits=${session.matches.length} maxInFlight=${reads.maxInFlight}',
+      );
       expect(session.query, 'native documentation');
       expect(session.status, DatabaseFindStatus.ready);
       expect(session.matches, hasLength(1));
@@ -156,14 +174,16 @@ void main() {
     final occupied = Completer<void>();
     reads.scheduler.schedule(Object(), () => true, () => occupied.future);
     final controller = WorkspaceTitleSearchController(
-        provider: reads.provider(),
-        isWorkspaceCurrent: (id) => id == 'workspace');
+      provider: reads.provider(),
+      isWorkspaceCurrent: (id) => id == 'workspace',
+    );
     try {
       controller.updateSource(
-          workspaceId: 'workspace',
-          cachedViews: {databaseFindViewId: reads.views[databaseFindViewId]!},
-          excludedViewIds: [],
-          ready: true);
+        workspaceId: 'workspace',
+        cachedViews: {databaseFindViewId: reads.views[databaseFindViewId]!},
+        excludedViewIds: [],
+        ready: true,
+      );
       controller.search('nat', const CommandPaletteFilter(), []);
       await tester.pump();
       controller
@@ -175,12 +195,14 @@ void main() {
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 20));
       }
-      print(
-          'SCROLL_SEARCH title recovery hits=${controller.results.length} reads=${reads.calls.length}');
+      debugPrint(
+        'SCROLL_SEARCH title recovery hits=${controller.results.length} reads=${reads.calls.length}',
+      );
       expect(controller.results, hasLength(1));
       expect(
-          controller.canUseResult(databaseFindViewId, 'native documentation'),
-          isTrue);
+        controller.canUseResult(databaseFindViewId, 'native documentation'),
+        isTrue,
+      );
     } finally {
       if (!occupied.isCompleted) occupied.complete();
       controller.dispose();

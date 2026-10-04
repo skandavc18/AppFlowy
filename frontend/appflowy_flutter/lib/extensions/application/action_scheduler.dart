@@ -305,7 +305,10 @@ class ActionScheduler extends ChangeNotifier {
   }
 
   void _recordOutcome(
-      String extensionId, ActionDefinition action, ActionRun run) {
+    String extensionId,
+    ActionDefinition action,
+    ActionRun run,
+  ) {
     _log.record(run);
 
     final key = '$extensionId/${action.id}';

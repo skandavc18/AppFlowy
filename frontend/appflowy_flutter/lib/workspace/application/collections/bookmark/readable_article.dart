@@ -109,9 +109,10 @@ ReadableArticle parseReadableArticle(String html, {Uri? baseUrl}) {
   for (final element in document.querySelectorAll('*').toList()) {
     if (element.attributes.containsKey('hidden') ||
         element.attributes['aria-hidden'] == 'true' ||
-        RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden',
-                caseSensitive: false)
-            .hasMatch(element.attributes['style'] ?? '')) {
+        RegExp(
+          r'display\s*:\s*none|visibility\s*:\s*hidden',
+          caseSensitive: false,
+        ).hasMatch(element.attributes['style'] ?? '')) {
       element.remove();
     }
   }
@@ -606,7 +607,9 @@ class _MarkdownWriter {
     final resolved = base?.resolveUri(parsed) ?? parsed;
     if (!const {'http', 'https'}.contains(resolved.scheme) ||
         resolved.host.isEmpty ||
-        resolved.userInfo.isNotEmpty) return null;
+        resolved.userInfo.isNotEmpty) {
+      return null;
+    }
     // Encode Markdown URL delimiters rather than permitting injected markup.
     return resolved.toString().replaceAll('(', '%28').replaceAll(')', '%29');
   }

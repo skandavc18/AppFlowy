@@ -324,7 +324,6 @@ class _SymbolRow extends StatelessWidget {
             style: theme.face(
               fontSize: 12.5,
               color: theme.textStrong,
-              axis: RepoMetrics.strongWeightAxis,
               weight: FontWeight.w600,
             ),
           ),

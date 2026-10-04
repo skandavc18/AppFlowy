@@ -183,7 +183,9 @@ class DrawScenePainter extends CustomPainter {
 
     final outline = switch (element.strokeStyle) {
       'dashed' => _dash(
-          geometry.outline, [element.strokeWidth * 4, element.strokeWidth * 3]),
+          geometry.outline,
+          [element.strokeWidth * 4, element.strokeWidth * 3],
+        ),
       'dotted' => _dash(geometry.outline, [0.5, element.strokeWidth * 3]),
       _ => geometry.outline,
     };

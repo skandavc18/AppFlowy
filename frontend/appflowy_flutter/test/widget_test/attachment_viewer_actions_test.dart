@@ -277,8 +277,8 @@ void main() {
           expect(
             group.background,
             DocumentViewportStyle.of(
-                    tester.element(find.byType(InteractiveImageToolbar)))
-                .canvas,
+              tester.element(find.byType(InteractiveImageToolbar)),
+            ).canvas,
           );
         }
         expect(tester.takeException(), isNull);

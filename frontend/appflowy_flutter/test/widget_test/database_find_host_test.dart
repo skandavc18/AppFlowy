@@ -418,8 +418,11 @@ void main() {
     final retry = find.byKey(const ValueKey('databaseFindRetry'));
     await tester.ensureVisible(retry);
     await tester.pump();
-    expect(retry.hitTestable(), findsOneWidget,
-        reason: 'Retry belongs to the clipped, scrollable details panel');
+    expect(
+      retry.hitTestable(),
+      findsOneWidget,
+      reason: 'Retry belongs to the clipped, scrollable details panel',
+    );
     await tester.tap(retry);
     await tester.pump(DatabaseFindSession.debounce);
     expect(find.byType(FindReplaceBar), findsOneWidget);

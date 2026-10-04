@@ -93,10 +93,14 @@ final _aurobindo = _file(
 void main() {
   group('packed sexagesimal', () {
     test('decodes minutes and fractional seconds like JHora', () {
-      expect(parseJhdSexagesimal('19.1625', 'time'),
-          closeTo(19 + 16 / 60 + 15 / 3600, 1e-12));
-      expect(parseJhdSexagesimal('19.1615', 'time'),
-          closeTo(19 + 16 / 60 + 9 / 3600, 1e-12));
+      expect(
+        parseJhdSexagesimal('19.1625', 'time'),
+        closeTo(19 + 16 / 60 + 15 / 3600, 1e-12),
+      );
+      expect(
+        parseJhdSexagesimal('19.1615', 'time'),
+        closeTo(19 + 16 / 60 + 9 / 3600, 1e-12),
+      );
       expect(
         parseJhdSexagesimal('17.506666666666668', 'time'),
         closeTo(17 + 50 / 60 + 40 / 3600, 1e-9),
@@ -107,7 +111,9 @@ void main() {
         closeTo(-(4 + 39 / 60 + 16.002 / 3600), 1e-9),
       );
       expect(
-          parseJhdSexagesimal('0.000167', 'time') * 3600, closeTo(1.002, 1e-9));
+        parseJhdSexagesimal('0.000167', 'time') * 3600,
+        closeTo(1.002, 1e-9),
+      );
       expect(() => parseJhdSexagesimal('5.75', 'time'), throwsFormatException);
       expect(() => parseJhdSexagesimal('x', 'time'), throwsFormatException);
     });

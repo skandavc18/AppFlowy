@@ -97,60 +97,64 @@ class _FeedState extends State<_Feed> {
               SliverPadding(
                 padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
                 sliver: SliverToBoxAdapter(
-                    child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                        maxWidth: BookmarkMetrics.feedWidth),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final group in groups) ...[
-                          if (group.label.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                BookmarkMetrics.gutter,
-                                BookmarkMetrics.space4,
-                                BookmarkMetrics.gutter,
-                                BookmarkMetrics.space2,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: BookmarkMetrics.feedWidth,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final group in groups) ...[
+                            if (group.label.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  BookmarkMetrics.gutter,
+                                  BookmarkMetrics.space4,
+                                  BookmarkMetrics.gutter,
+                                  BookmarkMetrics.space2,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      _label(group.label).toUpperCase(),
+                                      style: widget.theme.sectionLabel,
+                                    ),
+                                    const SizedBox(
+                                      width: BookmarkMetrics.space2,
+                                    ),
+                                    Text(
+                                      '${group.entries.length}',
+                                      style: widget.theme.meta,
+                                    ),
+                                  ],
+                                ),
                               ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    _label(group.label).toUpperCase(),
-                                    style: widget.theme.sectionLabel,
-                                  ),
-                                  const SizedBox(width: BookmarkMetrics.space2),
-                                  Text(
-                                    '${group.entries.length}',
-                                    style: widget.theme.meta,
-                                  ),
-                                ],
+                            for (final entry in group.entries)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  BookmarkMetrics.gutter,
+                                  0,
+                                  BookmarkMetrics.gutter,
+                                  BookmarkMetrics.space3,
+                                ),
+                                child: BookmarkFeedRow(
+                                  key: ValueKey(entry.id),
+                                  entry: entry,
+                                  theme: widget.theme,
+                                  controller: controller,
+                                  collection: widget.collection,
+                                  showDescription:
+                                      controller.settings.showDescriptions,
+                                ),
                               ),
-                            ),
-                          for (final entry in group.entries)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                BookmarkMetrics.gutter,
-                                0,
-                                BookmarkMetrics.gutter,
-                                BookmarkMetrics.space3,
-                              ),
-                              child: BookmarkFeedRow(
-                                key: ValueKey(entry.id),
-                                entry: entry,
-                                theme: widget.theme,
-                                controller: controller,
-                                collection: widget.collection,
-                                showDescription:
-                                    controller.settings.showDescriptions,
-                              ),
-                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                )),
-              )
+                ),
+              ),
           ],
         ),
       ),

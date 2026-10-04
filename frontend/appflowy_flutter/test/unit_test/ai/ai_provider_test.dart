@@ -27,7 +27,9 @@ void main() {
 
     test('a malformed name is refused rather than half read', () {
       expect(
-          CustomAIModelName.decode('${CustomAIModelName.prefix}abc'), isNull);
+        CustomAIModelName.decode('${CustomAIModelName.prefix}abc'),
+        isNull,
+      );
       expect(
         CustomAIModelName.decode('${CustomAIModelName.prefix}abc/'),
         isNull,

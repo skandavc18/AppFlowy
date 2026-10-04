@@ -33,7 +33,9 @@ void main() {
             final record = fixture.record;
             final frameElement = record.frameKey.currentContext;
             expect(
-                tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
+              tester.getSize(_byKey(record.frameKey)),
+              const Size(400, 240),
+            );
             // Header and padding exist even though the expensive body does not.
             expect(tester.getSize(_byKey(record.blockKey)).height, 320);
             expect(tester.getSize(_byKey(record.headerKey)).height, 48);
@@ -78,7 +80,9 @@ void main() {
             expect(position.pixels, 0);
             expect(record.frameKey.currentContext, same(frameElement));
             expect(
-                tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
+              tester.getSize(_byKey(record.frameKey)),
+              const Size(400, 240),
+            );
             _expectCold(record);
           });
         },
@@ -118,8 +122,10 @@ void main() {
                 await _pumpIdle(tester);
                 expect(position.isScrollingNotifier.value, isTrue);
                 _expectCold(record);
-                expect(tester.getSize(_byKey(record.frameKey)),
-                    const Size(400, 320));
+                expect(
+                  tester.getSize(_byKey(record.frameKey)),
+                  const Size(400, 320),
+                );
               } finally {
                 await pan.end();
               }
@@ -142,8 +148,11 @@ void main() {
               expect(after.header, before.header);
               expect(after.pageHeader, before.pageHeader);
               expect((after.belowY - before.belowY).abs(), lessThan(0.1));
-              expect(position.pixels, idleOffset,
-                  reason: 'admission must not scroll');
+              expect(
+                position.pixels,
+                idleOffset,
+                reason: 'admission must not scroll',
+              );
               expect(record.frameKey.currentContext, same(frameElement));
               final state = record.bodyKey.currentState!;
               final element = record.bodyKey.currentContext!;
@@ -201,8 +210,10 @@ void main() {
                 await resize.up();
               }
               await tester.pump();
-              expect(tester.getSize(_byKey(record.frameKey)),
-                  const Size(360, 360));
+              expect(
+                tester.getSize(_byKey(record.frameKey)),
+                const Size(360, 360),
+              );
               expect(record.width, 360);
               expect(record.height, 360);
               expect(record.widthCommits, 1);
@@ -250,8 +261,11 @@ void main() {
               expect(loader.calls, 1);
               expect(loader.source, 'fake-source');
               expect(loader.name, 'preview.txt');
-              expect(record.initializations, 0,
-                  reason: 'the fake file is still pending');
+              expect(
+                record.initializations,
+                0,
+                reason: 'the fake file is still pending',
+              );
               expect(record.bodyKey.currentContext, isNull);
               expect(position.pixels, idleOffset);
               expect(tester.getRect(_byKey(record.frameKey)), before.frame);
@@ -305,8 +319,11 @@ void main() {
             tester,
             shrinkWrap,
             (fixture) async {
-              _expectProductionHierarchy(tester, fixture,
-                  previewEnabled: false);
+              _expectProductionHierarchy(
+                tester,
+                fixture,
+                previewEnabled: false,
+              );
               _expectOutsidePreload(tester, fixture);
               // No idle pump precedes this assertion. The renderer must exclude
               // editable code even when its identical fixed frame is only cached.
@@ -316,8 +333,10 @@ void main() {
               final state = record.bodyKey.currentState!;
               final element = record.bodyKey.currentContext!;
               _expectSameBody(record, state, element);
-              expect(tester.getSize(_byKey(record.frameKey)),
-                  const Size(400, 240));
+              expect(
+                tester.getSize(_byKey(record.frameKey)),
+                const Size(400, 240),
+              );
               expect(tester.getSize(_byKey(record.blockKey)).height, 320);
               await _pumpIdle(tester);
               _expectSameBody(record, state, element);
@@ -399,7 +418,9 @@ void _expectProductionHierarchy(
   ]) {
     expect(
       find.ancestor(
-          of: frame, matching: find.byType(type, skipOffstage: false)),
+        of: frame,
+        matching: find.byType(type, skipOffstage: false),
+      ),
       findsOneWidget,
       reason: 'the actual frame must be under $type',
     );

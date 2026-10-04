@@ -45,27 +45,31 @@ void main() {
           ),
         );
         try {
-          await tester.pumpWidget(MaterialApp(
-            theme: ThemeData(platform: TargetPlatform.windows),
-            home: Scaffold(
-              body: PremiumScrollScope(
-                enabled: true,
-                child: SingleChildScrollView(
-                  controller: page,
-                  child: Column(children: [
-                    SizedBox(
-                      width: 500,
-                      height: 320,
-                      child: document
-                          ? editorEmbedScrollRegion(node, content)
-                          : ScrollActivationRegion(child: content),
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData(platform: TargetPlatform.windows),
+              home: Scaffold(
+                body: PremiumScrollScope(
+                  enabled: true,
+                  child: SingleChildScrollView(
+                    controller: page,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: 500,
+                          height: 320,
+                          child: document
+                              ? editorEmbedScrollRegion(node, content)
+                              : ScrollActivationRegion(child: content),
+                        ),
+                        const SizedBox(height: 2000),
+                      ],
                     ),
-                    const SizedBox(height: 2000),
-                  ]),
+                  ),
                 ),
               ),
             ),
-          ));
+          );
           await tester.pumpAndSettle();
           if (document) expect(focus.hasFocus, isTrue);
           final element = embedKey.currentContext;
@@ -85,15 +89,19 @@ void main() {
           expect(page.offset, greaterThan(0));
           page.jumpTo(0);
           await tester.pumpAndSettle();
-          await tester.tap(find.byKey(const ValueKey('activate-embed')),
-              kind: PointerDeviceKind.mouse);
+          await tester.tap(
+            find.byKey(const ValueKey('activate-embed')),
+            kind: PointerDeviceKind.mouse,
+          );
           await tester.pumpAndSettle();
           final before = page.offset;
           await _wheel(tester, find.byKey(embedKey), 40);
           expect(wheels, 1);
           expect(page.offset, before);
-          await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-              physicalKey: PhysicalKeyboardKey.escape);
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.escape,
+            physicalKey: PhysicalKeyboardKey.escape,
+          );
           await tester.pumpAndSettle();
           await _wheel(tester, find.byKey(embedKey), 40);
           expect(wheels, 1);
@@ -116,65 +124,78 @@ void main() {
     final page = ScrollController();
     final body = ScrollController();
     try {
-      await tester.pumpWidget(MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.windows),
-        home: Scaffold(
-          body: PremiumScrollScope(
-            enabled: true,
-            child: SingleChildScrollView(
-              controller: page,
-              child: Column(children: [
-                SizedBox(
-                  width: 500,
-                  height: 320,
-                  child: ScrollActivationRegion(
-                    child: StandaloneFilePage(
-                      header: const SizedBox(
-                        key: ValueKey('file-activation'),
-                        height: 60,
-                        child: Text('File identity'),
-                      ),
-                      body: StandaloneFileScrollRegion(
-                        controller: body,
-                        child: ListView.builder(
-                          key: const ValueKey('file-body'),
-                          controller: body,
-                          itemCount: 100,
-                          itemExtent: 32,
-                          itemBuilder: (_, i) => Text('Content $i'),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.windows),
+          home: Scaffold(
+            body: PremiumScrollScope(
+              enabled: true,
+              child: SingleChildScrollView(
+                controller: page,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 500,
+                      height: 320,
+                      child: ScrollActivationRegion(
+                        child: StandaloneFilePage(
+                          header: const SizedBox(
+                            key: ValueKey('file-activation'),
+                            height: 60,
+                            child: Text('File identity'),
+                          ),
+                          body: StandaloneFileScrollRegion(
+                            controller: body,
+                            child: ListView.builder(
+                              key: const ValueKey('file-body'),
+                              controller: body,
+                              itemCount: 100,
+                              itemExtent: 32,
+                              itemBuilder: (_, i) => Text('Content $i'),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 2000),
+                  ],
                 ),
-                const SizedBox(height: 2000),
-              ]),
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('file-activation')),
-          kind: PointerDeviceKind.mouse);
+      await tester.tap(
+        find.byKey(const ValueKey('file-activation')),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
       final nested = tester.state<NestedScrollViewState>(
         find.byType(NestedScrollView),
       );
       final target = find.byKey(const ValueKey('file-body'));
-      await tester.sendEventToBinding(PointerScrollEvent(
-        position: tester.getCenter(target),
-        scrollDelta: const Offset(0, 120),
-      ));
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(target),
+          scrollDelta: const Offset(0, 120),
+        ),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 16));
       final retained = nested.outerController.offset + body.offset;
       expect(retained, greaterThan(0));
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-          physicalKey: PhysicalKeyboardKey.escape);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.escape,
+        physicalKey: PhysicalKeyboardKey.escape,
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(nested.outerController.offset + body.offset, retained,
-          reason: 'Closing the gate must cancel its renderer-owned ticker.');
+      expect(
+        nested.outerController.offset + body.offset,
+        retained,
+        reason: 'Closing the gate must cancel its renderer-owned ticker.',
+      );
       await _wheel(tester, target, 40);
       expect(page.offset, greaterThan(0));
       expect(nested.outerController.offset + body.offset, retained);
@@ -189,10 +210,12 @@ void main() {
 }
 
 Future<void> _wheel(WidgetTester tester, Finder target, double delta) async {
-  await tester.sendEventToBinding(PointerScrollEvent(
-    position: tester.getCenter(target),
-    scrollDelta: Offset(0, delta),
-  ));
+  await tester.sendEventToBinding(
+    PointerScrollEvent(
+      position: tester.getCenter(target),
+      scrollDelta: Offset(0, delta),
+    ),
+  );
   await tester.pumpAndSettle(const Duration(milliseconds: 16));
 }
 
@@ -200,8 +223,11 @@ Future<void> _pan(WidgetTester tester, Offset position) async {
   final gesture = await tester.createGesture(kind: PointerDeviceKind.trackpad);
   await gesture.panZoomStart(position);
   for (var i = 1; i <= 3; i++) {
-    await gesture.panZoomUpdate(position,
-        pan: Offset(0, -20.0 * i), timeStamp: Duration(milliseconds: i * 10));
+    await gesture.panZoomUpdate(
+      position,
+      pan: Offset(0, -20.0 * i),
+      timeStamp: Duration(milliseconds: i * 10),
+    );
   }
   await gesture.panZoomEnd(timeStamp: const Duration(milliseconds: 200));
   await tester.pumpAndSettle();

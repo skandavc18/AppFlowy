@@ -71,7 +71,9 @@ class _RowActionsPosition extends FlowDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(
-          int index, BoxConstraints constraints) =>
+    int index,
+    BoxConstraints constraints,
+  ) =>
       BoxConstraints.loose(constraints.biggest);
 
   @override

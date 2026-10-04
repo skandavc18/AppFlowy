@@ -89,7 +89,9 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
           if (!mounted ||
               generation != _generation ||
               !_available ||
-              next.id != _view.id) return;
+              next.id != _view.id) {
+            return;
+          }
           final rebind = !_sameSourceBinding(source, next.source);
           setState(() {
             _view = ViewPB.fromBuffer(next.writeToBuffer());
@@ -173,13 +175,15 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
         builder: (context, _) => FolderGalleryHeader(
           // Retain through provider statuses; invalidate open identity actions
           // only when the actual source/permission binding changes.
-          key: ValueKey((
-            view.id,
-            source.cacheKey,
-            source.readOnly,
-            _available,
-            _canEditSource
-          )),
+          key: ValueKey(
+            (
+              view.id,
+              source.cacheKey,
+              source.readOnly,
+              _available,
+              _canEditSource
+            ),
+          ),
           controller: identity,
           searchController: _search,
           showControls: false,
@@ -244,15 +248,20 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
     final previous = source;
     final operation =
         _writes.then((_) => _writeSource(next, previous, generation));
-    _writes =
-        operation.then<void>((_) {}, onError: (Object error, StackTrace _) {
-      Log.error('Unable to save the folder source', error);
-    });
+    _writes = operation.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace _) {
+        Log.error('Unable to save the folder source', error);
+      },
+    );
     return _writes;
   }
 
   Future<void> _writeSource(
-      CollectionSource next, CollectionSource previous, int generation) async {
+    CollectionSource next,
+    CollectionSource previous,
+    int generation,
+  ) async {
     if (!_canEditSource) return;
     final viewId = view.id;
     bool current() =>
@@ -269,7 +278,9 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
         live.id != viewId ||
         live.isLocked ||
         live.source.cacheKey != previous.cacheKey ||
-        live.source.readOnly != previous.readOnly) return;
+        live.source.readOnly != previous.readOnly) {
+      return;
+    }
     // A forgiving read codec must not erase malformed unrelated metadata.
     ViewCoverCodec.decodeExtra(live.extra);
     final extra = next.mergeIntoExtra(live.extra);

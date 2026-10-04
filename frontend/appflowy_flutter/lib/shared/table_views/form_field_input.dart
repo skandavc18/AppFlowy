@@ -538,7 +538,9 @@ class _FormFieldInputState extends State<FormFieldInput> {
                   initialValue: task.name,
                   readOnly: !_enabled,
                   decoration: const InputDecoration(
-                      border: InputBorder.none, isDense: true),
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
                   onChanged: (name) => _change(
                     FormChecklistValue([
                       for (final current in value.tasks)
@@ -674,7 +676,10 @@ class _FormDateInputDialogState extends State<FormDateInputDialog> {
                           ? null
                           : (range, start, end) => setState(
                                 () => _draft = _draft.copyWith(
-                                    start: start, end: end, isRange: range),
+                                  start: start,
+                                  end: end,
+                                  isRange: range,
+                                ),
                               ),
                     ),
                   ),

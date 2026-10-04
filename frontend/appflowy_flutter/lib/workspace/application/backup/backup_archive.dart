@@ -305,7 +305,7 @@ Map<String, Object?> _extractArchive(
     final archive = ZipDecoder().decodeBuffer(input);
     final files = [
       for (final file in archive.files)
-        if (file.isFile) file
+        if (file.isFile) file,
     ];
     final total = files.fold<int>(0, (sum, file) => sum + file.size);
     var done = 0;

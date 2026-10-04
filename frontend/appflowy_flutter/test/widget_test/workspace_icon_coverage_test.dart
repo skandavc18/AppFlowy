@@ -93,8 +93,10 @@ void main() {
               final finder = find.byKey(ValueKey(name));
               final context = tester.element(finder);
               expect(PaperTheme.isEnabled(context), appearance == 'paper');
-              expect(Theme.of(context).brightness,
-                  appearance == 'dark' ? Brightness.dark : Brightness.light);
+              expect(
+                Theme.of(context).brightness,
+                appearance == 'dark' ? Brightness.dark : Brightness.light,
+              );
               expect(MediaQuery.textScalerOf(context).scale(1), 2);
               expect(tester.getSize(finder), Size.square(size));
               final picture = _picture(tester, finder);
@@ -111,13 +113,17 @@ void main() {
                 vivid
                     ? null
                     : ColorFilter.mode(
-                        workspaceGlyphInk(context), BlendMode.srcIn),
+                        workspaceGlyphInk(context),
+                        BlendMode.srcIn,
+                      ),
                 reason: '$appearance/$style/$name',
               );
               if (vivid) {
                 expect(
                   find.descendant(
-                      of: finder, matching: find.byType(ColorFiltered)),
+                    of: finder,
+                    matching: find.byType(ColorFiltered),
+                  ),
                   findsNothing,
                   reason: '$name must display its real illustration colors',
                 );
@@ -188,7 +194,7 @@ void main() {
         };
         for (final style in [
           DefaultIconStyle.vivid,
-          DefaultIconStyle.monochrome
+          DefaultIconStyle.monochrome,
         ]) {
           styles.value = style;
           await settleVividIconPictures(tester);
@@ -215,8 +221,10 @@ void main() {
             );
             if (vivid) {
               expect(picture.bytesLoader, isNot(outlines[name]), reason: name);
-              expect(WorkspaceGlyphs.vividNameFor(name),
-                  isNot(startsWith('utility-')));
+              expect(
+                WorkspaceGlyphs.vividNameFor(name),
+                isNot(startsWith('utility-')),
+              );
             } else {
               expect(picture.bytesLoader, outlines[name], reason: name);
             }
@@ -291,7 +299,9 @@ void main() {
       );
       await settleVividIconPictures(tester);
       expect(
-          tester.widget<IconButton>(find.byType(IconButton)).onPressed, isNull);
+        tester.widget<IconButton>(find.byType(IconButton)).onPressed,
+        isNull,
+      );
       for (final entry in {
         'disabled': ('print', disabledInk),
         'destructive': ('trash', dangerInk),
@@ -299,8 +309,10 @@ void main() {
       }.entries) {
         final picture = _picture(tester, find.byKey(ValueKey(entry.key)));
         _expectSource(picture, defaultIconSvg(entry.value.$1)!);
-        expect(picture.colorFilter,
-            ColorFilter.mode(entry.value.$2, BlendMode.srcIn));
+        expect(
+          picture.colorFilter,
+          ColorFilter.mode(entry.value.$2, BlendMode.srcIn),
+        );
       }
       final enabled = _picture(tester, find.byKey(const ValueKey('enabled')));
       _expectSource(enabled, vividIconSvg('print')!);
@@ -326,18 +338,24 @@ void main() {
     final renderers = <Widget>[
       for (final icon in saved) RawEmojiIconWidget(emoji: icon, emojiSize: 18),
       IconWidget(
-          size: 18,
-          iconsData: IconsData('appflowy_vivid_essentials', 'archive', null)),
+        size: 18,
+        iconsData: IconsData('appflowy_vivid_essentials', 'archive', null),
+      ),
       FlowySvg.string(source),
       SvgPicture.string(source),
       const FlowySvg(FlowySvgData('assets/custom/print.svg')),
-      const FlowySvg(FlowySvgData('assets/flowy_icons/16x/image.svg'),
-          blendMode: null),
+      const FlowySvg(
+        FlowySvgData('assets/flowy_icons/16x/image.svg'),
+        blendMode: null,
+      ),
     ];
     for (final renderer in renderers) {
       expect(
-        WorkspaceGlyph.adapt(renderer,
-            color: Colors.red, role: WorkspaceGlyphRole.preserveInk),
+        WorkspaceGlyph.adapt(
+          renderer,
+          color: Colors.red,
+          role: WorkspaceGlyphRole.preserveInk,
+        ),
         same(renderer),
       );
     }
@@ -398,9 +416,13 @@ SvgPicture _picture(WidgetTester tester, Finder glyph) =>
 void _expectSource(SvgPicture picture, String source) {
   final loader = picture.bytesLoader as SvgStringLoader;
   expect(
-      loader,
-      SvgStringLoader(source,
-          theme: loader.theme, colorMapper: loader.colorMapper));
+    loader,
+    SvgStringLoader(
+      source,
+      theme: loader.theme,
+      colorMapper: loader.colorMapper,
+    ),
+  );
 }
 
 class _NoIconAssets extends CachingAssetBundle {

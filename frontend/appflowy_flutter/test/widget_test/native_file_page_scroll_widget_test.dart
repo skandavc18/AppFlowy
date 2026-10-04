@@ -31,32 +31,41 @@ void main() {
       final gate = ValueNotifier(false);
       try {
         await mountFileControls(
-            tester,
-            PremiumScrollScope(
-                enabled: true,
-                child: StandaloneFilePage(
-                  header: SizedBox(
-                      key: _header,
-                      height: 200,
-                      child: Row(children: [
-                        const Text('Identity'),
-                        const Spacer(),
-                        TextButton(
-                            key: _right,
-                            onPressed: () {},
-                            child: const Text('Tools'))
-                      ])),
-                  body: ValueListenableBuilder<bool>(
-                      valueListenable: gate,
-                      builder: (_, blocked, child) =>
-                          ScrollGestureGate(blocked: blocked, child: child!),
-                      child: NativeFilePageScroll(
-                          bridge: bridge,
-                          child: SizedBox.expand(
-                              key: _body,
-                              child: TextField(controller: editing)))),
-                )),
-            mode: mode);
+          tester,
+          PremiumScrollScope(
+            enabled: true,
+            child: StandaloneFilePage(
+              header: SizedBox(
+                key: _header,
+                height: 200,
+                child: Row(
+                  children: [
+                    const Text('Identity'),
+                    const Spacer(),
+                    TextButton(
+                      key: _right,
+                      onPressed: () {},
+                      child: const Text('Tools'),
+                    ),
+                  ],
+                ),
+              ),
+              body: ValueListenableBuilder<bool>(
+                valueListenable: gate,
+                builder: (_, blocked, child) =>
+                    ScrollGestureGate(blocked: blocked, child: child!),
+                child: NativeFilePageScroll(
+                  bridge: bridge,
+                  child: SizedBox.expand(
+                    key: _body,
+                    child: TextField(controller: editing),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          mode: mode,
+        );
         bridge.attach(transport);
         expect(await bridge.install(kinetic: false), isTrue);
         final page =
@@ -70,15 +79,22 @@ void main() {
             tester.getRect(find.byType(StandaloneFilePage)).bottomCenter -
                 const Offset(0, 30);
         Future<void> input() async {
-          await tester.sendEventToBinding(PointerScrollEvent(
-              position: point, scrollDelta: const Offset(0, 1)));
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: point,
+              scrollDelta: const Offset(0, 1),
+            ),
+          );
           await tester.pump();
         }
 
         await input();
-        expect(page.outerController.offset, 0,
-            reason:
-                'Native wrapper excludes both root Premium and Flutter wheel consumption');
+        expect(
+          page.outerController.offset,
+          0,
+          reason:
+              'Native wrapper excludes both root Premium and Flutter wheel consumption',
+        );
         final first = transport.input(60);
         await tester.pump();
         expect((await first as Map)['actual'], 60);
@@ -95,16 +111,21 @@ void main() {
         transport.moves.last.reply.complete(40);
         await tester.pump();
         expect((await down as Map)['actual'], 180);
-        expect(find.byKey(_header, skipOffstage: false).hitTestable(),
-            findsNothing);
+        expect(
+          find.byKey(_header, skipOffstage: false).hitTestable(),
+          findsNothing,
+        );
         expect(tester.getSize(find.byKey(_body)), bodySize);
         final fractional = transport.input(-1);
         transport.moves.last.reply.complete({'actual': -0.8, 'atStart': false});
         await tester.pump();
         expect((await fractional as Map)['actual'], -0.8);
-        expect(page.outerController.offset, 200,
-            reason:
-                'Rounded interior movement is not permission to reveal chrome');
+        expect(
+          page.outerController.offset,
+          200,
+          reason:
+              'Rounded interior movement is not permission to reveal chrome',
+        );
         final reverse = transport.input(-70);
         await tester.pump();
         expect(page.outerController.offset, 200);
@@ -114,8 +135,10 @@ void main() {
         expect(page.outerController.offset, 170);
         expect(tester.element(find.byKey(_body)), same(bodyElement));
         expect(editing.text, 'retained draft');
-        expect(editing.selection,
-            const TextSelection(baseOffset: 1, extentOffset: 6));
+        expect(
+          editing.selection,
+          const TextSelection(baseOffset: 1, extentOffset: 6),
+        );
 
         // Deactivation filters the ENTIRE native target; stale DOM callbacks
         // cannot bypass the gate even though this renderer stays mounted.
@@ -188,12 +211,18 @@ void main() {
       expect(transport.moves, hasLength(1));
       transport.controls.first.complete(null);
       await tester.pump();
-      expect(transport.controls, hasLength(2),
-          reason: 'one coalesced control follow-up');
+      expect(
+        transport.controls,
+        hasLength(2),
+        reason: 'one coalesced control follow-up',
+      );
       transport.controls.last.complete(null);
       await tester.pump();
-      expect(transport.moves, hasLength(1),
-          reason: 'body call is still actually in flight');
+      expect(
+        transport.moves,
+        hasLength(1),
+        reason: 'body call is still actually in flight',
+      );
       transport.moves.first.reply.complete(0);
       await tester.pump();
       expect(await old, isNull);
@@ -223,7 +252,7 @@ void main() {
       for (final invalid in [
         null,
         {'actual': 0},
-        {'actual': 0, 'atStart': 'true'}
+        {'actual': 0, 'atStart': 'true'},
       ]) {
         final pending = transport.input(-1);
         transport.moves.last.reply.complete(invalid);
@@ -588,37 +617,42 @@ class _Transport extends Fake implements InAppWebViewController {
   }
 
   @override
-  void addJavaScriptHandler(
-      {required String handlerName,
-      required JavaScriptHandlerCallback callback}) {
+  void addJavaScriptHandler({
+    required String handlerName,
+    required JavaScriptHandlerCallback callback,
+  }) {
     handler = callback;
   }
 
   @override
-  JavaScriptHandlerCallback? removeJavaScriptHandler(
-          {required String handlerName}) =>
+  JavaScriptHandlerCallback? removeJavaScriptHandler({
+    required String handlerName,
+  }) =>
       handler;
   @override
-  Future<dynamic> evaluateJavascript(
-      {required String source, ContentWorld? contentWorld}) async {
+  Future<dynamic> evaluateJavascript({
+    required String source,
+    ContentWorld? contentWorld,
+  }) async {
     if (source.contains('const documentId =')) {
-      final quoted = RegExp(r'const documentId = ("[^"]+");')
-          .firstMatch(source)!
-          .group(1)!;
+      final quoted =
+          RegExp('const documentId = ("[^"]+");').firstMatch(source)!.group(1)!;
       document = jsonDecode(quoted) as String;
       return true;
     }
     if (source.contains('?.consumeVertical(')) {
       final args = source.substring(
-          source.indexOf('?.consumeVertical(') + '?.consumeVertical('.length,
-          source.lastIndexOf(');'));
+        source.indexOf('?.consumeVertical(') + '?.consumeVertical('.length,
+        source.lastIndexOf(');'),
+      );
       final values = jsonDecode('[$args]') as List;
       final move = _Move((values[2] as num).toDouble());
       moves.add(move);
       // Numeric fixture replies represent the original verified-boundary
       // cases. Structured replies exercise interior rounding and bad metadata.
       return move.reply.future.then(
-          (value) => value is num ? {'actual': value, 'atStart': true} : value);
+        (value) => value is num ? {'actual': value, 'atStart': true} : value,
+      );
     }
     if (source.contains('?.cancel(') && holdCancellation) {
       final reply = Completer<Object?>();

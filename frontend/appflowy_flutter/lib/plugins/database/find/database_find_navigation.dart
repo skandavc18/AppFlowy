@@ -654,10 +654,11 @@ class RenderDatabaseFindAnchor extends RenderProxyBox {
     }
 
     boundaries(child!);
-    return surfaceFindTextRuns(child!,
-            includeEditable: true, excluded: excluded)
-        .where((run) => databaseFindRenderIsOnstage(run.render))
-        .toList();
+    return surfaceFindTextRuns(
+      child!,
+      includeEditable: true,
+      excluded: excluded,
+    ).where((run) => databaseFindRenderIsOnstage(run.render)).toList();
   }
 
   DatabaseFindGeometry measure(DatabaseFindMatch match) {

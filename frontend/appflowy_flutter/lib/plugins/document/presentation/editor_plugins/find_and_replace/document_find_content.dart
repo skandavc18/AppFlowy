@@ -151,7 +151,10 @@ class DocumentFindReadScheduler {
   /// A deadline may remove queued I/O without making the latest query inert.
   /// Callers bound retries; close/rebind cancels this alongside queued work.
   void whenAvailable(
-      Object owner, bool Function() isCurrent, VoidCallback retry) {
+    Object owner,
+    bool Function() isCurrent,
+    VoidCallback retry,
+  ) {
     _available[owner] = (isCurrent, retry);
     if (!_running) scheduleMicrotask(_publishAvailable);
   }

@@ -556,7 +556,9 @@ class _BookmarkReaderState extends State<BookmarkReader> {
             BookmarkFavicon(entry: entry, theme: theme, size: 22)
           else
             const SizedBox(
-                width: 22, child: Icon(Icons.article_outlined, size: 20)),
+              width: 22,
+              child: Icon(Icons.article_outlined, size: 20),
+            ),
           const SizedBox(width: BookmarkMetrics.space3),
           Expanded(
             child: Column(
@@ -726,97 +728,101 @@ class _BookmarkReaderState extends State<BookmarkReader> {
 
     final live = _mode == BookmarkReadingMode.live;
     final site = _mode == BookmarkReadingMode.embed ? _siteLink(entry) : null;
-    return Stack(fit: StackFit.expand, children: [
-      Offstage(
-        key: const ValueKey('bookmark-retained-live'),
-        offstage: !live,
-        child: ExcludeFocus(
-          excluding: !live,
-          child: ExcludeSemantics(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Offstage(
+          key: const ValueKey('bookmark-retained-live'),
+          offstage: !live,
+          child: ExcludeFocus(
             excluding: !live,
-            child: IgnorePointer(
-              ignoring: !live,
-              child: TickerMode(
-                enabled: live,
-                child: !canRenderLiveBookmarkPage
-                    ? _noSnapshot(theme, entry)
-                    : _liveStarted
-                        ? _livePage(theme, entry)
-                        : const SizedBox.shrink(),
-              ),
-            ),
-          ),
-        ),
-      ),
-      if (site != null)
-        _sitePage(theme, site)
-      else if (!live)
-        _localPage(theme, entry),
-      if (live && _readingError != null)
-        Positioned(
-          left: 8,
-          right: 8,
-          bottom: 8,
-          child: Material(
-            color: theme.panel,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Semantics(
-                liveRegion: true,
-                child: Text(_readingError!, style: theme.body),
-              ),
-            ),
-          ),
-        )
-      // The page stays usable while Reader waits for it to be readable.
-      else if (live && _readingBusy)
-        Positioned(
-          left: 8,
-          right: 8,
-          bottom: 8,
-          child: Align(
-            alignment: AlignmentDirectional.bottomStart,
-            child: Material(
-              key: const ValueKey('bookmark-reader-preparing'),
-              color: theme.panel,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Semantics(
-                  liveRegion: true,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: theme.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          BookmarkReaderStrings.preparing,
-                          style: theme.body,
-                        ),
-                      ),
-                    ],
-                  ),
+            child: ExcludeSemantics(
+              excluding: !live,
+              child: IgnorePointer(
+                ignoring: !live,
+                child: TickerMode(
+                  enabled: live,
+                  child: !canRenderLiveBookmarkPage
+                      ? _noSnapshot(theme, entry)
+                      : _liveStarted
+                          ? _livePage(theme, entry)
+                          : const SizedBox.shrink(),
                 ),
               ),
             ),
           ),
         ),
-    ]);
+        if (site != null)
+          _sitePage(theme, site)
+        else if (!live)
+          _localPage(theme, entry),
+        if (live && _readingError != null)
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 8,
+            child: Material(
+              color: theme.panel,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(_readingError!, style: theme.body),
+                ),
+              ),
+            ),
+          )
+        // The page stays usable while Reader waits for it to be readable.
+        else if (live && _readingBusy)
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 8,
+            child: Align(
+              alignment: AlignmentDirectional.bottomStart,
+              child: Material(
+                key: const ValueKey('bookmark-reader-preparing'),
+                color: theme.panel,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.accent,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            BookmarkReaderStrings.preparing,
+                            style: theme.body,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _localPage(BookmarkTheme theme, BookmarkEntry entry) {
-    if (_readingBusy)
+    if (_readingBusy) {
       return Center(child: CircularProgressIndicator(color: theme.accent));
+    }
     final text = _mode == BookmarkReadingMode.reader
         ? (_capture == null
             ? null
@@ -827,9 +833,10 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         : null;
     if (_readingError != null || (text == null && previewBuilder == null)) {
       return BookmarkEmptyState(
-          theme: theme,
-          icon: Icons.article_outlined,
-          title: _readingError ?? BookmarkReaderStrings.unavailable);
+        theme: theme,
+        icon: Icons.article_outlined,
+        title: _readingError ?? BookmarkReaderStrings.unavailable,
+      );
     }
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -859,8 +866,10 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         child: previewBuilder == null
             ? BookmarkArticleView(
                 key: ValueKey(
-                    (_mode, _capture?.generation, _snapshot?.articlePath)),
-                text: text!)
+                  (_mode, _capture?.generation, _snapshot?.articlePath),
+                ),
+                text: text!,
+              )
             : KeyedSubtree(
                 key: ValueKey(_snapshot?.articlePath),
                 child: Builder(builder: previewBuilder),
@@ -1356,7 +1365,9 @@ class _BookmarkReaderState extends State<BookmarkReader> {
       if (!mounted ||
           ticket != _readerRequest ||
           revision != _sourceRevision ||
-          mode != _mode) return;
+          mode != _mode) {
+        return;
+      }
       if (capture == null) {
         setState(() => _mode = BookmarkReadingMode.reader);
         return;

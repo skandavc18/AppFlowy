@@ -92,8 +92,10 @@ void main() {
       final document = (part.blueprint as TemplateDashboard).build(const {});
       expect(isAstrologyLibrary(document), isTrue);
       expect(astrologyEventsViewId(document), isEmpty);
-      expect(document.allWidgets.every((widget) => !widget.source.isBound),
-          isTrue);
+      expect(
+        document.allWidgets.every((widget) => !widget.source.isBound),
+        isTrue,
+      );
       for (final widget in document.allWidgets) {
         expect(template.requires, contains(widget.type.split('.')[1]));
       }
@@ -141,24 +143,33 @@ void main() {
             (astrologyDateAnalysisWidgetType, 0, below + 79, 12, 19),
           ],
         );
-        expect(widgets.map((widget) => widget.id).toSet(),
-            hasLength(widgets.length));
-        expect(document.settings.columns, 0,
-            reason: 'Keep responsive columns.');
+        expect(
+          widgets.map((widget) => widget.id).toSet(),
+          hasLength(widgets.length),
+        );
+        expect(
+          document.settings.columns,
+          0,
+          reason: 'Keep responsive columns.',
+        );
         expect(document.sections.single.layout, DashboardSectionLayout.free);
         final charts =
             widgets.where((widget) => widget.type == astrologyChartWidgetType);
-        expect(charts.map((widget) => widget.integer('division', fallback: 1)),
-            [1, 9, 1]);
-        expect(charts.map((widget) => widget.flag('transit')),
-            [false, false, true]);
+        expect(
+          charts.map((widget) => widget.integer('division', fallback: 1)),
+          [1, 9, 1],
+        );
+        expect(
+          charts.map((widget) => widget.flag('transit')),
+          [false, false, true],
+        );
         expect(charts.last.settings, {'transit': true});
         expect(
           _card(document, astrologyInputWidgetType).settings,
           {
             'profile': input.toJson(),
             'library': library,
-            'library_id': _libraryId
+            'library_id': _libraryId,
           },
         );
         expect(
@@ -215,8 +226,10 @@ void main() {
         controller.redo();
         expect(controller.state[astrologyDraftKey], same(draft));
         expect(astrologyInputFromDashboard(controller.document).utc, isNull);
-        expect(jsonEncode(controller.document.toJson()),
-            isNot(contains('Unsaved')));
+        expect(
+          jsonEncode(controller.document.toJson()),
+          isNot(contains('Unsaved')),
+        );
         await controller.flush();
       } finally {
         controller.dispose();
@@ -467,7 +480,9 @@ void main() {
       expect(saved.isDashboard, isTrue);
       expect(isAstrologyLibrary(saved.dashboard!.document), isFalse);
       expect(
-          astrologyLibraryId(saved.dashboard!.document, saved.id), _libraryId);
+        astrologyLibraryId(saved.dashboard!.document, saved.id),
+        _libraryId,
+      );
       final events = repository.views[eventsId]!;
       expect(events.parentViewId, saved.id);
       expect(events.layout, ViewLayoutPB.Grid);
@@ -476,8 +491,11 @@ void main() {
       expect(repository.rows[eventsId], isEmpty);
       expect(repository.created.map((view) => view.id), [saved.id, eventsId]);
       expect(repository.updated.single.childViews, isEmpty);
-      expect(saved.childViews.single.id, eventsId,
-          reason: 'Return the fresh read.');
+      expect(
+        saved.childViews.single.id,
+        eventsId,
+        reason: 'Return the fresh read.',
+      );
       expect(repository.views[_libraryId]!.extra, libraryBefore);
       expect((await service.people(_libraryId)).single.id, saved.id);
     });
@@ -495,10 +513,14 @@ void main() {
       expect({first.id, second.id, firstEvents, secondEvents}, hasLength(4));
       expect(repository.views[firstEvents]!.parentViewId, first.id);
       expect(repository.views[secondEvents]!.parentViewId, second.id);
-      expect(astrologyInputFromDashboard(first.dashboard!.document).name,
-          'First person');
-      expect(astrologyInputFromDashboard(second.dashboard!.document).name,
-          'Second person');
+      expect(
+        astrologyInputFromDashboard(first.dashboard!.document).name,
+        'First person',
+      );
+      expect(
+        astrologyInputFromDashboard(second.dashboard!.document).name,
+        'Second person',
+      );
       repository.rows[firstEvents]!
           .add({'Event name': 'A real note', 'Notes': 'Keep me'});
       expect(repository.rows[secondEvents], isEmpty);
@@ -525,8 +547,10 @@ void main() {
       expect(secondEvents, isNot(firstEvents));
       expect(repository.views[secondEvents]!.parentViewId, second.id);
       expect(repository.rows[secondEvents], isEmpty);
-      expect(repository.rows[firstEvents]!.single['Notes'],
-          'Only the first person');
+      expect(
+        repository.rows[firstEvents]!.single['Notes'],
+        'Only the first person',
+      );
     });
 
     test('saved input and dashboard survive both JSON and protobuf round trips',
@@ -539,7 +563,8 @@ void main() {
       expect(astrologyInputFromDashboard(document).utc!.isUtc, isTrue);
       final decoded = DashboardDocument.fromJson(
         Map<String, Object?>.from(
-            jsonDecode(jsonEncode(document.toJson())) as Map),
+          jsonDecode(jsonEncode(document.toJson())) as Map,
+        ),
       );
       expect(decoded.toJson(), document.toJson());
       expect(astrologyEventsViewId(decoded), saved.childViews.single.id);
@@ -562,8 +587,10 @@ void main() {
         await entered.future;
         expect(completed, isFalse);
         expect(repository.updated, isEmpty);
-        expect(repository.views[repository.created.first.id]!.isDashboard,
-            isFalse);
+        expect(
+          repository.views[repository.created.first.id]!.isDashboard,
+          isFalse,
+        );
         expect(await service.people(_libraryId), isEmpty);
       } finally {
         gate.complete();
@@ -591,13 +618,15 @@ void main() {
           'updates retain notes, binding and ${passLiveDocument ? 'live' : 'stored'} layout',
           () async {
         final saved = await service.savePerson(
-            libraryViewId: _libraryId, input: _input());
+          libraryViewId: _libraryId,
+          input: _input(),
+        );
         final eventsId = astrologyEventsViewId(saved.dashboard!.document);
         final notes = repository.rows[eventsId]!
           ..add({
             'Event name': 'Graduation',
             'Date': '2011-06-20',
-            'Notes': 'Original notes'
+            'Notes': 'Original notes',
           });
         final live = _customDocument(saved.dashboard!.document);
         if (!passLiveDocument) {
@@ -646,8 +675,10 @@ void main() {
         existingViewId: saved.id,
         input: _input('New name'),
       );
-      expect(updated.dashboard!.document.toJson(),
-          withAstrologyInput(latest, _input('New name')).toJson());
+      expect(
+        updated.dashboard!.document.toJson(),
+        withAstrologyInput(latest, _input('New name')).toJson(),
+      );
       expect(jsonDecode(updated.extra)['latest-cover'], isTrue);
     });
 
@@ -709,7 +740,8 @@ void main() {
       for (final edited in [
         document.withoutWidget(card.id),
         document.withWidget(
-            card.copyWith(source: card.source.copyWith(viewId: 'other-grid'))),
+          card.copyWith(source: card.source.copyWith(viewId: 'other-grid')),
+        ),
       ]) {
         await expectLater(
           service.savePerson(
@@ -741,9 +773,10 @@ void main() {
       repository.seed(ViewPB(id: 'plain', parentViewId: _libraryId));
       repository.seed(
         ViewPB(
-            id: 'dashboard',
-            parentViewId: _libraryId,
-            extra: DashboardMetadata.newExtra()),
+          id: 'dashboard',
+          parentViewId: _libraryId,
+          extra: DashboardMetadata.newExtra(),
+        ),
       );
       repository.seed(
         ViewPB(
@@ -789,33 +822,47 @@ void main() {
         _input().copyWith(useCurrentTime: true),
         _input().copyWith(useCurrentLocation: true),
         AstrologyInput(
-            name: 'Local time', utc: DateTime(1990, 5, 15), place: _place),
+          name: 'Local time',
+          utc: DateTime(1990, 5, 15),
+          place: _place,
+        ),
         _input().copyWith(utc: DateTime.utc(1700)),
         _input().copyWith(
           place: const AstrologyPlace(
-              name: '', latitude: 0, longitude: 0, timeZone: 'UTC'),
+            name: '',
+            latitude: 0,
+            longitude: 0,
+            timeZone: 'UTC',
+          ),
         ),
         _input().copyWith(
           place: const AstrologyPlace(
-              name: 'Pole', latitude: 90, longitude: 0, timeZone: 'UTC'),
+            name: 'Pole',
+            latitude: 90,
+            longitude: 0,
+            timeZone: 'UTC',
+          ),
         ),
         _input().copyWith(
           place: const AstrologyPlace(
-              name: 'Invalid',
-              latitude: 0,
-              longitude: double.nan,
-              timeZone: 'UTC'),
+            name: 'Invalid',
+            latitude: 0,
+            longitude: double.nan,
+            timeZone: 'UTC',
+          ),
         ),
         AstrologyInput(
-            name: 'Offset',
-            utc: DateTime.utc(1990),
-            place: _place,
-            utcOffsetMinutes: 841),
+          name: 'Offset',
+          utc: DateTime.utc(1990),
+          place: _place,
+          utcOffsetMinutes: 841,
+        ),
         AstrologyInput(
-            name: 'Year length',
-            utc: DateTime.utc(1990),
-            place: _place,
-            dashaYearDays: 0),
+          name: 'Year length',
+          utc: DateTime.utc(1990),
+          place: _place,
+          dashaYearDays: 0,
+        ),
       ];
       for (final input in badInputs) {
         await expectLater(
@@ -860,8 +907,13 @@ void main() {
       test(
           '$failure failure is not reported as saved and trashes only new views',
           () async {
-        repository.seed(ViewPB(
-            id: 'keep-existing', parentViewId: _libraryId, name: 'Untouched'));
+        repository.seed(
+          ViewPB(
+            id: 'keep-existing',
+            parentViewId: _libraryId,
+            name: 'Untouched',
+          ),
+        );
         switch (failure) {
           case 'person creation':
             repository.failCreateLayout = ViewLayoutPB.Document;
@@ -903,8 +955,10 @@ void main() {
           repository.deleted,
           repository.created.reversed.map((view) => view.id),
         );
-        expect(repository.trashed,
-            repository.created.map((view) => view.id).toSet());
+        expect(
+          repository.trashed,
+          repository.created.map((view) => view.id).toSet(),
+        );
         expect(repository.views['keep-existing']!.name, 'Untouched');
         expect(await service.people(_libraryId), isEmpty);
         expect(repository.trashed, isNot(contains(_libraryId)));
@@ -943,22 +997,39 @@ void main() {
         service.savePerson(libraryViewId: _libraryId, input: _input()),
         throwsA(
           isA<AstrologyDashboardSaveException>()
-              .having((error) => error.cause.toString(), 'cause',
-                  contains('Table build failed'))
-              .having((error) => error.createdViewIds, 'created views',
-                  hasLength(2))
-              .having((error) => error.cleanupFailures, 'cleanup failures',
-                  hasLength(2))
-              .having((error) => error.toString(), 'recovery instructions',
-                  contains('Trash')),
+              .having(
+                (error) => error.cause.toString(),
+                'cause',
+                contains('Table build failed'),
+              )
+              .having(
+                (error) => error.createdViewIds,
+                'created views',
+                hasLength(2),
+              )
+              .having(
+                (error) => error.cleanupFailures,
+                'cleanup failures',
+                hasLength(2),
+              )
+              .having(
+                (error) => error.toString(),
+                'recovery instructions',
+                contains('Trash'),
+              ),
         ),
       );
-      expect(repository.deleted,
-          repository.created.reversed.map((view) => view.id));
+      expect(
+        repository.deleted,
+        repository.created.reversed.map((view) => view.id),
+      );
       expect(repository.trashed, isEmpty);
       expect(repository.updated, isEmpty);
-      expect(await service.people(_libraryId), isEmpty,
-          reason: 'No partial dashboard published.');
+      expect(
+        await service.people(_libraryId),
+        isEmpty,
+        reason: 'No partial dashboard published.',
+      );
     });
 
     test(
@@ -1015,8 +1086,11 @@ void main() {
 void _expectNoOverlaps(List<DashboardPlacement> placements) {
   for (var i = 0; i < placements.length; i++) {
     for (var j = i + 1; j < placements.length; j++) {
-      expect(placements[i].overlaps(placements[j]), isFalse,
-          reason: '$i overlaps $j');
+      expect(
+        placements[i].overlaps(placements[j]),
+        isFalse,
+        reason: '$i overlaps $j',
+      );
     }
   }
 }
@@ -1028,7 +1102,11 @@ DashboardDocument _customDocument(DashboardDocument original) {
       .withWidget(
         chart.copyWith(
           placement: const DashboardPlacement(
-              column: 7, row: 50, columnSpan: 5, rowSpan: 9),
+            column: 7,
+            row: 50,
+            columnSpan: 5,
+            rowSpan: 9,
+          ),
           accent: DashboardAccent.teal,
           title: 'My own chart title',
           hidden: true,
@@ -1042,7 +1120,10 @@ DashboardDocument _customDocument(DashboardDocument original) {
             sortDescending: true,
             filters: const [
               DashboardFilter(
-                  field: 'Notes', operator: 'contains', value: 'important')
+                field: 'Notes',
+                operator: 'contains',
+                value: 'important',
+              ),
             ],
           ),
           settings: const {'custom-events-option': 'keep'},
@@ -1057,15 +1138,18 @@ DashboardDocument _customDocument(DashboardDocument original) {
           settings: {'text': 'Never replace this note.'},
           actions: [
             DashboardAction(
-                kind: DashboardActionKind.openPage, target: 'another-page')
+              kind: DashboardActionKind.openPage,
+              target: 'another-page',
+            ),
           ],
         ),
       )
       .withVariable(
         const DashboardVariable(
-            key: 'my-filter',
-            label: 'My filter',
-            kind: DashboardVariableKind.text),
+          key: 'my-filter',
+          label: 'My filter',
+          kind: DashboardVariableKind.text,
+        ),
       )
       .copyWith(
         subtitle: 'My custom layout',
@@ -1275,7 +1359,9 @@ class _FakeAstrologyRepository implements AstrologyDashboardRepository {
     rows[viewId] = [];
     alterFields?.call(fields);
     BackendAstrologyDashboardRepository.verifyEventsSchema(
-        fields: fields, primary: primary);
+      fields: fields,
+      primary: primary,
+    );
     onBuild?.call(viewId);
   }
 }

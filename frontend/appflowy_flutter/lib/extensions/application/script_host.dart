@@ -244,12 +244,14 @@ class ScriptHost {
       ..writeln('      },')
       ..writeln('      function (error) {')
       ..writeln(
-          '        self.postMessage({ ok: false, error: String(error && error.message || error) });')
+        '        self.postMessage({ ok: false, error: String(error && error.message || error) });',
+      )
       ..writeln('      }')
       ..writeln('    );')
       ..writeln('  } catch (error) {')
       ..writeln(
-          '    self.postMessage({ ok: false, error: String(error && error.message || error) });')
+        '    self.postMessage({ ok: false, error: String(error && error.message || error) });',
+      )
       ..writeln('  }')
       ..writeln('};');
     return buffer.toString();

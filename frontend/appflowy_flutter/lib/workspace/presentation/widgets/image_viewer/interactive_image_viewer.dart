@@ -85,8 +85,9 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer>
     _fitTween =
         Matrix4Tween(begin: controller.value.clone(), end: Matrix4.identity());
     _fitAnimation ??= (AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 200))
-      ..addListener(() {
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    )..addListener(() {
         controller.value = _fitTween!
             .transform(Curves.easeOutCubic.transform(_fitAnimation!.value));
       }));
@@ -230,13 +231,18 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer>
                           : () => unawaited(_editImage()),
                       onExtractText: () {
                         if (!_canReadImage ||
-                            ModalRoute.of(context)?.isCurrent == false) return;
-                        unawaited(showImageOcrOverlay(
-                          context,
-                          source: _ocrSource(userProfile),
-                          name: widget.imageProvider.getImageName(currentIndex),
-                          service: widget.ocrService,
-                        ));
+                            ModalRoute.of(context)?.isCurrent == false) {
+                          return;
+                        }
+                        unawaited(
+                          showImageOcrOverlay(
+                            context,
+                            source: _ocrSource(userProfile),
+                            name:
+                                widget.imageProvider.getImageName(currentIndex),
+                            service: widget.ocrService,
+                          ),
+                        );
                       },
                       onPrevious: () => _move(-1),
                       onNext: () => _move(1),
@@ -430,8 +436,10 @@ class _ViewerMediaActions extends MediaActionService {
   }
 
   @override
-  Future<void> share(MediaActionSource source,
-      {Rect? sharePositionOrigin}) async {
+  Future<void> share(
+    MediaActionSource source, {
+    Rect? sharePositionOrigin,
+  }) async {
     if (!canRead(source)) throw StateError('Image unavailable');
     await delegate.share(source, sharePositionOrigin: sharePositionOrigin);
     if (!canRead(source)) throw StateError('Image unavailable');

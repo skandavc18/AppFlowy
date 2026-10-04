@@ -93,8 +93,10 @@ void main() {
           tester.getTopLeft(find.byType(DatabaseTableRail)),
           paneRect.topLeft + const Offset(24, 16),
         );
-        expect(tester.getTopLeft(find.byKey(_stage)).dy,
-            greaterThan(paneRect.top + 16));
+        expect(
+          tester.getTopLeft(find.byKey(_stage)).dy,
+          greaterThan(paneRect.top + 16),
+        );
         expect(find.byType(CollectionWorkspacePicker), findsNothing);
         expect(find.byType(ViewerCard), findsNothing);
         _expectQuietSurfaces(tester);

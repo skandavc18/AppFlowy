@@ -1196,38 +1196,40 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
             stopWheelOnNativePan: true,
             consumeBody: (_) => 0,
             child: WorkspaceImageWheelGate(
-                child: ClipRect(
-              child: InteractiveViewer(
-                key: ValueKey(_fitRevision),
-                transformationController: _transformation,
-                onInteractionStart: (_) => _fitController?.stop(),
-                onInteractionUpdate: _routeFittedPagePan,
-                minScale: 0.4,
-                maxScale: 8,
-                child: _WorkspacePhotoFitFrame(
-                  page: _page,
-                  // The card hugs the picture instead of filling the window, so
-                  // nothing sits behind it but the page.
-                  child: ViewerCard(
-                    reactsToPointer: false,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: ImageOcrFindRegion(
-                        source: _ocrSource,
-                        name: host?.displayName ?? widget.name,
-                        service: widget.ocrService,
-                        isAvailable: _canRead,
-                        isSelected: _canRead,
-                        debugLabel: 'Workspace image',
-                        child: Image.file(
-                          widget.file,
-                          key: ValueKey('${widget.file.path}_$_revision'),
-                          errorBuilder: (context, error, stackTrace) => Padding(
-                            padding: const EdgeInsets.all(28),
-                            child: Text(
-                              'This picture could not be decoded.',
-                              style: TextStyle(
-                                color: theme.textColorScheme.secondary,
+              child: ClipRect(
+                child: InteractiveViewer(
+                  key: ValueKey(_fitRevision),
+                  transformationController: _transformation,
+                  onInteractionStart: (_) => _fitController?.stop(),
+                  onInteractionUpdate: _routeFittedPagePan,
+                  minScale: 0.4,
+                  maxScale: 8,
+                  child: _WorkspacePhotoFitFrame(
+                    page: _page,
+                    // The card hugs the picture instead of filling the window, so
+                    // nothing sits behind it but the page.
+                    child: ViewerCard(
+                      reactsToPointer: false,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: ImageOcrFindRegion(
+                          source: _ocrSource,
+                          name: host?.displayName ?? widget.name,
+                          service: widget.ocrService,
+                          isAvailable: _canRead,
+                          isSelected: _canRead,
+                          debugLabel: 'Workspace image',
+                          child: Image.file(
+                            widget.file,
+                            key: ValueKey('${widget.file.path}_$_revision'),
+                            errorBuilder: (context, error, stackTrace) =>
+                                Padding(
+                              padding: const EdgeInsets.all(28),
+                              child: Text(
+                                'This picture could not be decoded.',
+                                style: TextStyle(
+                                  color: theme.textColorScheme.secondary,
+                                ),
                               ),
                             ),
                           ),
@@ -1237,7 +1239,7 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
                   ),
                 ),
               ),
-            )),
+            ),
           ),
         ),
       ),
@@ -1316,9 +1318,11 @@ class _WorkspacePhotoFitFrame extends StatelessWidget {
 /// which can differ from the materialized storage basename.
 class _WorkspaceFullscreenImageProvider extends AFBlockImageProvider {
   _WorkspaceFullscreenImageProvider({required File file, required this.name})
-      : super(images: [
-          ImageBlockData(url: file.path, type: CustomImageType.local),
-        ]);
+      : super(
+          images: [
+            ImageBlockData(url: file.path, type: CustomImageType.local),
+          ],
+        );
 
   final String name;
 

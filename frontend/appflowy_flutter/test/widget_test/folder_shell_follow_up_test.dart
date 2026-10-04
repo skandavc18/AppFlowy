@@ -128,12 +128,15 @@ void main() {
             final inset =
                 FolderExplorerLayout.horizontalPadding(viewportBounds.width);
             final contentBounds = Rect.fromLTRB(
-                viewportBounds.left + inset,
-                viewportBounds.top,
-                viewportBounds.right - inset,
-                viewportBounds.bottom);
+              viewportBounds.left + inset,
+              viewportBounds.top,
+              viewportBounds.right - inset,
+              viewportBounds.bottom,
+            );
             final titleBounds = _documentRect(
-                tester, find.byKey(_titleKey, skipOffstage: false));
+              tester,
+              find.byKey(_titleKey, skipOffstage: false),
+            );
             final searchBounds = _documentRect(tester, search);
             final cache = tester
                 .widget<FolderGallery>(
@@ -158,8 +161,10 @@ void main() {
                   .onViewModeChanged!(mode);
               await settleFileControls(tester);
               expect(tester.element(header), same(headerElement));
-              expect(tester.element(find.byKey(_titleKey, skipOffstage: false)),
-                  same(titleElement));
+              expect(
+                tester.element(find.byKey(_titleKey, skipOffstage: false)),
+                same(titleElement),
+              );
               expect(tester.element(search), same(searchElement));
               expect(tester.state(editable), same(editorState));
               expect(
@@ -178,9 +183,12 @@ void main() {
               expect(controller.breadcrumbs.map((item) => item.id), ['root']);
               expect(tester.getRect(find.byKey(_contentKey)), viewportBounds);
               expect(
-                  _documentRect(
-                      tester, find.byKey(_titleKey, skipOffstage: false)),
-                  titleBounds);
+                _documentRect(
+                  tester,
+                  find.byKey(_titleKey, skipOffstage: false),
+                ),
+                titleBounds,
+              );
               expect(_documentRect(tester, search), searchBounds);
               expect(
                 contentBounds.width,
@@ -1131,7 +1139,8 @@ void main() {
 
 FolderGalleryHeader _header(WidgetTester tester) =>
     tester.widget<FolderGalleryHeader>(
-        find.byType(FolderGalleryHeader, skipOffstage: false));
+      find.byType(FolderGalleryHeader, skipOffstage: false),
+    );
 
 Rect _documentRect(WidgetTester tester, Finder finder) => tester
     .getRect(finder)

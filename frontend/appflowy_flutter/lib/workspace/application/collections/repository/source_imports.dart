@@ -113,7 +113,8 @@ final _importPatterns = <String, List<RegExp>>{
   'php': [
     RegExp(r'^\s*use\s+([\w\\]+)'),
     RegExp(
-        '''^\\s*(?:require|include)(?:_once)?\\s*\\(?\\s*['"]([^'"]+)['"]'''),
+      '''^\\s*(?:require|include)(?:_once)?\\s*\\(?\\s*['"]([^'"]+)['"]''',
+    ),
   ],
   'css': [
     RegExp('''^\\s*@import\\s+(?:url\\()?\\s*['"]([^'"]+)['"]'''),
@@ -347,7 +348,9 @@ String? _resolve({
     final module = target.substring(leadingDots).replaceAll('.', '/');
     final base = leadingDots > 0
         ? resolveRepoPath(
-            directory, List.filled(leadingDots - 1, '..').join('/'))
+            directory,
+            List.filled(leadingDots - 1, '..').join('/'),
+          )
         : '';
     final head =
         base == null ? null : (base.isEmpty ? module : '$base/$module');

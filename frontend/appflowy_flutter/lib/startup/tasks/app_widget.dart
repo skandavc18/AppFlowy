@@ -252,7 +252,8 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
         providers: [
           if (FeatureFlag.search.isOn)
             BlocProvider<CommandPaletteBloc>(
-                create: (_) => CommandPaletteBloc()),
+              create: (_) => CommandPaletteBloc(),
+            ),
           BlocProvider<AppearanceSettingsCubit>(
             create: (_) => AppearanceSettingsCubit(
               widget.appearanceSetting,
@@ -338,7 +339,8 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
                                   // setting.
                                   data: MediaQuery.of(context).copyWith(
                                     textScaler: TextScaler.linear(
-                                        state.textScaleFactor),
+                                      state.textScaleFactor,
+                                    ),
                                   ),
                                   child: ListenableBuilder(
                                     listenable: EncryptionVault.instance,

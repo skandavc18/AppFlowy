@@ -336,8 +336,10 @@ void main() {
       );
       expect(_value(tester, 'panchanga-zone-value'), 'America/New_York');
       expect(_value(tester, 'panchanga-rahu-value'), 'True node');
-      expect(_value(tester, 'panchanga-ayanamsa-value'),
-          'B.V. Raman · 23.856750°');
+      expect(
+        _value(tester, 'panchanga-ayanamsa-value'),
+        'B.V. Raman · 23.856750°',
+      );
       expect(
         _value(tester, 'panchanga-coordinates-value'),
         contains('74.01000° W'),

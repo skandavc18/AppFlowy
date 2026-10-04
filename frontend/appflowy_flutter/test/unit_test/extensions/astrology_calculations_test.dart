@@ -149,8 +149,10 @@ void main() {
           if (period.level < 3) {
             expect(children.first.start, period.start);
             expect(children.last.end, period.end);
-            expect(children.every((child) => child.level == period.level + 1),
-                isTrue);
+            expect(
+              children.every((child) => child.level == period.level + 1),
+              isTrue,
+            );
             expect(
               children.fold<int>(
                 0,
@@ -232,8 +234,10 @@ void main() {
                           BigInt.from(elapsed) +
                       BigInt.from(60)) ~/
                   BigInt.from(120);
-          expect(child.end.difference(parent.start).inMicroseconds,
-              expected.toInt());
+          expect(
+            child.end.difference(parent.start).inMicroseconds,
+            expected.toInt(),
+          );
           expect(child.lord, vimshottariLords[(firstLord + index) % 9]);
           if (index > 0) expect(child.start, children[index - 1].end);
           final path = dashaAt(roots, child.start);

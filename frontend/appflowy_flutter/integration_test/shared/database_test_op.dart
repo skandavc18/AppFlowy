@@ -1529,9 +1529,14 @@ extension AppFlowyDatabaseTest on WidgetTester {
     final findAddButton = find.byType(AddDatabaseViewButton);
     await tapButton(findAddButton);
 
+    final kind = switch (layoutType) {
+      DatabaseLayoutPB.Grid => DatabaseTabKind.grid,
+      DatabaseLayoutPB.Board => DatabaseTabKind.board,
+      DatabaseLayoutPB.Calendar => DatabaseTabKind.calendar,
+      _ => throw ArgumentError.value(layoutType, 'layoutType'),
+    };
     final findCreateButton = find.byWidgetPredicate(
-      (widget) =>
-          widget is TabBarAddButtonActionCell && widget.action == layoutType,
+      (widget) => widget is TabBarAddButtonActionCell && widget.action == kind,
     );
     await tapButton(findCreateButton);
   }

@@ -25,14 +25,20 @@ void main() {
               home: ContextualFindScope(
                 findInControls: true,
                 child: siblingHeader
-                    ? Column(children: [
-                        header,
-                        Expanded(child: region(const SizedBox.expand()))
-                      ])
-                    : region(Column(children: [
-                        header,
-                        const Expanded(child: SizedBox.expand())
-                      ])),
+                    ? Column(
+                        children: [
+                          header,
+                          Expanded(child: region(const SizedBox.expand())),
+                        ],
+                      )
+                    : region(
+                        Column(
+                          children: [
+                            header,
+                            const Expanded(child: SizedBox.expand()),
+                          ],
+                        ),
+                      ),
               ),
             ),
           );
@@ -43,12 +49,18 @@ void main() {
           final before = draft.value;
           await _find(tester);
           expect(calls, ['find']);
-          await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-              physicalKey: PhysicalKeyboardKey.controlLeft);
-          await tester.sendKeyEvent(LogicalKeyboardKey.keyH,
-              physicalKey: PhysicalKeyboardKey.keyH);
-          await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-              physicalKey: PhysicalKeyboardKey.controlLeft);
+          await tester.sendKeyDownEvent(
+            LogicalKeyboardKey.controlLeft,
+            physicalKey: PhysicalKeyboardKey.controlLeft,
+          );
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.keyH,
+            physicalKey: PhysicalKeyboardKey.keyH,
+          );
+          await tester.sendKeyUpEvent(
+            LogicalKeyboardKey.controlLeft,
+            physicalKey: PhysicalKeyboardKey.controlLeft,
+          );
           await tester.pump();
           expect(calls, ['find', 'replace']);
           expect(draft.value, before);
@@ -68,40 +80,54 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     final calls = <String>[];
     try {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(
+        MaterialApp(
           home: Scaffold(
-              body: Row(children: [
-        SizedBox(
-            width: 180,
-            child: ContextualFindRegion(
-              navigation: true,
-              findInEditable: true,
-              onFind: () => calls.add('workspace'),
-              child: const SizedBox.expand(key: ValueKey('sidebar-find')),
-            )),
-        Expanded(
-            child: ContextualFindScope(
-                findInControls: true,
-                child: ContextualFindRegion(
-                  findOpen: true,
-                  findFocusNode: query,
-                  onFind: () => calls.add('page'),
-                  onDismiss: () => calls.add('dismiss-page'),
-                  child: Column(children: [
-                    TextField(focusNode: query),
-                    const Expanded(child: SizedBox.expand())
-                  ]),
-                ))),
-      ]))));
+            body: Row(
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: ContextualFindRegion(
+                    navigation: true,
+                    findInEditable: true,
+                    onFind: () => calls.add('workspace'),
+                    child: const SizedBox.expand(key: ValueKey('sidebar-find')),
+                  ),
+                ),
+                Expanded(
+                  child: ContextualFindScope(
+                    findInControls: true,
+                    child: ContextualFindRegion(
+                      findOpen: true,
+                      findFocusNode: query,
+                      onFind: () => calls.add('page'),
+                      onDismiss: () => calls.add('dismiss-page'),
+                      child: Column(
+                        children: [
+                          TextField(focusNode: query),
+                          const Expanded(child: SizedBox.expand()),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
       query.requestFocus();
       await tester.pump();
       await mouse.addPointer(
-          location:
-              tester.getCenter(find.byKey(const ValueKey('sidebar-find'))));
+        location: tester.getCenter(find.byKey(const ValueKey('sidebar-find'))),
+      );
       await _find(tester);
       expect(calls, ['dismiss-page', 'workspace']);
-      expect(query.hasPrimaryFocus, isTrue,
-          reason: 'Only the popup opener should move focus, never the router.');
+      expect(
+        query.hasPrimaryFocus,
+        isTrue,
+        reason: 'Only the popup opener should move focus, never the router.',
+      );
     } finally {
       await mouse.removePointer();
       await tester.pumpWidget(const SizedBox.shrink());

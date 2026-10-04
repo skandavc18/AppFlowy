@@ -77,8 +77,10 @@ void main() {
       expect(image, isNotNull);
       expect(document.pages.first.renderWidths, [400]);
       expect(cache.peek(1, minWidth: 3600), same(image));
-      expect(await cache.load(document.pages.first, targetWidth: 1600),
-          same(image));
+      expect(
+        await cache.load(document.pages.first, targetWidth: 1600),
+        same(image),
+      );
       expect(document.pages.first.renderWidths, hasLength(1));
     } finally {
       cache.dispose();
@@ -178,7 +180,7 @@ class _Document extends Fake implements PdfDocument {
   _Document(ui.Image image, {int count = 1, double pageWidth = 600}) {
     pages = [
       for (var index = 0; index < count; index++)
-        _Page(this, index + 1, image, pageWidth)
+        _Page(this, index + 1, image, pageWidth),
     ];
   }
 

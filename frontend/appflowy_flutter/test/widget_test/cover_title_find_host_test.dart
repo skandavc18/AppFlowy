@@ -54,7 +54,8 @@ void main() {
                   Provider<SharedEditorContext>.value(value: shared),
                   Provider<ViewInfoBloc>.value(value: info),
                   BlocProvider<DocumentAppearanceCubit>.value(
-                      value: appearance),
+                    value: appearance,
+                  ),
                 ],
                 child: SingleChildScrollView(
                   child: Padding(
@@ -86,8 +87,10 @@ void main() {
           var notifications = 0;
           controller.addListener(() => notifications++);
 
-          session = DocumentFindSession(editor,
-              currentView: () => viewBloc.state.view);
+          session = DocumentFindSession(
+            editor,
+            currentView: () => viewBloc.state.view,
+          );
           session.search('needle', const FindOptions());
           await tester.pump();
           expect(session.matches.single.kind, DocumentFindResultKind.title);

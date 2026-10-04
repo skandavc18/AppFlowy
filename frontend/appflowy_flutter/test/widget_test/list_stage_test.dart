@@ -82,7 +82,9 @@ void main() {
       final line = tester.widget<AnimatedContainer>(
         find
             .descendant(
-                of: _row('r1'), matching: find.byType(AnimatedContainer))
+              of: _row('r1'),
+              matching: find.byType(AnimatedContainer),
+            )
             .first,
       );
       expect((line.decoration! as BoxDecoration).color, palette.hover);

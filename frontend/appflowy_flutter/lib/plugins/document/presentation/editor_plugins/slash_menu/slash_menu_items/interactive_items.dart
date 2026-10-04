@@ -72,7 +72,8 @@ final SelectionMenuItem buttonSlashMenuItem = _interactiveItem(
   icon: Icons.smart_button_rounded,
   node: buttonNode,
   updateSelection: _openAfterInsert<ButtonBlockComponentState>(
-      (state) => state.beginRename()),
+    (state) => state.beginRename(),
+  ),
 );
 
 /// `/progress`
@@ -100,7 +101,7 @@ final SelectionMenuItem counterSlashMenuItem = _interactiveItem(
     'number',
     'tally',
     'increment',
-    'stepper'
+    'stepper',
   ],
   icon: Icons.exposure_plus_1_rounded,
   node: counterNode,
@@ -131,7 +132,7 @@ final SelectionMenuItem inputSlashMenuItem = _interactiveItem(
     'field',
     'text field',
     'entry',
-    'form'
+    'form',
   ],
   icon: Icons.edit_note_rounded,
   node: inputNode,
@@ -146,7 +147,8 @@ final SelectionMenuItem searchSlashMenuItem = _interactiveItem(
   icon: Icons.search_rounded,
   node: searchNode,
   updateSelection: _openAfterInsert<SearchBlockComponentState>(
-      (state) => state.focusField()),
+    (state) => state.focusField(),
+  ),
 );
 
 /// `/select`
@@ -172,7 +174,7 @@ final SelectionMenuItem radioGroupSlashMenuItem = _interactiveItem(
     'radio group',
     'choice',
     'single choice',
-    'options'
+    'options',
   ],
   icon: Icons.radio_button_checked_rounded,
   node: radioGroupNode,

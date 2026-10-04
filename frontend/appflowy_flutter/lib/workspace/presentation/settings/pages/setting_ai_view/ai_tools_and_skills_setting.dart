@@ -253,9 +253,11 @@ class _ServerRow extends StatelessWidget {
                   failure != null
                       ? LocaleKeys.aiTools_serverUnreachable.tr(args: [failure])
                       : '${server.summary} · '
-                          '${LocaleKeys.aiTools_toolsFound.tr(args: [
-                              '$count'
-                            ])}',
+                          '${LocaleKeys.aiTools_toolsFound.tr(
+                          args: [
+                            '$count',
+                          ],
+                        )}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

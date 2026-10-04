@@ -332,14 +332,22 @@ void main() {
                       if (textScale == 2) {
                         expect(headerRect.height, greaterThan(40));
                       }
-                      expect(selectorRect.center.dx,
-                          greaterThan(cardRect.center.dx));
-                      expect(selectorRect.top,
-                          greaterThanOrEqualTo(headerRect.top));
-                      expect(selectorRect.bottom,
-                          lessThanOrEqualTo(headerRect.bottom));
-                      expect(selectorRect.right,
-                          lessThanOrEqualTo(cardRect.right));
+                      expect(
+                        selectorRect.center.dx,
+                        greaterThan(cardRect.center.dx),
+                      );
+                      expect(
+                        selectorRect.top,
+                        greaterThanOrEqualTo(headerRect.top),
+                      );
+                      expect(
+                        selectorRect.bottom,
+                        lessThanOrEqualTo(headerRect.bottom),
+                      );
+                      expect(
+                        selectorRect.right,
+                        lessThanOrEqualTo(cardRect.right),
+                      );
                       // The header keeps its last target clear of the right
                       // resize grip; in edit mode the card's own controls sit
                       // at that edge and the pill sits just before them.
@@ -367,7 +375,9 @@ void main() {
                         );
                       }
                       expect(
-                          headerRect.bottom, lessThanOrEqualTo(panelRect.top));
+                        headerRect.bottom,
+                        lessThanOrEqualTo(panelRect.top),
+                      );
                       expect(
                         _within(card, find.text(spec.title)),
                         showTitle ? findsOneWidget : findsNothing,
@@ -408,7 +418,9 @@ void main() {
                             );
                             expect(opacities, isNotEmpty);
                             expect(
-                                opacities.every((w) => w.opacity == 1), isTrue);
+                              opacities.every((w) => w.opacity == 1),
+                              isTrue,
+                            );
                             expect(
                               tester.getRect(selector).right,
                               lessThanOrEqualTo(tester.getRect(action).left),
@@ -481,7 +493,7 @@ void main() {
         final card = _card(_chart.id);
         for (final style in const [
           IndianChartStyle.south,
-          IndianChartStyle.north
+          IndianChartStyle.north,
         ]) {
           final toggle = _within(
             card,
@@ -556,7 +568,9 @@ void main() {
         final restored =
             DashboardDocument.fromJson(controller.document.toJson());
         expect(
-            restored.widgetById(first.id)!.integer('division', fallback: 1), 9);
+          restored.widgetById(first.id)!.integer('division', fallback: 1),
+          9,
+        );
         for (final spec in charts) {
           _expectDivision(
             tester,
@@ -674,7 +688,9 @@ void main() {
         final modalSelector = find.byType(AstrologyChartSelector).last;
         expect(
           find.ancestor(
-              of: modalSelector, matching: find.byType(DashboardCard)),
+            of: modalSelector,
+            matching: find.byType(DashboardCard),
+          ),
           findsNothing,
           reason:
               'This is the enlarged header, not the card behind the overlay.',
@@ -687,7 +703,9 @@ void main() {
         expect(selectorRect.bottom, lessThanOrEqualTo(panelRect.top));
         expect(selectorRect.center.dx, greaterThan(panelRect.center.dx));
         expect(
-            selectorRect.right, lessThanOrEqualTo(tester.getRect(close).left));
+          selectorRect.right,
+          lessThanOrEqualTo(tester.getRect(close).left),
+        );
         expect(
           selectorRect.right,
           closeTo(tester.getRect(close).left - 8, _epsilon),
@@ -737,7 +755,7 @@ void main() {
     try {
       for (final mode in const [
         DashboardMode.edit,
-        DashboardMode.presentation
+        DashboardMode.presentation,
       ]) {
         controller.setMode(mode);
         await _pumpCard(tester, controller, spec);
@@ -820,14 +838,16 @@ Future<void> _withDashboard(
 DashboardDocument _document(List<DashboardWidgetSpec> widgets) =>
     DashboardDocument(
       sections: [
-        DashboardSection(id: 'selector-test-section', widgets: widgets)
+        DashboardSection(id: 'selector-test-section', widgets: widgets),
       ],
       settings:
           const DashboardSettings(showHeader: false, showControlBar: false),
     );
 
-ThemeData _theme(
-        {Brightness brightness = Brightness.light, bool paper = false}) =>
+ThemeData _theme({
+  Brightness brightness = Brightness.light,
+  bool paper = false,
+}) =>
     DesktopAppearance().getThemeData(
       paper
           ? AppTheme.builtins.firstWhere(
@@ -1006,7 +1026,9 @@ void _expectMenu(WidgetTester tester, {required int selected}) {
   final rows = tester.widgetList<AppMenuRow>(find.byType(AppMenuRow));
   expect(rows, hasLength(9));
   expect(
-      rows.map((row) => row.label), orderedEquals(astrologyDivisions.values));
+    rows.map((row) => row.label),
+    orderedEquals(astrologyDivisions.values),
+  );
   for (final entry in astrologyDivisions.entries) {
     final row = _menuRow(entry.key);
     expect(tester.widget<AppMenuRow>(row).selected, entry.key == selected);
@@ -1037,7 +1059,9 @@ void _expectFullValue(
   final label = astrologyDivisions[division]!;
   expect(tester.widget<AstrologyChartSelector>(selector).value, division);
   expect(
-      _within(selector, find.byTooltip('Chart type: $label')), findsOneWidget);
+    _within(selector, find.byTooltip('Chart type: $label')),
+    findsOneWidget,
+  );
   final semantic = _within(
     selector,
     find.byWidgetPredicate(
@@ -1087,8 +1111,11 @@ void _expectPreviews(WidgetTester tester, {required int count}) {
 
 void _expectClean(WidgetTester tester) {
   expect(find.byType(ErrorWidget), findsNothing);
-  expect(tester.takeException(), isNull,
-      reason: 'No layout, overflow or IO error.');
+  expect(
+    tester.takeException(),
+    isNull,
+    reason: 'No layout, overflow or IO error.',
+  );
 }
 
 Future<void> _unmount(WidgetTester tester) async {
@@ -1107,6 +1134,7 @@ class _NoDeviceLocation extends Fake
   dynamic noSuchMethod(Invocation invocation) {
     calls.add(invocation.memberName);
     throw StateError(
-        'Unexpected selector-test geolocation: ${invocation.memberName}');
+      'Unexpected selector-test geolocation: ${invocation.memberName}',
+    );
   }
 }

@@ -113,35 +113,43 @@ void main() {
       'mobile/',
       'extensions/',
     ]) {
-      expect(checkedFiles.any((file) => file.startsWith(prefix)), isTrue,
-          reason: prefix);
+      expect(
+        checkedFiles.any((file) => file.startsWith(prefix)),
+        isTrue,
+        reason: prefix,
+      );
     }
     expect(
-        observed,
-        containsAll([
-          'Icons.find_replace_rounded',
-          'Icons.change_circle_rounded',
-          'Icons.rotate_90_degrees_ccw_rounded',
-          'Icons.flip_rounded',
-          'Icons.print_rounded',
-          'FlowySvgs.check_filled_s',
-          'FlowySvgs.m_field_copy_s',
-        ]));
+      observed,
+      containsAll([
+        'Icons.find_replace_rounded',
+        'Icons.change_circle_rounded',
+        'Icons.rotate_90_degrees_ccw_rounded',
+        'Icons.flip_rounded',
+        'Icons.print_rounded',
+        'FlowySvgs.check_filled_s',
+        'FlowySvgs.m_field_copy_s',
+      ]),
+    );
     expect(missing, isEmpty, reason: _describe(missing));
     expect(namedMissing, isEmpty, reason: _describe(namedMissing));
     for (final entry in _sourceRendererExceptions.entries) {
       expect(entry.value, isNotEmpty, reason: entry.key);
       if (entry.key.startsWith('FlowySvgs.')) {
         expect(generatedPaths, contains(entry.key));
-        expect(WorkspaceGlyphs.nameForSvg(generatedPaths[entry.key]!), isNull,
-            reason: '${entry.key} must keep its intentional source renderer');
+        expect(
+          WorkspaceGlyphs.nameForSvg(generatedPaths[entry.key]!),
+          isNull,
+          reason: '${entry.key} must keep its intentional source renderer',
+        );
       }
     }
   });
 
   test('inventory ignores comments/strings but catches named and raw leaves',
       () {
-    final inventory = _collect('''
+    final inventory = _collect(
+      '''
 // Icons.not_an_icon and FlowySvgs.not_a_svg
 const documentation = 'Icons.also_not_an_icon';
 final raw = Icon(Icons.find_replace_rounded);
@@ -149,15 +157,20 @@ final svg = FlowySvg(FlowySvgs.m_field_copy_s);
 final named = WorkspaceGlyph.named('fit-page');
 final constant = const WorkspaceGlyph.named('actual-size');
 final alias = DSWorkspaceGlyph.named(active ? 'print' : 'width');
-''', 'fixture.dart');
+''',
+      'fixture.dart',
+    );
     expect(
-        inventory.references.keys,
-        unorderedEquals([
-          'Icons.find_replace_rounded',
-          'FlowySvgs.m_field_copy_s',
-        ]));
-    expect(inventory.namedDefaults.keys,
-        unorderedEquals(['fit-page', 'actual-size', 'print', 'width']));
+      inventory.references.keys,
+      unorderedEquals([
+        'Icons.find_replace_rounded',
+        'FlowySvgs.m_field_copy_s',
+      ]),
+    );
+    expect(
+      inventory.namedDefaults.keys,
+      unorderedEquals(['fit-page', 'actual-size', 'print', 'width']),
+    );
   });
 }
 

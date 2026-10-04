@@ -258,9 +258,11 @@ void main() {
     try {
       final old = dispatcher.consumeVertical(-0.01);
       var finished = false;
-      unawaited(old.then((_) {
-        finished = true;
-      }));
+      unawaited(
+        old.then((_) {
+          finished = true;
+        }),
+      );
       await tester.pump(const Duration(milliseconds: 249));
       expect(finished, isFalse);
       await tester.pump(const Duration(milliseconds: 1));
@@ -279,47 +281,55 @@ void main() {
     } finally {
       dispatcher.dispose();
       for (final call in calls) {
-        if (!call.isCompleted)
+        if (!call.isCompleted) {
           call.complete(const NativeFilePageBodyTravel(0, atStart: false));
+        }
       }
       await tester.pump();
     }
   });
 
-  test('production nativeScript DOM fractional DPR and nested boundary cases',
-      () async {
-    // Uses the existing fixture-local jsdom installation. No downloads and no
-    // native fixture changes. The short bootstrap avoids Windows argv limits.
-    final process = await Process.start('node', [
-      '-e',
-      r'''
+  test(
+    'production nativeScript DOM fractional DPR and nested boundary cases',
+    () async {
+      // Uses the existing fixture-local jsdom installation. No downloads and no
+      // native fixture changes. The short bootstrap avoids Windows argv limits.
+      final process = await Process.start('node', [
+        '-e',
+        '''
 require('node:stream/consumers').text(process.stdin).then(text => {
   const payload = JSON.parse(text);
   return new Function('require', 'payload', payload.fixture)(require, payload);
 }).catch(error => { console.error(error); process.exitCode = 1; });
 '''
-    ]);
-    final output = process.stdout.transform(utf8.decoder).join();
-    final errors = process.stderr.transform(utf8.decoder).join();
-    Future<(int, String, String)> execute() async {
-      process.stdin.write(jsonEncode({
-        'script': buildNativeFilePageScrollScript('fractional',
-            devicePixelRatio: 1.25),
-        'friction': const PremiumScrollPhysicsConfig().friction,
-        'fixture': _nativeScriptDomFixture,
-      }));
-      await process.stdin.close();
-      return (await process.exitCode, await output, await errors);
-    }
+      ]);
+      final output = process.stdout.transform(utf8.decoder).join();
+      final errors = process.stderr.transform(utf8.decoder).join();
+      Future<(int, String, String)> execute() async {
+        process.stdin.write(
+          jsonEncode({
+            'script': buildNativeFilePageScrollScript(
+              'fractional',
+              devicePixelRatio: 1.25,
+            ),
+            'friction': const PremiumScrollPhysicsConfig().friction,
+            'fixture': _nativeScriptDomFixture,
+          }),
+        );
+        await process.stdin.close();
+        return (await process.exitCode, await output, await errors);
+      }
 
-    try {
-      final (exit, stdout, stderr) =
-          await execute().timeout(const Duration(seconds: 20));
-      expect(exit, 0, reason: '$stdout\n$stderr');
-    } finally {
-      process.kill();
-    }
-  }, timeout: const Timeout(Duration(seconds: 30)));
+      try {
+        final (exit, stdout, stderr) =
+            await execute().timeout(const Duration(seconds: 20));
+        expect(exit, 0, reason: '$stdout\n$stderr');
+      } finally {
+        process.kill();
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 }
 
 // Existing dispatcher cases model a body whose partial ACK is a real boundary.

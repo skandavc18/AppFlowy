@@ -56,7 +56,7 @@ abstract final class BookmarkRequestPolicy {
       try {
         await command({
           'urls': <String>[],
-          'urlPatterns': [<String, dynamic>{}]
+          'urlPatterns': [<String, dynamic>{}],
         });
       } on PlatformException catch (error) {
         // WebView2 reports E_INVALIDARG through the vendored HRESULT channel.
@@ -66,14 +66,15 @@ abstract final class BookmarkRequestPolicy {
             .contains(error.code);
         if (!recognized) rethrow;
       }
-      if (!recognized)
+      if (!recognized) {
         throw UnsupportedError('CDP URLPattern blocking unavailable');
+      }
     }
     if (!(isCurrent?.call() ?? true)) return;
     await command({
       'urls': <String>[],
       'urlPatterns': [
-        for (final pattern in patterns) {'urlPattern': pattern, 'block': true}
+        for (final pattern in patterns) {'urlPattern': pattern, 'block': true},
       ],
     });
   }
@@ -116,10 +117,9 @@ class BookmarkBlockingSession {
         return;
       }
       try {
-        await install(enabled
-                ? BookmarkRequestPolicy.blockedUrls(firstPartyUrl)
-                : const [])
-            .timeout(const Duration(seconds: 5));
+        await install(
+          enabled ? BookmarkRequestPolicy.blockedUrls(firstPartyUrl) : const [],
+        ).timeout(const Duration(seconds: 5));
         if (!current()) {
           result.complete(false);
           return;
@@ -143,7 +143,7 @@ class BookmarkBlockingSession {
 /// Best-effort document-start guard, not a claim that every popup is blocked.
 /// Explicit user activation retains window.open (including authentication).
 /// Does not inspect page text, replace links, or mutate article content.
-const bookmarkPopupActivationScript = r'''
+const bookmarkPopupActivationScript = '''
 (() => {
   const original = window.open;
   window.open = function(...args) {

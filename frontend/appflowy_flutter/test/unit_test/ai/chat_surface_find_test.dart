@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:appflowy/ai/service/ai_entities.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_entity.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_message_stream.dart';
@@ -7,8 +5,12 @@ import 'package:appflowy/plugins/ai_chat/presentation/chat_find.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-TextMessage _message(String id, String text,
-        {bool answer = false, Map<String, dynamic>? metadata}) =>
+TextMessage _message(
+  String id,
+  String text, {
+  bool answer = false,
+  Map<String, dynamic>? metadata,
+}) =>
     TextMessage(
       id: id,
       text: text,
@@ -22,11 +24,19 @@ void main() {
       () {
     final messages = [
       _message('question', 'needle needle'),
-      _message('answer', '**needle** and [label](https://hidden_secret.test)',
-          answer: true, metadata: {'token': 'hidden_secret'}),
-      _message('related', 'needle', metadata: {
-        onetimeShotType: OnetimeShotType.relatedQuestion,
-      }),
+      _message(
+        'answer',
+        '**needle** and [label](https://hidden_secret.test)',
+        answer: true,
+        metadata: {'token': 'hidden_secret'},
+      ),
+      _message(
+        'related',
+        'needle',
+        metadata: {
+          onetimeShotType: OnetimeShotType.relatedQuestion,
+        },
+      ),
     ];
     final chat = InMemoryChatController(messages: [...messages]);
     final find = ChatFindController(chat);
@@ -69,9 +79,16 @@ void main() {
     final stream = AnswerStream();
     final seenByRenderer = <String>[];
     stream.listen(onData: seenByRenderer.add);
-    final chat = InMemoryChatController(messages: [
-      _message('stream', '', answer: true, metadata: {'$AnswerStream': stream}),
-    ]);
+    final chat = InMemoryChatController(
+      messages: [
+        _message(
+          'stream',
+          '',
+          answer: true,
+          metadata: {'$AnswerStream': stream},
+        ),
+      ],
+    );
     final find = ChatFindController(chat);
     find.open();
     find.setQuery('needle');

@@ -786,9 +786,15 @@ void main() {
       final options = SingleSelectTypeOptionPB()
         ..options.addAll([
           SelectOptionPB(
-              id: '1', name: 'To do', color: SelectOptionColorPB.Blue),
+            id: '1',
+            name: 'To do',
+            color: SelectOptionColorPB.Blue,
+          ),
           SelectOptionPB(
-              id: '2', name: 'Done', color: SelectOptionColorPB.Green),
+            id: '2',
+            name: 'Done',
+            color: SelectOptionColorPB.Green,
+          ),
         ]);
       final field = _field('status', 'Status', FieldType.SingleSelect)
         ..typeOptionData = options.writeToBuffer();

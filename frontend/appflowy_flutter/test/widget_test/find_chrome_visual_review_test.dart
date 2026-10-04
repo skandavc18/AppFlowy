@@ -142,212 +142,222 @@ void main() {
           reason: 'Review exports may only target the app build/performance.',
         );
         final network = _NoNetwork();
-        await HttpOverrides.runWithHttpOverrides(() async {
-          tester.view.devicePixelRatio = 1;
-          final semantics = tester.ensureSemantics();
-          final boundaryKey = GlobalKey();
-          final findKey = GlobalKey<_FindComponentState>();
-          final samples = [
-            _PdfSample('review-$mode-default'),
-            _PdfSample('review-$mode-resized', iconSize: 112),
-          ];
-          final revealSheet = ValueNotifier(false);
-          final pointers = <TestGesture>[];
-          var pointerId = 1000 + fileControlAppearances.indexOf(mode) * 100;
-          _FindComponentState? findState;
+        await HttpOverrides.runWithHttpOverrides(
+          () async {
+            tester.view.devicePixelRatio = 1;
+            final semantics = tester.ensureSemantics();
+            final boundaryKey = GlobalKey();
+            final findKey = GlobalKey<_FindComponentState>();
+            final samples = [
+              _PdfSample('review-$mode-default'),
+              _PdfSample('review-$mode-resized', iconSize: 112),
+            ];
+            final revealSheet = ValueNotifier(false);
+            final pointers = <TestGesture>[];
+            var pointerId = 1000 + fileControlAppearances.indexOf(mode) * 100;
+            _FindComponentState? findState;
 
-          Future<TestGesture> hover(Finder target) async {
-            final mouse = _mouse(tester, pointerId++);
-            await mouse.addPointer(location: const Offset(-20, -20));
-            pointers.add(mouse);
-            await _hover(tester, mouse, target);
-            return mouse;
-          }
+            Future<TestGesture> hover(Finder target) async {
+              final mouse = _mouse(tester, pointerId++);
+              await mouse.addPointer(location: const Offset(-20, -20));
+              pointers.add(mouse);
+              await _hover(tester, mouse, target);
+              return mouse;
+            }
 
-          try {
-            await mountFileControls(
-              tester,
-              DefaultIconStyleScope(
-                styles: const AlwaysStoppedAnimation(DefaultIconStyle.vivid),
-                child: TooltipVisibility(
-                  visible: false,
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: revealSheet,
-                    // The helper initially creates a 1100x900 surface. Mount
-                    // the sheet only AFTER enlarging it, not in an overflow
-                    // box that would conceal a clipped first-frame layout.
-                    builder: (_, visible, child) =>
-                        visible ? child! : const SizedBox.shrink(),
-                    child: RepaintBoundary(
-                      key: boundaryKey,
-                      child: _ReviewSheet(
-                        mode: mode,
-                        samples: samples,
-                        findKey: findKey,
+            try {
+              await mountFileControls(
+                tester,
+                DefaultIconStyleScope(
+                  styles: const AlwaysStoppedAnimation(DefaultIconStyle.vivid),
+                  child: TooltipVisibility(
+                    visible: false,
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: revealSheet,
+                      // The helper initially creates a 1100x900 surface. Mount
+                      // the sheet only AFTER enlarging it, not in an overflow
+                      // box that would conceal a clipped first-frame layout.
+                      builder: (_, visible, child) =>
+                          visible ? child! : const SizedBox.shrink(),
+                      child: RepaintBoundary(
+                        key: boundaryKey,
+                        child: _ReviewSheet(
+                          mode: mode,
+                          samples: samples,
+                          findKey: findKey,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              mode: mode,
-              width: _sheetSize.width,
-              height: _sheetSize.height,
-            );
-            await tester.binding.setSurfaceSize(_sheetSize);
-            revealSheet.value = true;
-            await settleFileControls(tester);
-            await _decodeActualPictures(tester);
-            findState = findKey.currentState!;
-            expect(tester.takeException(), isNull);
+                mode: mode,
+                width: _sheetSize.width,
+                height: _sheetSize.height,
+              );
+              await tester.binding.setSurfaceSize(_sheetSize);
+              revealSheet.value = true;
+              await settleFileControls(tester);
+              await _decodeActualPictures(tester);
+              findState = findKey.currentState!;
+              expect(tester.takeException(), isNull);
 
-            // Exercise the REAL acknowledgement callback into local view
-            // state, not an artificial transform. This is not a save claim.
-            final first = samples.first;
-            final resize =
-                _within(first.finder, find.byType(ResizablePageIcon));
-            final retainedIcon = tester.element(resize);
-            final retainedTitle = tester.element(
-              _keyWithin(first.finder, 'workspace-file-name'),
-            );
-            tester.widget<ResizablePageIcon>(resize).onSizeChanged(112);
-            await settleFileControls(tester);
-            expect(IconSize.decode(first.view.value.extra), 112);
-            expect(tester.getSize(first.frame), const Size.square(112));
-            tester.widget<ResizablePageIcon>(resize).onSizeChanged(null);
-            await settleFileControls(tester);
-            expect(IconSize.decode(first.view.value.extra), isNull);
-            expect(tester.getSize(first.frame), const Size.square(56));
-            expect(tester.element(resize), same(retainedIcon));
-            expect(
-              tester.element(_keyWithin(first.finder, 'workspace-file-name')),
-              same(retainedTitle),
-            );
-            expect(first.viewChanges, 2);
+              // Exercise the REAL acknowledgement callback into local view
+              // state, not an artificial transform. This is not a save claim.
+              final first = samples.first;
+              final resize =
+                  _within(first.finder, find.byType(ResizablePageIcon));
+              final retainedIcon = tester.element(resize);
+              final retainedTitle = tester.element(
+                _keyWithin(first.finder, 'workspace-file-name'),
+              );
+              tester.widget<ResizablePageIcon>(resize).onSizeChanged(112);
+              await settleFileControls(tester);
+              expect(IconSize.decode(first.view.value.extra), 112);
+              expect(tester.getSize(first.frame), const Size.square(112));
+              tester.widget<ResizablePageIcon>(resize).onSizeChanged(null);
+              await settleFileControls(tester);
+              expect(IconSize.decode(first.view.value.extra), isNull);
+              expect(tester.getSize(first.frame), const Size.square(56));
+              expect(tester.element(resize), same(retainedIcon));
+              expect(
+                tester.element(_keyWithin(first.finder, 'workspace-file-name')),
+                same(retainedTitle),
+              );
+              expect(first.viewChanges, 2);
 
-            // Real fractional pointer motion previews a new frame, then a
-            // native cancel restores it without any metadata read or write.
-            final iconMouse = await hover(first.frame);
-            final origin = tester.getCenter(first.grip);
-            final viewBytes = first.view.value.writeToBuffer();
-            await iconMouse.down(origin);
-            try {
-              for (final delta in [27.375, 56.0]) {
-                await iconMouse.moveTo(origin + Offset(delta, delta));
+              // Real fractional pointer motion previews a new frame, then a
+              // native cancel restores it without any metadata read or write.
+              final iconMouse = await hover(first.frame);
+              final origin = tester.getCenter(first.grip);
+              final viewBytes = first.view.value.writeToBuffer();
+              await iconMouse.down(origin);
+              try {
+                for (final delta in [27.375, 56.0]) {
+                  await iconMouse.moveTo(origin + Offset(delta, delta));
+                  await tester.pump();
+                  expect(
+                    tester.getSize(first.frame),
+                    Size.square(56 + delta),
+                    reason: 'The actual native frame must follow the pointer.',
+                  );
+                  expect(first.view.value.writeToBuffer(), viewBytes);
+                  _expectInside(
+                    tester.getRect(first.grip),
+                    tester.getRect(first.frame),
+                  );
+                }
+              } finally {
+                await iconMouse.cancel();
                 await tester.pump();
-                expect(
-                  tester.getSize(first.frame),
-                  Size.square(56 + delta),
-                  reason: 'The actual native frame must follow the pointer.',
-                );
-                expect(first.view.value.writeToBuffer(), viewBytes);
-                _expectInside(
-                    tester.getRect(first.grip), tester.getRect(first.frame));
               }
-            } finally {
-              await iconMouse.cancel();
+              expect(tester.getSize(first.frame), const Size.square(56));
+              expect(first.view.value.writeToBuffer(), viewBytes);
+              expect(first.viewChanges, 2);
+              await _hover(tester, iconMouse, first.frame);
+              await hover(samples.last.frame);
+
+              // Only local bookkeeping/fit callbacks are activated. Copy, Share,
+              // Print, Download, title rename, cover and picker are never opened.
+              await _click(tester, _findControl('findNextMatch'), pointerId++);
+              expect(findState.currentMatch, 2);
+              expect(find.text(_matchLabel(2)), findsOneWidget);
+              await _click(
+                tester,
+                _findControl('findPreviousMatch'),
+                pointerId++,
+              );
+              expect(findState.currentMatch, 1);
+              await _click(
+                tester,
+                _within(first.finder, find.byTooltip('Fit whole page')),
+                pointerId++,
+              );
+              expect(first.fitCalls, 1);
+              FocusManager.instance.primaryFocus?.unfocus();
               await tester.pump();
-            }
-            expect(tester.getSize(first.frame), const Size.square(56));
-            expect(first.view.value.writeToBuffer(), viewBytes);
-            expect(first.viewChanges, 2);
-            await _hover(tester, iconMouse, first.frame);
-            await hover(samples.last.frame);
+              await tester.pump(_hoverDuration);
+              // A second device leaving Fit clears the header's shared hover
+              // flag. Re-enter with the retained icon pointer before capture.
+              await iconMouse.moveTo(const Offset(-20, -20));
+              await tester.pump();
+              await _hover(tester, iconMouse, first.frame);
 
-            // Only local bookkeeping/fit callbacks are activated. Copy, Share,
-            // Print, Download, title rename, cover and picker are never opened.
-            await _click(tester, _findControl('findNextMatch'), pointerId++);
-            expect(findState.currentMatch, 2);
-            expect(find.text(_matchLabel(2)), findsOneWidget);
-            await _click(
-                tester, _findControl('findPreviousMatch'), pointerId++);
-            expect(findState.currentMatch, 1);
-            await _click(
-              tester,
-              _within(first.finder, find.byTooltip('Fit whole page')),
-              pointerId++,
-            );
-            expect(first.fitCalls, 1);
-            FocusManager.instance.primaryFocus?.unfocus();
-            await tester.pump();
-            await tester.pump(_hoverDuration);
-            // A second device leaving Fit clears the header's shared hover
-            // flag. Re-enter with the retained icon pointer before capture.
-            await iconMouse.moveTo(const Offset(-20, -20));
-            await tester.pump();
-            await _hover(tester, iconMouse, first.frame);
+              final sidebarLabel = tester.getRect(find.byKey(_sidebarLabel));
+              // Hit the painted label, not SidebarRow's non-opaque outer region.
+              final sidebarMouse = await hover(find.byKey(_sidebarLabel));
+              await _hover(tester, sidebarMouse, find.byKey(_sidebarMore));
+              expect(tester.getRect(find.byKey(_sidebarLabel)), sidebarLabel);
 
-            final sidebarLabel = tester.getRect(find.byKey(_sidebarLabel));
-            // Hit the painted label, not SidebarRow's non-opaque outer region.
-            final sidebarMouse = await hover(find.byKey(_sidebarLabel));
-            await _hover(tester, sidebarMouse, find.byKey(_sidebarMore));
-            expect(tester.getRect(find.byKey(_sidebarLabel)), sidebarLabel);
-
-            final findBounds = tester.getRect(find.byKey(_find));
-            final controls = {
-              for (final key in _findButtons)
-                key: tester.getRect(_findControl(key)),
-            };
-            await hover(_findControl('findNextMatch'));
-            expect(tester.getRect(find.byKey(_find)), findBounds);
-            for (final entry in controls.entries) {
-              expect(tester.getRect(_findControl(entry.key)), entry.value);
-            }
-            // Includes lazy sidebar actions created by the actual hover.
-            await _decodeActualPictures(tester);
-
-            _expectFind(tester);
-            _expectShell(tester, mode);
-            for (final sample in samples) {
-              _expectPdfHeader(tester, sample);
-              sample.expectNoBackendWork();
-              _expectInside(tester.getRect(sample.finder),
-                  tester.getRect(find.byKey(boundaryKey)));
-            }
-            expect(find.byType(DocumentViewportHeader), findsNothing);
-            expect(find.byType(FlowyIconEmojiPicker), findsNothing);
-            expect(find.byType(AppMenuRow), findsNothing);
-            expect(find.byType(StandaloneFileScope), findsNWidgets(2));
-            expect(find.byType(PageIconBackendScope), findsOneWidget);
-            expect(find.byType(DefaultIconStyleScope), findsOneWidget);
-            expect(tester.getSize(find.byKey(boundaryKey)), _sheetSize);
-            expect(network.attempts, 0);
-            expect(tester.takeException(), isNull);
-            await _captureIfRequested(tester, boundaryKey, mode);
-            expect(tester.takeException(), isNull);
-          } finally {
-            try {
-              for (final mouse in pointers.reversed) {
-                await mouse.removePointer();
+              final findBounds = tester.getRect(find.byKey(_find));
+              final controls = {
+                for (final key in _findButtons)
+                  key: tester.getRect(_findControl(key)),
+              };
+              await hover(_findControl('findNextMatch'));
+              expect(tester.getRect(find.byKey(_find)), findBounds);
+              for (final entry in controls.entries) {
+                expect(tester.getRect(_findControl(entry.key)), entry.value);
               }
-              await unmountFileControls(tester);
-              expect(find.byType(StandaloneFileScope), findsNothing);
-              expect(find.byType(PageIconBackendScope), findsNothing);
-              expect(find.byType(DefaultIconStyleScope), findsNothing);
-              expect(find.byType(PreviewToolbarRegion), findsNothing);
-              if (findState != null) {
-                expect(findState.disposed, isTrue);
-                expect(findState.queryFocus.parent, isNull);
-                expect(findState.replaceFocus.parent, isNull);
-              }
+              // Includes lazy sidebar actions created by the actual hover.
+              await _decodeActualPictures(tester);
+
+              _expectFind(tester);
+              _expectShell(tester, mode);
               for (final sample in samples) {
+                _expectPdfHeader(tester, sample);
                 sample.expectNoBackendWork();
-                expect(sample.chrome.hasListeners, isFalse);
-                expect(sample.view.hasListeners, isFalse);
+                _expectInside(
+                  tester.getRect(sample.finder),
+                  tester.getRect(find.byKey(boundaryKey)),
+                );
               }
+              expect(find.byType(DocumentViewportHeader), findsNothing);
+              expect(find.byType(FlowyIconEmojiPicker), findsNothing);
+              expect(find.byType(AppMenuRow), findsNothing);
+              expect(find.byType(StandaloneFileScope), findsNWidgets(2));
+              expect(find.byType(PageIconBackendScope), findsOneWidget);
+              expect(find.byType(DefaultIconStyleScope), findsOneWidget);
+              expect(tester.getSize(find.byKey(boundaryKey)), _sheetSize);
               expect(network.attempts, 0);
               expect(tester.takeException(), isNull);
+              await _captureIfRequested(tester, boundaryKey, mode);
+              expect(tester.takeException(), isNull);
             } finally {
-              // Dispose in the test body, before Flutter's semantics leak check.
-              semantics.dispose();
-              for (final sample in samples) {
-                sample.dispose();
+              try {
+                for (final mouse in pointers.reversed) {
+                  await mouse.removePointer();
+                }
+                await unmountFileControls(tester);
+                expect(find.byType(StandaloneFileScope), findsNothing);
+                expect(find.byType(PageIconBackendScope), findsNothing);
+                expect(find.byType(DefaultIconStyleScope), findsNothing);
+                expect(find.byType(PreviewToolbarRegion), findsNothing);
+                if (findState != null) {
+                  expect(findState.disposed, isTrue);
+                  expect(findState.queryFocus.parent, isNull);
+                  expect(findState.replaceFocus.parent, isNull);
+                }
+                for (final sample in samples) {
+                  sample.expectNoBackendWork();
+                  expect(sample.chrome.hasRegisteredListeners, isFalse);
+                  expect(sample.view.hasRegisteredListeners, isFalse);
+                }
+                expect(network.attempts, 0);
+                expect(tester.takeException(), isNull);
+              } finally {
+                // Dispose in the test body, before Flutter's semantics leak check.
+                semantics.dispose();
+                for (final sample in samples) {
+                  sample.dispose();
+                }
+                revealSheet.dispose();
+                tester.view.resetDevicePixelRatio();
+                await tester.binding.setSurfaceSize(null);
               }
-              revealSheet.dispose();
-              tester.view.resetDevicePixelRatio();
-              await tester.binding.setSurfaceSize(null);
             }
-          }
-        }, network);
+          },
+          network,
+        );
       },
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
       timeout: const Timeout(Duration(seconds: 60)),
@@ -380,12 +390,18 @@ class _ReviewSheet extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text('Find & file chrome',
-                    style: WorkspaceTypography.style(
-                        context, WorkspaceTextRole.section)),
+                Text(
+                  'Find & file chrome',
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.section,
+                  ),
+                ),
                 const Spacer(),
-                Text('${mode.toUpperCase()} · COMPONENT REVIEW',
-                    style: caption),
+                Text(
+                  '${mode.toUpperCase()} · COMPONENT REVIEW',
+                  style: caption,
+                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -409,7 +425,9 @@ class _ReviewSheet extends StatelessWidget {
                     title: Text(
                       'WindowTitleBar component · native caption buttons omitted',
                       style: WorkspaceTypography.style(
-                          context, WorkspaceTextRole.metadata),
+                        context,
+                        WorkspaceTextRole.metadata,
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -428,7 +446,8 @@ class _ReviewSheet extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   const SidebarSectionLabel(
-                                      'SIDEBAR COMPONENTS'),
+                                    'SIDEBAR COMPONENTS',
+                                  ),
                                   const SizedBox(height: 6),
                                   SidebarRow(
                                     key: _sidebarFile,
@@ -473,8 +492,9 @@ class _ReviewSheet extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                    'Find / Replace component · local callbacks',
-                                    style: caption),
+                                  'Find / Replace component · local callbacks',
+                                  style: caption,
+                                ),
                                 const SizedBox(height: 6),
                                 _FindComponent(key: findKey),
                               ],
@@ -507,8 +527,11 @@ class _ReviewSheet extends StatelessWidget {
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      WorkspaceGlyph.named(name,
-                          key: ValueKey('review-glyph-$name'), size: 24),
+                      WorkspaceGlyph.named(
+                        name,
+                        key: ValueKey('review-glyph-$name'),
+                        size: 24,
+                      ),
                       const SizedBox(height: 4),
                       Text(label, style: caption),
                     ],
@@ -530,6 +553,16 @@ class _ReviewSheet extends StatelessWidget {
   }
 }
 
+class _ObservedChromeController extends StandaloneFileChromeController {
+  bool get hasRegisteredListeners => hasListeners;
+}
+
+class _ObservedNotifier<T> extends ValueNotifier<T> {
+  _ObservedNotifier(super.value);
+
+  bool get hasRegisteredListeners => hasListeners;
+}
+
 class _PdfSample {
   _PdfSample(this.id, {double? iconSize}) : seededSize = iconSize {
     file = MemoryCodeFile('', path: '/fixture/$id.pdf');
@@ -538,17 +571,17 @@ class _PdfSample {
       iconSize,
     );
     backend = FileControlBackend(seed, file);
-    view = ValueNotifier(seed);
+    view = _ObservedNotifier(seed);
     originalBytes = seed.writeToBuffer();
   }
 
   final String id;
   final double? seededSize;
   final binding = Object();
-  final chrome = StandaloneFileChromeController();
+  final chrome = _ObservedChromeController();
   late final MemoryCodeFile file;
   late final FileControlBackend backend;
-  late final ValueNotifier<ViewPB> view;
+  late final _ObservedNotifier<ViewPB> view;
   late final List<int> originalBytes;
   int viewChanges = 0;
   int fitCalls = 0;
@@ -619,7 +652,9 @@ class _PdfHeaderComponent extends StatelessWidget {
                     coverBackend: sample.backend.covers,
                     updateIcon: sample.backend.writeIcon,
                     source: MediaActionSource(
-                        source: sample.file.path, name: view.name),
+                      source: sample.file.path,
+                      name: view.name,
+                    ),
                     mediaActions: sample.backend.media,
                     fileAvailable: true,
                     actionsVisible: true,
@@ -668,9 +703,13 @@ class _PdfHeaderComponent extends StatelessWidget {
                     iconSize: 16,
                     entries: () => [
                       AppMenuItem(
-                          label: 'Fit whole page', onSelected: sample.fit),
+                        label: 'Fit whole page',
+                        onSelected: sample.fit,
+                      ),
                       AppMenuItem(
-                          label: 'Fit to width', onSelected: sample.fit),
+                        label: 'Fit to width',
+                        onSelected: sample.fit,
+                      ),
                     ],
                   ),
                 ),
@@ -758,16 +797,20 @@ void _expectFind(WidgetTester tester) {
   expect(find.text(_matchLabel(1)), findsOneWidget);
   final liveCount = find.semantics.byLabel(_matchLabel(1)).evaluate().single;
   expect(liveCount.attached, isTrue);
-  expect(liveCount.getSemanticsData().hasFlag(ui.SemanticsFlag.isLiveRegion),
-      isTrue);
+  expect(
+    liveCount.getSemanticsData().hasFlag(ui.SemanticsFlag.isLiveRegion),
+    isTrue,
+  );
   final bounds = tester.getRect(bar);
   expect(bounds.width, FindBarMetrics.maxWidth);
   final queryGroup = tester.getRect(_findControl('findQueryGroup'));
   final navigation = tester.getRect(_findControl('findNavigationGroup'));
   expect(navigation.center.dy, closeTo(queryGroup.center.dy, 0.01));
   expect(navigation.left, greaterThan(queryGroup.right));
-  expect(tester.getRect(_findControl('replaceTextField')).top,
-      greaterThan(tester.getRect(_findControl('findTextField')).bottom));
+  expect(
+    tester.getRect(_findControl('replaceTextField')).top,
+    greaterThan(tester.getRect(_findControl('findTextField')).bottom),
+  );
 
   final targets = <Finder>[
     _findControl('findTextField'),
@@ -788,8 +831,10 @@ void _expectFind(WidgetTester tester) {
     final button = tester.widget<IconButton>(_findControl(key));
     expect(button.onPressed, isNotNull);
     expect(button.icon, isA<WorkspaceGlyph>());
-    expect(tester.getSize(_findControl(key)),
-        const Size.square(FindBarMetrics.controlSize));
+    expect(
+      tester.getSize(_findControl(key)),
+      const Size.square(FindBarMetrics.controlSize),
+    );
   }
   _expectDisjoint(targets.map(tester.getRect).toList());
 }
@@ -797,11 +842,14 @@ void _expectFind(WidgetTester tester) {
 void _expectShell(WidgetTester tester, String mode) {
   final context = tester.element(find.byKey(_titleBar));
   expect(PaperTheme.isEnabled(context), mode == 'paper');
-  expect(Theme.of(context).brightness,
-      mode == 'dark' ? Brightness.dark : Brightness.light);
   expect(
-      tester.widget<WindowTitleBar>(find.byKey(_titleBar)).showCaptionButtons,
-      isFalse);
+    Theme.of(context).brightness,
+    mode == 'dark' ? Brightness.dark : Brightness.light,
+  );
+  expect(
+    tester.widget<WindowTitleBar>(find.byKey(_titleBar)).showCaptionButtons,
+    isFalse,
+  );
   final titleSurface = tester.widget<ColoredBox>(
     _within(find.byKey(_titleBar), find.byType(ColoredBox)).first,
   );
@@ -825,12 +873,13 @@ void _expectShell(WidgetTester tester, String mode) {
     final loader = picture.bytesLoader as SvgStringLoader;
     expect(picture.colorFilter, isNull);
     expect(
-        loader,
-        SvgStringLoader(
-          vividIconSvg(WorkspaceGlyphs.vividNameFor(name)!)!,
-          theme: loader.theme,
-          colorMapper: loader.colorMapper,
-        ));
+      loader,
+      SvgStringLoader(
+        vividIconSvg(WorkspaceGlyphs.vividNameFor(name)!)!,
+        theme: loader.theme,
+        colorMapper: loader.colorMapper,
+      ),
+    );
   }
 }
 
@@ -850,16 +899,23 @@ void _expectPdfHeader(WidgetTester tester, _PdfSample sample) {
   expect(_within(row, find.byType(Wrap)), findsNothing);
   final scrollWidget = tester.widget<SingleChildScrollView>(scroll);
   expect(scrollWidget.scrollDirection, Axis.horizontal);
-  expect(scrollWidget.controller!.position.maxScrollExtent, closeTo(0, 0.01),
-      reason: 'All PDF and original-file actions must be visible at once.');
+  expect(
+    scrollWidget.controller!.position.maxScrollExtent,
+    closeTo(0, 0.01),
+    reason: 'All PDF and original-file actions must be visible at once.',
+  );
 
   final size = sample.seededSize ?? 56.0;
   expect(IconSize.decode(sample.view.value.extra), sample.seededSize);
   expect(tester.getSize(sample.frame), Size.square(size));
-  expect(tester.getSize(_within(root, find.byType(PageIconArtwork))),
-      Size.square(size));
-  final glyph = _within(_within(root, find.byType(FileIdentityGlyph)),
-      find.byType(WorkspaceGlyph));
+  expect(
+    tester.getSize(_within(root, find.byType(PageIconArtwork))),
+    Size.square(size),
+  );
+  final glyph = _within(
+    _within(root, find.byType(FileIdentityGlyph)),
+    find.byType(WorkspaceGlyph),
+  );
   expect(tester.widget<WorkspaceGlyph>(glyph).name, 'file-pdf');
   _expectHitArea(sample.grip);
   _expectInside(tester.getRect(sample.grip), tester.getRect(sample.frame));
@@ -871,12 +927,14 @@ void _expectPdfHeader(WidgetTester tester, _PdfSample sample) {
   expect(resizeData.hasAction(ui.SemanticsAction.increase), isTrue);
   final title = tester.getRect(_keyWithin(root, 'workspace-file-name'));
   expect(
-      title.top,
-      greaterThanOrEqualTo(tester.getRect(sample.frame).bottom +
-          WorkspaceTokens.pageIconTitleGap));
+    title.top,
+    greaterThanOrEqualTo(
+      tester.getRect(sample.frame).bottom + WorkspaceTokens.pageIconTitleGap,
+    ),
+  );
   for (final key in [
     'workspace-file-change-icon',
-    'workspace-file-add-cover'
+    'workspace-file-add-cover',
   ]) {
     final action = _keyWithin(root, key);
     _expectHitArea(action);
@@ -901,13 +959,14 @@ void _expectPdfHeader(WidgetTester tester, _PdfSample sample) {
   expect(tester.widget<TextField>(page).controller!.text, '3');
   _expectHitArea(page);
   final native = _within(
-      row,
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is IconButton ||
-            widget is TextButton ||
-            widget is AppMenuIconButton,
-      ));
+    row,
+    find.byWidgetPredicate(
+      (widget) =>
+          widget is IconButton ||
+          widget is TextButton ||
+          widget is AppMenuIconButton,
+    ),
+  );
   final rects = <Rect>[tester.getRect(page)];
   for (final element in native.evaluate()) {
     final target = find.byWidget(element.widget);
@@ -920,11 +979,13 @@ void _expectPdfHeader(WidgetTester tester, _PdfSample sample) {
   _expectDisjoint(rects);
   final context = tester.element(header);
   expect(
-      tester
-          .widget<DocumentViewportBar>(
-              _keyWithin(root, 'workspace-file-identity-row'))
-          .background,
-      DocumentViewportStyle.of(context).canvas);
+    tester
+        .widget<DocumentViewportBar>(
+          _keyWithin(root, 'workspace-file-identity-row'),
+        )
+        .background,
+    DocumentViewportStyle.of(context).canvas,
+  );
 }
 
 void _expectInside(Rect child, Rect parent) {
@@ -936,8 +997,11 @@ void _expectInside(Rect child, Rect parent) {
 void _expectDisjoint(List<Rect> rects) {
   for (var i = 0; i < rects.length; i++) {
     for (var j = i + 1; j < rects.length; j++) {
-      expect(rects[i].deflate(0.1).overlaps(rects[j].deflate(0.1)), isFalse,
-          reason: 'Native controls must not overlap each other.');
+      expect(
+        rects[i].deflate(0.1).overlaps(rects[j].deflate(0.1)),
+        isFalse,
+        reason: 'Native controls must not overlap each other.',
+      );
     }
   }
 }
@@ -965,7 +1029,10 @@ TestGesture _mouse(WidgetTester tester, int id) => TestGesture(
     );
 
 Future<void> _hover(
-    WidgetTester tester, TestGesture mouse, Finder target) async {
+  WidgetTester tester,
+  TestGesture mouse,
+  Finder target,
+) async {
   _expectHitArea(target);
   await mouse.moveTo(tester.getCenter(target));
   await tester.pump();
@@ -1049,13 +1116,14 @@ Future<void> _captureIfRequested(
         type != FileSystemEntityType.file) {
       throw StateError('Review output must be a regular PNG file.');
     }
-    final image = await _ownedImage(boundary.toImage(pixelRatio: 1));
+    final image = await _ownedImage(boundary.toImage());
     try {
       final bytes = await image
           .toByteData(format: ui.ImageByteFormat.png)
           .timeout(_deadline);
-      if (bytes == null)
+      if (bytes == null) {
         throw StateError('The component sheet produced no PNG.');
+      }
       final png =
           bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
       expect(png.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
@@ -1069,8 +1137,11 @@ Future<void> _captureIfRequested(
       image.dispose();
     }
   });
-  expect(written, isTrue,
-      reason: 'The requested fresh component PNG must exist.');
+  expect(
+    written,
+    isTrue,
+    reason: 'The requested fresh component PNG must exist.',
+  );
 }
 
 Future<ui.Image> _ownedImage(Future<ui.Image> future) {
@@ -1078,10 +1149,13 @@ Future<ui.Image> _ownedImage(Future<ui.Image> future) {
   return future.then((image) {
     if (timedOut) image.dispose();
     return image;
-  }).timeout(_deadline, onTimeout: () {
-    timedOut = true;
-    throw TimeoutException('Component review raster deadline', _deadline);
-  });
+  }).timeout(
+    _deadline,
+    onTimeout: () {
+      timedOut = true;
+      throw TimeoutException('Component review raster deadline', _deadline);
+    },
+  );
 }
 
 class _NoNetwork extends HttpOverrides {

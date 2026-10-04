@@ -73,13 +73,14 @@ class _ShelvesState extends State<_Shelves> {
         header: FileBrowserPageHeader.maybeOf(context),
         slivers: [
           SliverFillRemaining(
-              hasScrollBody: false,
-              child: bookmarkEmptyView(
-                context: context,
-                controller: controller,
-                collection: widget.collection,
-                theme: widget.theme,
-              ))
+            hasScrollBody: false,
+            child: bookmarkEmptyView(
+              context: context,
+              controller: controller,
+              collection: widget.collection,
+              theme: widget.theme,
+            ),
+          ),
         ],
       );
     }
@@ -107,17 +108,18 @@ class _ShelvesState extends State<_Shelves> {
             SliverPadding(
               padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
               sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                (context, index) => _Shelf(
-                  group: groups[index],
-                  controller: controller,
-                  collection: widget.collection,
-                  theme: widget.theme,
-                  grouping: grouping,
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _Shelf(
+                    group: groups[index],
+                    controller: controller,
+                    collection: widget.collection,
+                    theme: widget.theme,
+                    grouping: grouping,
+                  ),
+                  childCount: groups.length,
                 ),
-                childCount: groups.length,
-              )),
-            )
+              ),
+            ),
           ],
         ),
       ),

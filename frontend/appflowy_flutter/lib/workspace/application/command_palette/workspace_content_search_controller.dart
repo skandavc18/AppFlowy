@@ -743,7 +743,9 @@ class WorkspaceTitleSearchController extends ChangeNotifier {
         _user == currentUserId &&
         _ready == ready &&
         mapEquals(views, _views) &&
-        setEquals(excluded, _excluded)) return;
+        setEquals(excluded, _excluded)) {
+      return;
+    }
     _workspace = workspaceId;
     _user = currentUserId;
     _ready = ready;
@@ -753,15 +755,20 @@ class WorkspaceTitleSearchController extends ChangeNotifier {
     _restart();
   }
 
-  void search(String query, CommandPaletteFilter filter,
-      Iterable<SearchResultItem> backend) {
+  void search(
+    String query,
+    CommandPaletteFilter filter,
+    Iterable<SearchResultItem> backend,
+  ) {
     if (_disposed) return;
     final items = {for (final item in backend) item.id: item};
     if (_enabled &&
         _query == query &&
         _sameFilter(_filter, filter) &&
         _filter.pageContents == filter.pageContents &&
-        mapEquals(_backend, items)) return;
+        mapEquals(_backend, items)) {
+      return;
+    }
     _query = query;
     _enabled = true;
     _filter = filter;
@@ -796,8 +803,10 @@ class WorkspaceTitleSearchController extends ChangeNotifier {
       path.add(cursor);
       if (cursor.id == _workspace) return path;
       if (_excluded.contains(cursor.parentViewId)) return null;
-      if (cursor.parentViewId == _workspace && !_views.containsKey(_workspace))
+      if (cursor.parentViewId == _workspace &&
+          !_views.containsKey(_workspace)) {
         return path;
+      }
       final parent = _views[cursor.parentViewId];
       if (parent == null) return null;
       cursor = parent;
@@ -842,7 +851,9 @@ class WorkspaceTitleSearchController extends ChangeNotifier {
               view: view,
               cachedViews: _views,
               currentUserId: _user,
-            )) continue;
+            )) {
+          continue;
+        }
         candidates.add((view, rank ?? 5));
       }
       candidates.sort((a, b) {
@@ -865,8 +876,11 @@ class WorkspaceTitleSearchController extends ChangeNotifier {
         timedOut = true;
         final retryGeneration = _generation;
         if (!started && !retry) {
-          provider.readScheduler.whenAvailable(this,
-              () => _current(retryGeneration), () => _restart(retry: true));
+          provider.readScheduler.whenAvailable(
+            this,
+            () => _current(retryGeneration),
+            () => _restart(retry: true),
+          );
         }
         notifyListeners();
       });
@@ -922,13 +936,15 @@ class WorkspaceTitleSearchController extends ChangeNotifier {
         published[view.id] = view;
       }
       final backend = _backendFor(expected.id);
-      hits.add(SearchResultItem(
-        id: expected.id,
-        icon: backend?.icon ?? ResultIconPB(),
-        displayName: expected.name,
-        content: backend?.content ?? '',
-        workspaceId: _workspace,
-      ));
+      hits.add(
+        SearchResultItem(
+          id: expected.id,
+          icon: backend?.icon ?? ResultIconPB(),
+          displayName: expected.name,
+          content: backend?.content ?? '',
+          workspaceId: _workspace,
+        ),
+      );
       _results = List.unmodifiable(hits);
       _publishedViews = Map.unmodifiable(published);
       notifyListeners();

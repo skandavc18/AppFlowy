@@ -21,7 +21,9 @@ class PageIconBackendService {
   /// must re-read the view inside this queue and merge only its owned fields.
   /// Installing the tail synchronously also orders re-entrant UI listeners.
   static Future<T> serializeMetadata<T>(
-      String viewId, Future<T> Function() operation) {
+    String viewId,
+    Future<T> Function() operation,
+  ) {
     final previous = _tails[viewId] ?? Future<void>.value();
     final release = Completer<void>();
     final tail = release.future;

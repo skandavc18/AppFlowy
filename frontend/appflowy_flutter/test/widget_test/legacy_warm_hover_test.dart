@@ -113,8 +113,10 @@ void main() {
                 );
               }
               expect(state.selection, selection);
-              expect(state.getNodeAtPath([0])!.delta!.toPlainText(),
-                  'Retained text');
+              expect(
+                state.getNodeAtPath([0])!.delta!.toPlainText(),
+                'Retained text',
+              );
               expect(editor.keepEditorFocusNotifier.value, holds);
 
               await tester.tap(trigger, kind: PointerDeviceKind.mouse);
@@ -179,15 +181,19 @@ void main() {
                   palette,
                   reduced: reduced,
                 );
-                expect(tester.state<PopoverContainerState>(popup),
-                    same(popupState));
+                expect(
+                  tester.state<PopoverContainerState>(popup),
+                  same(popupState),
+                );
                 final optionContext = optionContexts[index];
                 expect(tester.element(options.at(index)), same(optionContext));
                 expect(optionContext.mounted, isTrue);
                 expect(tester.renderObject(options.at(index)).attached, isTrue);
                 expect(PopoverContainer.maybeOf(optionContext), isNotNull);
                 expect(
-                    PopoverContainer.maybeOf(optionContext), same(popupState));
+                  PopoverContainer.maybeOf(optionContext),
+                  same(popupState),
+                );
                 expect(PopoverState.rootEntry.contains(nativePopover), isTrue);
                 expect(editor.keepEditorFocusNotifier.value, holds + 1);
                 expect(state.selection, selection);
@@ -200,15 +206,21 @@ void main() {
               expect(PopoverState.rootEntry.contains(nativePopover), isFalse);
               expect(popupState.mounted, isFalse);
               expect(
-                  optionContexts.every((context) => !context.mounted), isTrue);
+                optionContexts.every((context) => !context.mounted),
+                isTrue,
+              );
               expect(nativePopover.mounted, isTrue);
               expect(
-                  tester.state<PopoverState>(popoverHost), same(nativePopover));
+                tester.state<PopoverState>(popoverHost),
+                same(nativePopover),
+              );
               expect(editor.keepEditorFocusNotifier.value, holds);
               expect(state.selection, isNotNull);
               expect(state.selection, selection);
-              expect(state.getNodeAtPath([0])!.delta!.toPlainText(),
-                  'Retained text');
+              expect(
+                state.getNodeAtPath([0])!.delta!.toPlainText(),
+                'Retained text',
+              );
 
               await tester.tap(trigger, kind: PointerDeviceKind.mouse);
               await tester.pump();
@@ -231,19 +243,25 @@ void main() {
                 expect(node.type, editor.HeadingBlockKeys.type);
                 expect(node.attributes[editor.HeadingBlockKeys.level], 2);
               } else {
-                expect(node.attributes[editor.blockComponentAlign],
-                    centerAlignmentKey);
+                expect(
+                  node.attributes[editor.blockComponentAlign],
+                  centerAlignmentKey,
+                );
               }
               expect(node.delta!.toPlainText(), 'Retained text');
               expect(popup, findsOneWidget);
-              expect(tester.state<PopoverContainerState>(popup),
-                  same(actionPopupState));
+              expect(
+                tester.state<PopoverContainerState>(popup),
+                same(actionPopupState),
+              );
               expect(tester.element(options.at(1)), same(actionContext));
               expect(actionContext.mounted, isTrue);
               expect(tester.renderObject(options.at(1)).attached, isTrue);
               expect(PopoverContainer.maybeOf(actionContext), isNotNull);
-              expect(PopoverContainer.maybeOf(actionContext),
-                  same(actionPopupState));
+              expect(
+                PopoverContainer.maybeOf(actionContext),
+                same(actionPopupState),
+              );
               expect(PopoverState.rootEntry.contains(nativePopover), isTrue);
               expect(editor.keepEditorFocusNotifier.value, holds + 1);
 
@@ -289,7 +307,7 @@ void main() {
             final surfaces = [
               palette.surface,
               palette.mutedSurface,
-              palette.floatingSurface
+              palette.floatingSurface,
             ];
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -318,7 +336,10 @@ void main() {
                           border: index == 2
                               ? Border(
                                   left: BorderSide(
-                                      width: 2, color: palette.accent))
+                                    width: 2,
+                                    color: palette.accent,
+                                  ),
+                                )
                               : null,
                         ),
                         child: SizedBox(
@@ -331,7 +352,8 @@ void main() {
                               controller: controllers[_rowNames[index]],
                               style: TextStyle(color: palette.textSecondary),
                               decoration: const InputDecoration(
-                                  border: InputBorder.none),
+                                border: InputBorder.none,
+                              ),
                             ),
                           ),
                         ),
@@ -351,11 +373,11 @@ void main() {
               name: tester.state<EditableTextState>(_editable(name)),
           };
           final bounds = {
-            for (final name in _rowNames) name: tester.getRect(_key(name))
+            for (final name in _rowNames) name: tester.getRect(_key(name)),
           };
           final fieldBounds = {
             for (final name in _rowNames)
-              name: tester.getRect(_key('$name-field'))
+              name: tester.getRect(_key('$name-field')),
           };
           for (final name in _rowNames) {
             expect(_fill(tester, _key(name)), wash.withValues(alpha: 0));
@@ -374,14 +396,20 @@ void main() {
             final scope = _key(name);
             final base = tester.widget<ColoredBox>(_key('$name-surface')).color;
             expect(_fill(tester, scope), wash);
-            expect(Color.alphaBlend(_fill(tester, scope), base),
-                palette.hoverOn(base));
+            expect(
+              Color.alphaBlend(_fill(tester, scope), base),
+              palette.hoverOn(base),
+            );
             expect(tester.getRect(scope), bounds[name]);
             expect(tester.getRect(_key('$name-field')), fieldBounds[name]);
-            expect(tester.state<EditableTextState>(_editable(name)),
-                same(fields[name]));
-            expect(tester.widget<EditableText>(_editable(name)).style.color,
-                palette.textSecondary);
+            expect(
+              tester.state<EditableTextState>(_editable(name)),
+              same(fields[name]),
+            );
+            expect(
+              tester.widget<EditableText>(_editable(name)).style.color,
+              palette.textSecondary,
+            );
           }
           expect(FocusManager.instance.primaryFocus, same(focus));
 
@@ -390,10 +418,14 @@ void main() {
           await tester.pump(_settle);
           for (final name in _rowNames) {
             expect(_fill(tester, _key(name)), wash.withValues(alpha: 0));
-            expect(tester.state<EditableTextState>(_editable(name)),
-                same(fields[name]));
-            expect(controllers[name]!.text,
-                name == 'relation' ? 'Edited draft stays' : '$name draft');
+            expect(
+              tester.state<EditableTextState>(_editable(name)),
+              same(fields[name]),
+            );
+            expect(
+              controllers[name]!.text,
+              name == 'relation' ? 'Edited draft stays' : '$name draft',
+            );
           }
           expect(FocusManager.instance.primaryFocus, same(focus));
           expect(tester.takeException(), isNull);
@@ -418,13 +450,14 @@ Finder _editable(String name) => find.descendant(
 
 List<FlowySvg> _glyphs(WidgetTester tester, Finder scope) => tester
     .widgetList<FlowySvg>(
-        find.descendant(of: scope, matching: find.byType(FlowySvg)))
+      find.descendant(of: scope, matching: find.byType(FlowySvg)),
+    )
     .toList();
 
 Color _fill(WidgetTester tester, Finder scope) => (tester
-        .widget<DecoratedBox>(find
-            .descendant(of: scope, matching: find.byType(DecoratedBox))
-            .first)
+        .widget<DecoratedBox>(
+          find.descendant(of: scope, matching: find.byType(DecoratedBox)).first,
+        )
         .decoration as BoxDecoration)
     .color!;
 
@@ -432,8 +465,10 @@ void _checkMotion(WidgetTester tester, Finder scope, {required bool reduced}) {
   final animation = tester.widget<AnimatedContainer>(
     find.descendant(of: scope, matching: find.byType(AnimatedContainer)).first,
   );
-  expect(animation.duration,
-      reduced ? Duration.zero : const Duration(milliseconds: 140));
+  expect(
+    animation.duration,
+    reduced ? Duration.zero : const Duration(milliseconds: 140),
+  );
   expect(animation.curve, Curves.easeOutCubic);
 }
 
@@ -461,7 +496,7 @@ Future<void> _checkPointerFade(
       find.descendant(of: scope, matching: find.byType(FlowySvg));
   final glyphRects = [
     for (var i = 0; i < glyphFinder.evaluate().length; i++)
-      tester.getRect(glyphFinder.at(i))
+      tester.getRect(glyphFinder.at(i)),
   ];
   final ink = _glyphs(tester, scope).map((glyph) => glyph.color).toList();
   expect(ink, isNotEmpty);
@@ -474,14 +509,18 @@ Future<void> _checkPointerFade(
   _checkMidpoint(_fill(tester, scope), wash, reduced: reduced);
   expect(tester.getRect(scope), rect);
   expect(
-      _glyphs(tester, scope).map((glyph) => glyph.color), orderedEquals(ink));
+    _glyphs(tester, scope).map((glyph) => glyph.color),
+    orderedEquals(ink),
+  );
   for (var i = 0; i < glyphRects.length; i++) {
     expect(tester.getRect(glyphFinder.at(i)), glyphRects[i]);
   }
   await tester.pump(_finishFade);
   expect(_fill(tester, scope), wash);
-  expect(Color.alphaBlend(_fill(tester, scope), palette.floatingSurface),
-      palette.hoverOn(palette.floatingSurface));
+  expect(
+    Color.alphaBlend(_fill(tester, scope), palette.floatingSurface),
+    palette.hoverOn(palette.floatingSurface),
+  );
   await mouse.moveTo(_outside);
   await tester.pump();
   await tester.pump(_settle);
@@ -508,30 +547,34 @@ Future<BuildContext> _mount(
       )
       .copyWith(platform: TargetPlatform.windows);
   late BuildContext sample;
-  await tester.pumpWidget(MaterialApp(
-    theme: theme,
-    themeAnimationDuration: Duration.zero,
-    // Above the Navigator so native popover overlays inherit both motion flags.
-    builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        disableAnimations: motion == 'disabled',
-        accessibleNavigation: motion == 'accessible',
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: theme,
+      themeAnimationDuration: Duration.zero,
+      // Above the Navigator so native popover overlays inherit both motion flags.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          disableAnimations: motion == 'disabled',
+          accessibleNavigation: motion == 'accessible',
+        ),
+        child: child!,
       ),
-      child: child!,
-    ),
-    home: Scaffold(
-      body: Align(
-        alignment: Alignment.topLeft,
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Builder(builder: (context) {
-            sample = context;
-            return builder(context);
-          }),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Builder(
+              builder: (context) {
+                sample = context;
+                return builder(context);
+              },
+            ),
+          ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
   return sample;
 }

@@ -17,35 +17,39 @@ const _document = CanvasDocument(
   settings: CanvasSettings(viewport: CanvasViewport(offset: Offset(80, 100))),
   nodes: [
     CanvasNode(
-        id: 'near',
-        kind: CanvasNodeKind.text,
-        position: Offset.zero,
-        size: Size(280, 160),
-        text: 'An editable local note'),
+      id: 'near',
+      kind: CanvasNodeKind.text,
+      position: Offset.zero,
+      size: Size(280, 160),
+      text: 'An editable local note',
+    ),
     CanvasNode(
-        id: 'far',
-        kind: CanvasNodeKind.text,
-        position: Offset(6000, 4000),
-        size: Size(280, 160),
-        text: 'farword and another farword',
-        frameId: 'frame'),
+      id: 'far',
+      kind: CanvasNodeKind.text,
+      position: Offset(6000, 4000),
+      size: Size(280, 160),
+      text: 'farword and another farword',
+      frameId: 'frame',
+    ),
   ],
   frames: [
     CanvasFrame(
-        id: 'frame',
-        position: Offset(5940, 3930),
-        size: Size(460, 360),
-        title: 'frameword',
-        description: 'frame descriptionword',
-        collapsed: true)
+      id: 'frame',
+      position: Offset(5940, 3930),
+      size: Size(460, 360),
+      title: 'frameword',
+      description: 'frame descriptionword',
+      collapsed: true,
+    ),
   ],
   edges: [
     CanvasEdge(
-        id: 'edge',
-        from: 'near',
-        to: 'far',
-        label: 'edgeword connection',
-        relation: 'relationshipword')
+      id: 'edge',
+      from: 'near',
+      to: 'far',
+      label: 'edgeword connection',
+      relation: 'relationshipword',
+    ),
   ],
 );
 
@@ -59,60 +63,79 @@ void main() {
       final controller = CanvasController(viewId: '', document: _document);
       final baseline = ContextualFindRegion.debugRegisteredRegionCount;
       try {
-        await tester.pumpWidget(surfaceFindTestApp(
+        await tester.pumpWidget(
+          surfaceFindTestApp(
             CanvasBoard(
               controller: controller,
               editable: false,
               embedded: true,
               showChrome: false,
             ),
-            appearance: appearance));
+            appearance: appearance,
+          ),
+        );
         await pumpSurfaceFind(tester);
         final board = tester.state<CanvasBoardState>(find.byType(CanvasBoard));
         expect(
-            board.visibleScene.contains(_document.nodes.last.center), isFalse);
+          board.visibleScene.contains(_document.nodes.last.center),
+          isFalse,
+        );
         expect(find.byType(FindReplaceBar), findsNothing);
         await openSurfaceFind(tester);
         expect(find.byType(FindReplaceBar), findsOneWidget);
         await tester.enterText(
-            find.byKey(const ValueKey('findTextField')), 'farword');
+          find.byKey(const ValueKey('findTextField')),
+          'farword',
+        );
         await pumpSurfaceFind(tester);
         final session = tester
             .widget<SurfaceFindHost>(find.byType(SurfaceFindHost))
             .controller;
         expect(session.matches, hasLength(2));
         expect(
-            board.visibleScene.contains(_document.nodes.last.center), isTrue);
+          board.visibleScene.contains(_document.nodes.last.center),
+          isTrue,
+        );
         final paint = surfaceFindPaint(
-            tester, canvasFindNode('far', CanvasSearchField.text));
+          tester,
+          canvasFindNode('far', CanvasSearchField.text),
+        );
         expect(paint.matchRects, hasLength(2));
         expect(paint.currentRect, isNotNull);
         expect(
-            tester
-                .widget<FindReplaceBar>(find.byType(FindReplaceBar))
-                .replaceController,
-            isNull);
+          tester
+              .widget<FindReplaceBar>(find.byType(FindReplaceBar))
+              .replaceController,
+          isNull,
+        );
         expect(controller.document, same(_document));
         expect(controller.document.frames.single.collapsed, isTrue);
         expect(
-            tester
-                .widget<CanvasFrameBox>(find.byType(CanvasFrameBox))
-                .frame
-                .collapsed,
-            isFalse);
-        await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-            physicalKey: PhysicalKeyboardKey.f3);
+          tester
+              .widget<CanvasFrameBox>(find.byType(CanvasFrameBox))
+              .frame
+              .collapsed,
+          isFalse,
+        );
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.f3,
+          physicalKey: PhysicalKeyboardKey.f3,
+        );
         await pumpSurfaceFind(tester);
         expect(session.currentIndex, 1);
         for (final query in ['frameword', 'descriptionword']) {
           await tester.enterText(
-              find.byKey(const ValueKey('findTextField')), query);
+            find.byKey(const ValueKey('findTextField')),
+            query,
+          );
           await pumpSurfaceFind(tester);
           expect(session.matches, hasLength(1));
           expect(session.currentTargetRect, isNotNull);
         }
         await tester.enterText(
-            find.byKey(const ValueKey('findTextField')), 'edgeword');
+          find.byKey(const ValueKey('findTextField')),
+          'edgeword',
+        );
         await pumpSurfaceFind(tester);
         final edgePainter = tester
             .widgetList<CustomPaint>(find.byType(CustomPaint))
@@ -122,12 +145,15 @@ void main() {
         expect(edgePainter.findHighlightRects, isNotEmpty);
         final boardRect = tester.getRect(find.byType(CanvasBoard));
         expect(
-            edgePainter.findHighlightRects
-                .any((rect) => (Offset.zero & boardRect.size).overlaps(rect)),
-            isTrue);
+          edgePainter.findHighlightRects
+              .any((rect) => (Offset.zero & boardRect.size).overlaps(rect)),
+          isTrue,
+        );
         session.setOptions(const FindOptions(useRegex: true));
         await tester.enterText(
-            find.byKey(const ValueKey('findTextField')), r'^relationshipword$');
+          find.byKey(const ValueKey('findTextField')),
+          r'^relationshipword$',
+        );
         await pumpSurfaceFind(tester);
         expect(session.matches, hasLength(1));
         final relationPainter = tester
@@ -137,11 +163,14 @@ void main() {
             .single;
         expect(relationPainter.currentFindRect, isNotNull);
         expect(
-            (Offset.zero & boardRect.size)
-                .overlaps(relationPainter.currentFindRect!),
-            isTrue);
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-            physicalKey: PhysicalKeyboardKey.escape);
+          (Offset.zero & boardRect.size)
+              .overlaps(relationPainter.currentFindRect!),
+          isTrue,
+        );
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.escape,
+          physicalKey: PhysicalKeyboardKey.escape,
+        );
         await pumpSurfaceFind(tester);
         expect(find.byType(FindReplaceBar), findsNothing);
         expect(controller.document, same(_document));
@@ -164,9 +193,11 @@ void main() {
           .pumpWidget(surfaceFindTestApp(CanvasBoard(controller: controller)));
       await pumpSurfaceFind(tester);
       final field = find.descendant(
-          of: find.byWidgetPredicate(
-              (widget) => widget is CanvasCard && widget.node.id == 'near'),
-          matching: find.byType(TextField));
+        of: find.byWidgetPredicate(
+          (widget) => widget is CanvasCard && widget.node.id == 'near',
+        ),
+        matching: find.byType(TextField),
+      );
       await tester.enterText(field, 'Unsaved near draft');
       final native = tester.widget<TextField>(field);
       native.controller!.selection =
@@ -175,14 +206,18 @@ void main() {
       final state = tester.state(field);
       await openSurfaceFind(tester);
       await tester.enterText(
-          find.byKey(const ValueKey('findTextField')), 'farword');
+        find.byKey(const ValueKey('findTextField')),
+        'farword',
+      );
       await pumpSurfaceFind(tester);
       expect(controller.editing, 'near');
       expect(tester.state(field), same(state));
       expect(native.controller!.value, value);
       expect(controller.document.nodeById('near')!.text, value.text);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-          physicalKey: PhysicalKeyboardKey.escape);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.escape,
+        physicalKey: PhysicalKeyboardKey.escape,
+      );
       await pumpSurfaceFind(tester);
       expect(tester.state(field), same(state));
       expect(native.controller!.value, value);
@@ -200,21 +235,28 @@ void main() {
         .pumpWidget(surfaceFindTestApp(CanvasBoard(controller: controller)));
     await openSurfaceFind(tester);
     await tester.enterText(
-        find.byKey(const ValueKey('findTextField')), 'farword');
+      find.byKey(const ValueKey('findTextField')),
+      'farword',
+    );
     await pumpSurfaceFind(tester);
     final session =
         tester.widget<SurfaceFindHost>(find.byType(SurfaceFindHost)).controller;
     controller.updateNode(
-        'far', (node) => node.copyWith(text: 'changed elsewhere'));
+      'far',
+      (node) => node.copyWith(text: 'changed elsewhere'),
+    );
     await pumpSurfaceFind(tester);
     expect(session.matches, isEmpty);
     session.setQuery('near');
     await tester.pumpWidget(const SizedBox.shrink());
     await pumpSurfaceFind(tester);
     expect(
-        () => controller.updateNode(
-            'near', (node) => node.copyWith(text: 'Still live')),
-        returnsNormally);
+      () => controller.updateNode(
+        'near',
+        (node) => node.copyWith(text: 'Still live'),
+      ),
+      returnsNormally,
+    );
     controller.dispose();
   });
 }

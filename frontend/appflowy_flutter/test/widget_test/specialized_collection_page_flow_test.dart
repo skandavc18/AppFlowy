@@ -34,29 +34,35 @@ void main() {
         final root = _root(CollectionKind.album, mode);
         final repository = _Repository(root.id, bookmarks: false);
         final explorer = WorkspaceExplorerController(
-            root: root, repository: repository, listenForUpdates: false);
+          root: root,
+          repository: repository,
+          listenForUpdates: false,
+        );
         try {
           await explorer.initialize();
           await mountFileControls(
-              tester,
-              PremiumScrollScope(
-                  enabled: true,
-                  child: CollectionPage(
-                    view: root,
-                    controller: explorer,
-                    shellOwnsBreadcrumbs: true,
-                  )),
-              mode: 'paper',
-              width: 1000,
-              height: 850,
-              textScale: 2,
-              reduced: reduced);
+            tester,
+            PremiumScrollScope(
+              enabled: true,
+              child: CollectionPage(
+                view: root,
+                controller: explorer,
+                shellOwnsBreadcrumbs: true,
+              ),
+            ),
+            mode: 'paper',
+            width: 1000,
+            height: 850,
+            textScale: 2,
+            reduced: reduced,
+          );
           final page = tester
               .state<NestedScrollViewState>(find.byType(NestedScrollView));
           expect(page.innerController.positions, hasLength(1));
           final identity = find.byKey(
-              const ValueKey('collection-page-identity'),
-              skipOffstage: false);
+            const ValueKey('collection-page-identity'),
+            skipOffstage: false,
+          );
           final tools =
               find.byType(CollectionWorkspaceToolbar, skipOffstage: false);
           final identityElement = tester.element(identity);
@@ -68,16 +74,19 @@ void main() {
           final model = tester
               .widget<AlbumScaffold>(find.byType(AlbumScaffold))
               .controller;
-          expect(tester.widget<CollectionWorkspaceToolbar>(tools).keepVisible,
-              isTrue);
+          expect(
+            tester.widget<CollectionWorkspaceToolbar>(tools).keepVisible,
+            isTrue,
+          );
 
           Finder action(IconData icon) => find.descendant(
                 of: tools,
                 matching: find.byWidgetPredicate(
-                    (widget) =>
-                        widget is CollectionWorkspaceAction &&
-                        widget.icon == icon,
-                    skipOffstage: false),
+                  (widget) =>
+                      widget is CollectionWorkspaceAction &&
+                      widget.icon == icon,
+                  skipOffstage: false,
+                ),
                 skipOffstage: false,
               );
           final sort = action(Icons.swap_vert_rounded);
@@ -88,12 +97,16 @@ void main() {
             expect(slideshow, findsOneWidget);
             actionRects[sort] = tester.getRect(sort);
             actionRects[slideshow] = tester.getRect(slideshow);
-            expect(actionRects[slideshow]!.right,
-                greaterThan(actionRects[sort]!.right));
+            expect(
+              actionRects[slideshow]!.right,
+              greaterThan(actionRects[sort]!.right),
+            );
           } else {
             // Empty Places has no actions, rather than disabled controls.
-            expect(tester.widget<CollectionWorkspaceToolbar>(tools).actions,
-                isEmpty);
+            expect(
+              tester.widget<CollectionWorkspaceToolbar>(tools).actions,
+              isEmpty,
+            );
           }
 
           bool hitsAction(Finder control, Offset point) {
@@ -104,8 +117,9 @@ void main() {
                 .descendant(
                   of: control,
                   matching: find.byWidgetPredicate(
-                      (widget) => widget is RenderObjectWidget,
-                      skipOffstage: false),
+                    (widget) => widget is RenderObjectWidget,
+                    skipOffstage: false,
+                  ),
                   skipOffstage: false,
                 )
                 .evaluate()
@@ -128,38 +142,57 @@ void main() {
               final sortButton =
                   find.descendant(of: sort, matching: find.byType(TextButton));
               final slideshowButton = find.descendant(
-                  of: slideshow, matching: find.byType(TextButton));
+                of: slideshow,
+                matching: find.byType(TextButton),
+              );
               expect(
-                  tester.widget<TextButton>(sortButton).onPressed, isNotNull);
+                tester.widget<TextButton>(sortButton).onPressed,
+                isNotNull,
+              );
               expect(sortButton.hitTestable(), findsOneWidget);
               expect(
-                  tester.widget<TextButton>(slideshowButton).onPressed, isNull);
+                tester.widget<TextButton>(slideshowButton).onPressed,
+                isNull,
+              );
             }
           }
 
           expectActionsRestored();
           final point = stage.bottomCenter - const Offset(0, 32);
           for (var i = 0; i < 12; i++) {
-            await tester.sendEventToBinding(PointerScrollEvent(
-                position: point, scrollDelta: const Offset(0, 100)));
+            await tester.sendEventToBinding(
+              PointerScrollEvent(
+                position: point,
+                scrollDelta: const Offset(0, 100),
+              ),
+            );
             await tester.pumpAndSettle();
           }
-          expect(page.outerController.offset,
-              closeTo(page.outerController.position.maxScrollExtent, .01));
-          expect(page.innerController.offset,
-              closeTo(page.innerController.position.maxScrollExtent, .01));
+          expect(
+            page.outerController.offset,
+            closeTo(page.outerController.position.maxScrollExtent, .01),
+          );
+          expect(
+            page.innerController.offset,
+            closeTo(page.innerController.position.maxScrollExtent, .01),
+          );
           final travel =
               page.outerController.offset + page.innerController.offset;
           final retiredToolsRect = tester.getRect(tools);
           expect(retiredToolsRect.size, initialToolsRect.size);
           expect(retiredToolsRect.left, initialToolsRect.left);
-          expect(retiredToolsRect.top,
-              closeTo(initialToolsRect.top - travel, .01));
+          expect(
+            retiredToolsRect.top,
+            closeTo(initialToolsRect.top - travel, .01),
+          );
           expect(retiredToolsRect.bottom, lessThanOrEqualTo(stage.top + .01));
           expect(
-              tester.getRect(identity).top,
-              closeTo(
-                  initialIdentityRect.top - page.outerController.offset, .01));
+            tester.getRect(identity).top,
+            closeTo(
+              initialIdentityRect.top - page.outerController.offset,
+              .01,
+            ),
+          );
           expect(identity.hitTestable(), findsNothing);
           expect(tools.hitTestable(), findsNothing);
           for (final control in actionRects.keys) {
@@ -170,8 +203,12 @@ void main() {
           expect(tester.element(tools), same(toolsElement));
           expect(tester.element(find.byType(AlbumEmptyState)), same(empty));
           for (var i = 0; i < 12; i++) {
-            await tester.sendEventToBinding(PointerScrollEvent(
-                position: point, scrollDelta: const Offset(0, -100)));
+            await tester.sendEventToBinding(
+              PointerScrollEvent(
+                position: point,
+                scrollDelta: const Offset(0, -100),
+              ),
+            );
             await tester.pumpAndSettle();
           }
           expect(page.outerController.offset, closeTo(0, .01));
@@ -182,10 +219,9 @@ void main() {
           expect(tester.element(tools), same(toolsElement));
           expectActionsRestored();
           expect(
-              tester
-                  .widget<AlbumScaffold>(find.byType(AlbumScaffold))
-                  .controller,
-              same(model));
+            tester.widget<AlbumScaffold>(find.byType(AlbumScaffold)).controller,
+            same(model),
+          );
           expect(repository.reads, 1);
           expect(tester.takeException(), isNull);
         } finally {
@@ -205,20 +241,24 @@ void main() {
         final root = _root(CollectionKind.bookmark, mode);
         final repository = _Repository(root.id, bookmarks: true);
         final explorer = WorkspaceExplorerController(
-            root: root, repository: repository, listenForUpdates: false);
+          root: root,
+          repository: repository,
+          listenForUpdates: false,
+        );
         await explorer.initialize();
         await mountFileControls(
-            tester,
-            CollectionPage(
-              view: root,
-              controller: explorer,
-              shellOwnsBreadcrumbs: true,
-            ),
-            mode: appearance,
-            width: 1000,
-            height: 850,
-            textScale: 2,
-            reduced: true);
+          tester,
+          CollectionPage(
+            view: root,
+            controller: explorer,
+            shellOwnsBreadcrumbs: true,
+          ),
+          mode: appearance,
+          width: 1000,
+          height: 850,
+          textScale: 2,
+          reduced: true,
+        );
         final page =
             tester.state<NestedScrollViewState>(find.byType(NestedScrollView));
         final host = tester.state(find.byType(BookmarkHost));
@@ -231,8 +271,11 @@ void main() {
         expect(scaffold.pageFlow, isTrue);
         expect(tester.widget<BookmarkToolbar>(toolbar).persistent, isTrue);
         expect(page.innerController.positions, hasLength(1));
-        final sort = find.byWidgetPredicate((widget) =>
-            widget is BookmarkAction && widget.icon == Icons.swap_vert_rounded);
+        final sort = find.byWidgetPredicate(
+          (widget) =>
+              widget is BookmarkAction &&
+              widget.icon == Icons.swap_vert_rounded,
+        );
         expect(sort.hitTestable(), findsOneWidget);
         await tester.tap(sort);
         await settleFileControls(tester);
@@ -242,20 +285,26 @@ void main() {
         for (final widget in tester.widgetList<PreviewToolbar>(reveals)) {
           expect(widget.keepVisible, isTrue);
         }
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-            physicalKey: PhysicalKeyboardKey.escape);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.escape,
+          physicalKey: PhysicalKeyboardKey.escape,
+        );
         await settleFileControls(tester);
         final stage = tester.getRect(find.byType(CollectionPage));
-        await tester.sendEventToBinding(PointerScrollEvent(
-          position: stage.bottomCenter - const Offset(0, 30),
-          scrollDelta: const Offset(0, 800),
-        ));
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: stage.bottomCenter - const Offset(0, 30),
+            scrollDelta: const Offset(0, 800),
+          ),
+        );
         await tester.pumpAndSettle();
         final travel =
             page.outerController.offset + page.innerController.offset;
         expect(travel, closeTo(800, .01));
         expect(
-            tester.getTopLeft(toolbar).dy, closeTo(initialTop - travel, .01));
+          tester.getTopLeft(toolbar).dy,
+          closeTo(initialTop - travel, .01),
+        );
         expect(tester.element(toolbar), same(toolbarElement));
         expect(toolbar.hitTestable(), findsNothing);
         expect(tester.state(find.byType(BookmarkHost)), same(host));
@@ -267,10 +316,11 @@ void main() {
         model.setQuery('');
         await settleFileControls(tester);
         expect(
-            tester
-                .widget<BookmarkScaffold>(find.byType(BookmarkScaffold))
-                .controller,
-            same(model));
+          tester
+              .widget<BookmarkScaffold>(find.byType(BookmarkScaffold))
+              .controller,
+          same(model),
+        );
         expect(page.innerController.positions, hasLength(1));
         expect(repository.reads, 1);
         expect(tester.takeException(), isNull);
@@ -285,33 +335,39 @@ void main() {
       final root = _root(CollectionKind.album, AlbumViewIds.playlist);
       final repository = _Repository(root.id, bookmarks: false);
       final explorer = WorkspaceExplorerController(
-          root: root, repository: repository, listenForUpdates: false);
+        root: root,
+        repository: repository,
+        listenForUpdates: false,
+      );
       await explorer.initialize();
       await mountFileControls(
-          tester,
-          CollectionPage(
-            view: root,
-            controller: explorer,
-            shellOwnsBreadcrumbs: true,
-          ),
-          mode: appearance,
-          width: 1000,
-          height: 850,
-          textScale: 2,
-          reduced: true);
+        tester,
+        CollectionPage(
+          view: root,
+          controller: explorer,
+          shellOwnsBreadcrumbs: true,
+        ),
+        mode: appearance,
+        width: 1000,
+        height: 850,
+        textScale: 2,
+        reduced: true,
+      );
       expect(find.byType(NestedScrollView), findsOneWidget);
       expect(find.byType(AlbumEmptyState), findsOneWidget);
       final page =
           tester.state<NestedScrollViewState>(find.byType(NestedScrollView));
       expect(page.innerController.positions, hasLength(1));
       final toolbar = tester.widget<CollectionWorkspaceToolbar>(
-          find.byType(CollectionWorkspaceToolbar));
+        find.byType(CollectionWorkspaceToolbar),
+      );
       expect(toolbar.keepVisible, isTrue);
       expect(
-          albumCollectionViews()
-              .singleWhere((view) => view.id == AlbumViewIds.playlist)
-              .supportsPageHeader,
-          isTrue);
+        albumCollectionViews()
+            .singleWhere((view) => view.id == AlbumViewIds.playlist)
+            .supportsPageHeader,
+        isTrue,
+      );
       expect(repository.reads, 1);
       expect(tester.takeException(), isNull);
       await unmountFileControls(tester);
@@ -336,7 +392,8 @@ class _Repository extends Fake implements WorkspaceItemRepository {
   int reads = 0;
   @override
   Future<FlowyResult<List<ViewPB>, FlowyError>> getChildren(
-      String parentViewId) async {
+    String parentViewId,
+  ) async {
     reads++;
     return FlowyResult.success([
       if (bookmarks)
@@ -351,10 +408,12 @@ class _Repository extends Fake implements WorkspaceItemRepository {
               title: 'Saved entry $i',
               description: 'Indexed locally; no fetch needed.',
               addedAt: DateTime(2026, 9).add(Duration(days: i)),
-            ).mergeIntoExtra(const WorkspaceItemMetadata.file(
-              contentKind: WorkspaceFileContentKind.binary,
-              mimeType: bookmarkMimeType,
-            ).mergeIntoExtra('')),
+            ).mergeIntoExtra(
+              const WorkspaceItemMetadata.file(
+                contentKind: WorkspaceFileContentKind.binary,
+                mimeType: bookmarkMimeType,
+              ).mergeIntoExtra(''),
+            ),
           ),
     ]);
   }

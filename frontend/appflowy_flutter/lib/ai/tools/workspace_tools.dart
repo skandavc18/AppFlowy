@@ -316,7 +316,7 @@ class WorkspaceToolServer implements AIToolServer {
             'repository',
             'database',
             'bookmark',
-            'email'
+            'email',
           ],
           'description': 'What the collection holds.',
         },
@@ -1091,7 +1091,8 @@ class WorkspaceToolServer implements AIToolServer {
     final outline = _blocks.outline(data);
     if (outline.isEmpty) {
       return AIToolResult(
-          'That page is empty. Its page block is ${data.pageId}.');
+        'That page is empty. Its page block is ${data.pageId}.',
+      );
     }
     return AIToolResult(outline.map((block) => block.describe()).join('\n'));
   }

@@ -607,8 +607,6 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
             autoHideToolbar: autoHideToolbar,
             enabled: viewerReady,
             onPresetChanged: _setViewPreset,
-            // Keep old metadata, but file options must remain discoverable.
-            onAutoHideToolbarChanged: null,
             onMenuVisibilityChanged: _setToolbarMenuVisible,
           ),
           overflow: _buildOverflowMenu(),
@@ -1352,7 +1350,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
         _pagePinching ||
         quarterTurns != 0 ||
         layoutMode != PdfPageLayoutMode.continuous ||
-        delta.dx.abs() > delta.dy.abs()) return body(delta);
+        delta.dx.abs() > delta.dy.abs()) {
+      return body(delta);
+    }
     var horizontal = 0.0;
     final consumed = page.consume(-delta.dy, (remaining) {
       final actual = body(Offset(delta.dx, -remaining));

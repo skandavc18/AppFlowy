@@ -23,14 +23,18 @@ class _CodecBinding extends AutomatedTestWidgetsFlutterBinding {
   int decodes = 0;
 
   @override
-  Future<ui.Codec> instantiateImageCodecWithSize(ui.ImmutableBuffer buffer,
-      {ui.TargetImageSizeCallback? getTargetSize}) {
+  Future<ui.Codec> instantiateImageCodecWithSize(
+    ui.ImmutableBuffer buffer, {
+    ui.TargetImageSizeCallback? getTargetSize,
+  }) {
     decodes++;
-    return super.instantiateImageCodecWithSize(buffer,
-        getTargetSize: (width, height) {
-      intrinsic.add((width, height));
-      return getTargetSize?.call(width, height) ?? const ui.TargetImageSize();
-    });
+    return super.instantiateImageCodecWithSize(
+      buffer,
+      getTargetSize: (width, height) {
+        intrinsic.add((width, height));
+        return getTargetSize?.call(width, height) ?? const ui.TargetImageSize();
+      },
+    );
   }
 }
 
@@ -103,11 +107,12 @@ void main() {
         (tester) async {
       var placeholders = 0;
       Widget content() => cover(
-          fit: fit,
-          placeholder: (_, __) {
-            placeholders++;
-            return const SizedBox(width: 300, height: 100);
-          });
+            fit: fit,
+            placeholder: (_, __) {
+              placeholders++;
+              return const SizedBox(width: 300, height: 100);
+            },
+          );
       final timings = <String, int>{};
       final operations = <String, (int, int, int)>{};
       for (final phase in ['cold', 'disk-warm', 'memory-warm']) {
@@ -128,8 +133,10 @@ void main() {
           }
           expect(placeholders, before);
           // Controlled transport delay, not an invented real-network measure.
-          Timer(const Duration(milliseconds: 200),
-              () => cache.deliver(landscape));
+          Timer(
+            const Duration(milliseconds: 200),
+            () => cache.deliver(landscape),
+          );
           await tester.pump(const Duration(milliseconds: 199));
           expect(binding.decodes, 0);
           expect(_frames(tester), isEmpty);
@@ -140,8 +147,10 @@ void main() {
         watch.stop();
         timings[phase] = watch.elapsedMicroseconds;
         expect(watch.elapsed, lessThanOrEqualTo(_frameDeadline));
-        expect((image.width, image.height),
-            fit == BoxFit.contain ? (336, 224) : (640, 427));
+        expect(
+          (image.width, image.height),
+          fit == BoxFit.contain ? (336, 224) : (640, 427),
+        );
         await _quadrants(tester, image);
         expect(find.byType(FadeTransition), findsNothing);
         expect(cache.probes, 0);
@@ -196,7 +205,9 @@ void main() {
     cache.ready = landscape;
     CoverImageDecodeSize size(double width) =>
         CoverImageDecodeSize.fromConstraints(
-            BoxConstraints.tightFor(width: width, height: 100), 2)!;
+          BoxConstraints.tightFor(width: width, height: 100),
+          2,
+        )!;
     await tester.pumpWidget(host(cover(size: size(301))));
     final original = (await _frame(tester)).clone();
     try {
@@ -241,7 +252,9 @@ void main() {
     await tester.pump();
     expect(cache.requests.single.key, isNot(oldSource.key));
     expect(
-        cache.requests.single.headers, {'Authorization': 'Bearer fixture-new'});
+      cache.requests.single.headers,
+      {'Authorization': 'Bearer fixture-new'},
+    );
     old.stream.add(landscape);
     newAuth.stream.addError(HttpExceptionWithStatus(503, 'obsolete'));
     oldSource.stream.add(landscape);
@@ -261,11 +274,15 @@ void main() {
     final cleanup = Stopwatch()..start();
     while (!closed && cleanup.elapsed < _frameDeadline) {
       await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 1)));
+        () => Future<void>.delayed(const Duration(milliseconds: 1)),
+      );
       await tester.pump();
     }
-    expect(closed, isTrue,
-        reason: 'Old generation streams must finish within 2s');
+    expect(
+      closed,
+      isTrue,
+      reason: 'Old generation streams must finish within 2s',
+    );
     await closing;
   });
 
@@ -285,13 +302,17 @@ void main() {
     while (binding.imageCache.statusForKey(key).pending &&
         watch.elapsed < _frameDeadline) {
       await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 1)));
+        () => Future<void>.delayed(const Duration(milliseconds: 1)),
+      );
       await tester.pump();
     }
     expect(binding.imageCache.statusForKey(key).untracked, isTrue);
     await tester.pump(const Duration(seconds: 1));
-    expect(cache.removed, isEmpty,
-        reason: 'Decoder failures are not transient HTTP retries');
+    expect(
+      cache.removed,
+      isEmpty,
+      reason: 'Decoder failures are not transient HTTP retries',
+    );
     expect(_frames(tester), isEmpty);
     await unmount(tester);
     cache.ready = landscape;
@@ -307,12 +328,16 @@ void main() {
       (tester) async {
     final eviction = Completer<void>();
     cache.eviction = eviction.future;
-    Widget pair() => host(Column(children: [
-          // Distinct owner keys, otherwise identical native cover providers.
-          KeyedSubtree(key: const ValueKey('a'), child: cover()),
-          KeyedSubtree(key: const ValueKey('b'), child: cover()),
-          KeyedSubtree(key: const ValueKey('c'), child: cover(url: _other)),
-        ]));
+    Widget pair() => host(
+          Column(
+            children: [
+              // Distinct owner keys, otherwise identical native cover providers.
+              KeyedSubtree(key: const ValueKey('a'), child: cover()),
+              KeyedSubtree(key: const ValueKey('b'), child: cover()),
+              KeyedSubtree(key: const ValueKey('c'), child: cover(url: _other)),
+            ],
+          ),
+        );
     await tester.pumpWidget(pair());
     await tester.pump();
     expect(cache.requests.length, 2);
@@ -346,8 +371,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 20));
     await tester.pump();
-    expect(cache.removed.length, 2,
-        reason: 'Completed eviction must not poison a later owner');
+    expect(
+      cache.removed.length,
+      2,
+      reason: 'Completed eviction must not poison a later owner',
+    );
     expect(FlowyNetworkRetryCounter().getRetryCount(_url), 1);
     await unmount(tester);
   });
@@ -370,15 +398,21 @@ class _Cache extends Fake implements BaseCacheManager {
   Future<void>? eviction;
 
   @override
-  Future<FileInfo?> getFileFromCache(String key,
-      {bool ignoreMemCache = false}) async {
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) async {
     probes++;
     return ready;
   }
 
   @override
-  Stream<FileResponse> getFileStream(String url,
-      {String? key, Map<String, String>? headers, bool withProgress = false}) {
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) {
     final request = _Request(key, headers);
     requests.add(request);
     if (ready != null) request.stream.add(ready!);
@@ -404,8 +438,13 @@ class _Cache extends Fake implements BaseCacheManager {
   }
 }
 
-Future<FileInfo> _png(Directory directory, String name, int width, int height,
-    {bool solidBlue = false}) async {
+Future<FileInfo> _png(
+  Directory directory,
+  String name,
+  int width,
+  int height, {
+  bool solidBlue = false,
+}) async {
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
   final colors = solidBlue
@@ -414,13 +453,18 @@ Future<FileInfo> _png(Directory directory, String name, int width, int height,
           Color(0xFFFF0000),
           Color(0xFF00FF00),
           Color(0xFF0000FF),
-          Color(0xFFFFFFFF)
+          Color(0xFFFFFFFF),
         ];
   for (var i = 0; i < 4; i++) {
     canvas.drawRect(
-        Rect.fromLTWH(
-            (i % 2) * width / 2, (i ~/ 2) * height / 2, width / 2, height / 2),
-        Paint()..color = colors[i]);
+      Rect.fromLTWH(
+        (i % 2) * width / 2,
+        (i ~/ 2) * height / 2,
+        width / 2,
+        height / 2,
+      ),
+      Paint()..color = colors[i],
+    );
   }
   final picture = recorder.endRecording();
   final image = await picture.toImage(width, height);
@@ -447,13 +491,21 @@ Future<ui.Image> _frame(WidgetTester tester) async {
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1)));
     await tester.pump();
   }
-  expect(_frames(tester), hasLength(1),
-      reason: 'Require a native decoded frame within 2s, not a placeholder');
+  expect(
+    _frames(tester),
+    hasLength(1),
+    reason: 'Require a native decoded frame within 2s, not a placeholder',
+  );
   return _frames(tester).single;
 }
 
-Future<void> _pixel(WidgetTester tester, ui.Image image, double x, double y,
-    List<int> rgba) async {
+Future<void> _pixel(
+  WidgetTester tester,
+  ui.Image image,
+  double x,
+  double y,
+  List<int> rgba,
+) async {
   final bytes = (await tester.runAsync(() => image.toByteData()))!;
   final offset =
       ((image.height * y).floor() * image.width + (image.width * x).floor()) *

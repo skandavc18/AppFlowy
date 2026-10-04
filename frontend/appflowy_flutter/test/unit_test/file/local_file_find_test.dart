@@ -14,14 +14,20 @@ void main() {
       ['"one', 'two"', ' last '],
       ['a\tb', ''],
     ]).toList();
-    expect(entries.map((entry) => entry.text),
-        ['First', 'Second', '', '"one', 'two"', ' last ', 'a\tb', '']);
+    expect(
+      entries.map((entry) => entry.text),
+      ['First', 'Second', '', '"one', 'two"', ' last ', 'a\tb', ''],
+    );
     expect(entries[5].id, (row: 1, column: 2));
     expect(entries.every((entry) => !entry.replaceable), isTrue);
-    expect(searchSurfaceEntries(entries, ' last ', const FindOptions()),
-        hasLength(1));
     expect(
-        searchSurfaceEntries(entries, 'one,two', const FindOptions()), isEmpty);
+      searchSurfaceEntries(entries, ' last ', const FindOptions()),
+      hasLength(1),
+    );
+    expect(
+      searchSurfaceEntries(entries, 'one,two', const FindOptions()),
+      isEmpty,
+    );
   });
 
   test('read-only local Find checks live access on open, refresh and F3', () {
@@ -32,7 +38,8 @@ void main() {
           ? searchSurfaceEntries(
               const [SurfaceFindEntry('body', 'private needle')],
               query,
-              options)
+              options,
+            )
           : const [],
     );
     addTearDown(find.dispose);
@@ -61,20 +68,24 @@ void main() {
   });
 
   test('notebook output indexing follows displayed MIME precedence', () {
-    final html = _fields(const NotebookOutput(
-      kind: NotebookOutputKind.display,
-      data: {
-        'text/html': '<p>Visible <b>needle</b> &amp; text</p>',
-        'text/plain': 'hidden plain fallback',
-        'application/json': '{"hidden":"serialized secret"}',
-      },
-      metadata: {'hidden': 'output metadata secret'},
-    ));
+    final html = _fields(
+      const NotebookOutput(
+        kind: NotebookOutputKind.display,
+        data: {
+          'text/html': '<p>Visible <b>needle</b> &amp; text</p>',
+          'text/plain': 'hidden plain fallback',
+          'application/json': '{"hidden":"serialized secret"}',
+        },
+        metadata: {'hidden': 'output metadata secret'},
+      ),
+    );
     expect(html.single.entry.text, 'Visible needle & text');
     expect(html.single.id, notebookOutputFindId('cell', 2, 'markup'));
     for (final hidden in ['fallback', 'serialized secret', 'metadata secret']) {
-      expect(html.expand((field) => field.search(hidden, const FindOptions())),
-          isEmpty);
+      expect(
+        html.expand((field) => field.search(hidden, const FindOptions())),
+        isEmpty,
+      );
     }
 
     for (final data in [
@@ -82,32 +93,37 @@ void main() {
       {'image/svg+xml': '<svg>hidden SVG</svg>', 'text/plain': 'hidden SVG'},
     ]) {
       expect(
-          _fields(NotebookOutput(kind: NotebookOutputKind.display, data: data)),
-          isEmpty);
+        _fields(NotebookOutput(kind: NotebookOutputKind.display, data: data)),
+        isEmpty,
+      );
     }
     // An invalid bitmap really falls through to text in the existing viewer.
     expect(
-      _fields(const NotebookOutput(
-        kind: NotebookOutputKind.display,
-        data: {'image/png': '!!', 'text/plain': 'actual fallback'},
-      )).single.entry.text,
+      _fields(
+        const NotebookOutput(
+          kind: NotebookOutputKind.display,
+          data: {'image/png': '!!', 'text/plain': 'actual fallback'},
+        ),
+      ).single.entry.text,
       'actual fallback',
     );
   });
 
   test('notebook markup projection omits hidden content and media attributes',
       () {
-    final fields = _fields(const NotebookOutput(
-      kind: NotebookOutputKind.display,
-      data: {
-        'text/html': '<p>Public <a href="attribute-secret">link</a></p>'
-            '<script>script-secret</script><style>style-secret</style>'
-            '<iframe>frame-secret</iframe><input value="input-secret">'
-            '<textarea>textarea-secret</textarea>'
-            '<img src="attachment:blob-secret" alt="alt-secret">'
-            '<details><summary>Summary</summary><p>folded-secret</p></details>',
-      },
-    ));
+    final fields = _fields(
+      const NotebookOutput(
+        kind: NotebookOutputKind.display,
+        data: {
+          'text/html': '<p>Public <a href="attribute-secret">link</a></p>'
+              '<script>script-secret</script><style>style-secret</style>'
+              '<iframe>frame-secret</iframe><input value="input-secret">'
+              '<textarea>textarea-secret</textarea>'
+              '<img src="attachment:blob-secret" alt="alt-secret">'
+              '<details><summary>Summary</summary><p>folded-secret</p></details>',
+        },
+      ),
+    );
     final text = fields.single.entry.text;
     expect(text, contains('Public link'));
     expect(text, contains('Summary'));
@@ -128,20 +144,26 @@ void main() {
 
   test('stream trimming and error fields match their native text widgets', () {
     expect(
-      _fields(const NotebookOutput(
-        kind: NotebookOutputKind.stream,
-        text: '  visible\nline\n  ',
-      )).single.entry.text,
+      _fields(
+        const NotebookOutput(
+          kind: NotebookOutputKind.stream,
+          text: '  visible\nline\n  ',
+        ),
+      ).single.entry.text,
       '  visible\nline',
     );
-    final error = _fields(const NotebookOutput(
-      kind: NotebookOutputKind.error,
-      errorName: 'ValueError',
-      errorValue: 'needle',
-      traceback: ['\x1b[31mneedle\x1b[0m\n'],
-    ));
-    expect(error.map((field) => field.entry.text),
-        ['ValueError: needle', 'needle']);
+    final error = _fields(
+      const NotebookOutput(
+        kind: NotebookOutputKind.error,
+        errorName: 'ValueError',
+        errorValue: 'needle',
+        traceback: ['\x1b[31mneedle\x1b[0m\n'],
+      ),
+    );
+    expect(
+      error.map((field) => field.entry.text),
+      ['ValueError: needle', 'needle'],
+    );
     expect(error.map((field) => field.id.part), ['error', 'traceback']);
     expect(error.every((field) => !field.entry.replaceable), isTrue);
   });
@@ -176,8 +198,10 @@ void main() {
     expect(matches.map((hit) => hit.range.end), [6, 13]);
     expect(matches.last.range.input, 'needle\nneedle');
     expect(matches.last.range.group(0), 'needle');
-    expect(field.search(r'needle\s+needle', const FindOptions(useRegex: true)),
-        isEmpty);
+    expect(
+      field.search(r'needle\s+needle', const FindOptions(useRegex: true)),
+      isEmpty,
+    );
     expect(field.search('[', const FindOptions(useRegex: true)), isEmpty);
 
     final find = SurfaceFindController(

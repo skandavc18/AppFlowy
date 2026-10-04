@@ -122,7 +122,7 @@ void main() {
           mapButton,
           disabled,
           tableButton,
-          _key('table-action')
+          _key('table-action'),
         ];
         final elements = controls.map(tester.element).toList();
         final bounds = controls.map(tester.getRect).toList();
@@ -134,16 +134,39 @@ void main() {
         for (final style in _styleCycle) {
           styles.value = style;
           await settleVividIconPictures(tester);
-          _expectGlyph(tester, _key('map'), 'zoom-in', style,
-              size: 17.5, ink: map.accent);
-          _expectGlyph(tester, _key('map-disabled'), 'zoom-out', style,
-              size: 17.5,
-              ink: map.textMuted.withValues(alpha: 0.5),
-              preserveInk: true);
-          _expectGlyph(tester, _key('table'), 'filter', style,
-              size: 17, ink: table.accent);
-          _expectGlyph(tester, _key('table-action'), 'plus', style,
-              size: 15, ink: table.accent);
+          _expectGlyph(
+            tester,
+            _key('map'),
+            'zoom-in',
+            style,
+            size: 17.5,
+            ink: map.accent,
+          );
+          _expectGlyph(
+            tester,
+            _key('map-disabled'),
+            'zoom-out',
+            style,
+            size: 17.5,
+            ink: map.textMuted.withValues(alpha: 0.5),
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('table'),
+            'filter',
+            style,
+            size: 17,
+            ink: table.accent,
+          );
+          _expectGlyph(
+            tester,
+            _key('table-action'),
+            'plus',
+            style,
+            size: 15,
+            ink: table.accent,
+          );
           for (var i = 0; i < controls.length; i++) {
             expect(tester.element(controls[i]), same(elements[i]));
             expect(tester.getRect(controls[i]), bounds[i]);
@@ -153,8 +176,10 @@ void main() {
           expect(tester.state(_key('table-action')), same(actionState));
           expect(builds, hostBuilds);
           expect(FocusManager.instance.primaryFocus, same(focus));
-          expect(_data(tester, mapButton).hasFlag(ui.SemanticsFlag.isFocused),
-              isTrue);
+          expect(
+            _data(tester, mapButton).hasFlag(ui.SemanticsFlag.isFocused),
+            isTrue,
+          );
           _expectNativeButton(tester, mapButton, enabled: true);
           _expectNativeButton(tester, disabled, enabled: false);
           _expectNativeButton(tester, tableButton, enabled: true);
@@ -168,8 +193,10 @@ void main() {
           expect(table.isPaper, appearance == 'paper');
           expect(calls, isEmpty);
         }
-        await tester.sendKeyEvent(LogicalKeyboardKey.space,
-            physicalKey: PhysicalKeyboardKey.space);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.space,
+          physicalKey: PhysicalKeyboardKey.space,
+        );
         await tester.pump();
         await tester.tap(disabled);
         await tester.tap(tableButton);
@@ -231,10 +258,22 @@ void main() {
         for (final style in _styleCycle) {
           styles.value = style;
           await settleVividIconPictures(tester);
-          _expectGlyph(tester, _key('map-search'), 'magnifying-glass', style,
-              size: 16, ink: palette.textMuted);
-          _expectGlyph(tester, _key('map-search'), 'x', style,
-              size: 15, ink: palette.textMuted);
+          _expectGlyph(
+            tester,
+            _key('map-search'),
+            'magnifying-glass',
+            style,
+            size: 16,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            _key('map-search'),
+            'x',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
           expect(tester.state(editableFinder), same(state));
           expect(tester.element(clear), same(clearElement));
           expect(tester.getRect(search), rect);
@@ -385,22 +424,72 @@ void main() {
         for (final style in _styleCycle) {
           styles.value = style;
           await settleVividIconPictures(tester);
-          _expectGlyph(tester, _key('actual'), 'actual-size', style,
-              size: 16, ink: palette.textSecondary);
-          _expectGlyph(tester, _key('fit'), 'fit-page', style,
-              size: 16, ink: palette.textSecondary);
-          _expectGlyph(tester, _key('rotate'), 'rotate-ccw', style,
-              size: 18, ink: palette.textSecondary);
-          _expectGlyph(tester, _key('flip'), 'flip-horizontal', style,
-              size: 19, ink: palette.textPrimary);
-          _expectGlyph(tester, _key('image-disabled'), 'actual-size', style,
-              size: 18, ink: palette.textMuted, preserveInk: true);
-          _expectGlyph(tester, _key('text-disabled'), 'share', style,
-              size: 15, ink: palette.textMuted, preserveInk: true);
-          _expectGlyph(tester, _key('export'), 'share', style,
-              size: 15, ink: palette.onAccent);
-          _expectGlyph(tester, _key('crop-chip'), 'crop', style,
-              size: 15, ink: palette.textPrimary);
+          _expectGlyph(
+            tester,
+            _key('actual'),
+            'actual-size',
+            style,
+            size: 16,
+            ink: palette.textSecondary,
+          );
+          _expectGlyph(
+            tester,
+            _key('fit'),
+            'fit-page',
+            style,
+            size: 16,
+            ink: palette.textSecondary,
+          );
+          _expectGlyph(
+            tester,
+            _key('rotate'),
+            'rotate-ccw',
+            style,
+            size: 18,
+            ink: palette.textSecondary,
+          );
+          _expectGlyph(
+            tester,
+            _key('flip'),
+            'flip-horizontal',
+            style,
+            size: 19,
+            ink: palette.textPrimary,
+          );
+          _expectGlyph(
+            tester,
+            _key('image-disabled'),
+            'actual-size',
+            style,
+            size: 18,
+            ink: palette.textMuted,
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('text-disabled'),
+            'share',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('export'),
+            'share',
+            style,
+            size: 15,
+            ink: palette.onAccent,
+          );
+          _expectGlyph(
+            tester,
+            _key('crop-chip'),
+            'crop',
+            style,
+            size: 15,
+            ink: palette.textPrimary,
+          );
           for (final key in keys) {
             expect(tester.state(_key(key)), same(states[key]));
             expect(tester.getRect(_key(key)), bounds[key]);
@@ -410,13 +499,13 @@ void main() {
           expect(tester.getSize(_key('crop-chip')).height, 30);
           expect(tester.getSize(_key('export')).height, 32);
           expect(
-              tester
-                  .widget<Transform>(_key('flip-transform'))
-                  .transform
-                  .storage,
-              matrix);
-          expect(tester.widget<Transform>(_key('flip-transform')).alignment,
-              Alignment.center);
+            tester.widget<Transform>(_key('flip-transform')).transform.storage,
+            matrix,
+          );
+          expect(
+            tester.widget<Transform>(_key('flip-transform')).alignment,
+            Alignment.center,
+          );
           expect(calls, isEmpty);
         }
         for (final key in [
@@ -425,7 +514,7 @@ void main() {
           'rotate',
           'flip',
           'export',
-          'crop-chip'
+          'crop-chip',
         ]) {
           expect(_key(key).hitTestable(), findsOneWidget);
           await tester.tap(_key(key));
@@ -443,11 +532,9 @@ void main() {
         expect(indicator, findsOneWidget);
         expect(_glyph(_key('export'), 'share'), findsNothing);
         expect(
-            tester
-                .widget<CircularProgressIndicator>(indicator)
-                .valueColor!
-                .value,
-            palette.textMuted);
+          tester.widget<CircularProgressIndicator>(indicator).valueColor!.value,
+          palette.textMuted,
+        );
         await tester.tap(_key('export'));
         await tester.pump();
         expect(calls, ['actual', 'fit', 'rotate', 'flip', 'export', 'chip']);
@@ -475,8 +562,10 @@ void main() {
             Builder(
               builder: (context) {
                 book = BookReaderPalette.of(context, BookReaderTheme.workspace);
-                repo = RepoTheme.of(context,
-                    CollectionPalette.of(context, CollectionKind.repository));
+                repo = RepoTheme.of(
+                  context,
+                  CollectionPalette.of(context, CollectionKind.repository),
+                );
                 email = emailThemeOf(context);
                 return SizedBox(
                   width: 620,
@@ -626,89 +715,188 @@ void main() {
         for (final style in _styleCycle) {
           styles.value = style;
           await settleVividIconPictures(tester);
-          _expectGlyph(tester, _key('book'), 'check-off', style,
-              size: 16, ink: book.inkMuted);
+          _expectGlyph(
+            tester,
+            _key('book'),
+            'check-off',
+            style,
+            size: 16,
+            ink: book.inkMuted,
+          );
           expect(
-              tester
-                  .widget<WorkspaceGlyph>(_glyph(_key('book'), 'check-off'))
-                  .icon,
-              Icons.remove_done_rounded);
-          _expectGlyph(tester, _key('book-disabled'), 'check-off', style,
-              size: 16,
-              ink: book.inkMuted.withValues(alpha: 0.45),
-              preserveInk: true);
+            tester
+                .widget<WorkspaceGlyph>(_glyph(_key('book'), 'check-off'))
+                .icon,
+            Icons.remove_done_rounded,
+          );
+          _expectGlyph(
+            tester,
+            _key('book-disabled'),
+            'check-off',
+            style,
+            size: 16,
+            ink: book.inkMuted.withValues(alpha: 0.45),
+            preserveInk: true,
+          );
           for (final (icon, name) in _repoIdentities) {
             final parent = _key('repo-$name');
-            _expectGlyph(tester, parent, name, style,
-                size: 15,
-                ink: workspaceGlyphInk(tester.element(parent)),
-                slot: const Size(RepoMetrics.iconSlot, RepoMetrics.iconSize));
-            expect(
-                tester.widget<WorkspaceGlyph>(_glyph(parent, name)).icon, icon);
-          }
-          _expectGlyph(tester, _key('repo-muted'), 'commit', style,
+            _expectGlyph(
+              tester,
+              parent,
+              name,
+              style,
               size: 15,
-              ink: _chosenInk,
-              preserveInk: true,
-              slot: const Size(RepoMetrics.iconSlot, RepoMetrics.iconSize));
+              ink: workspaceGlyphInk(tester.element(parent)),
+              slot: const Size(RepoMetrics.iconSlot, RepoMetrics.iconSize),
+            );
+            expect(
+              tester.widget<WorkspaceGlyph>(_glyph(parent, name)).icon,
+              icon,
+            );
+          }
+          _expectGlyph(
+            tester,
+            _key('repo-muted'),
+            'commit',
+            style,
+            size: 15,
+            ink: _chosenInk,
+            preserveInk: true,
+            slot: const Size(RepoMetrics.iconSlot, RepoMetrics.iconSize),
+          );
           for (final (key, disabled) in [
             ('repo-action', false),
-            ('repo-disabled', true)
+            ('repo-disabled', true),
           ]) {
             final ink = repo.textSoft.withValues(alpha: disabled ? 0.45 : 1);
-            _expectGlyph(tester, _key(key), 'rows', style,
-                size: 16, ink: ink, preserveInk: disabled);
-            _expectGlyph(tester, _key(key), 'caret-down', style,
-                size: 14, ink: ink, preserveInk: disabled);
+            _expectGlyph(
+              tester,
+              _key(key),
+              'rows',
+              style,
+              size: 16,
+              ink: ink,
+              preserveInk: disabled,
+            );
+            _expectGlyph(
+              tester,
+              _key(key),
+              'caret-down',
+              style,
+              size: 14,
+              ink: ink,
+              preserveInk: disabled,
+            );
             expect(
-                tester.widget<WorkspaceGlyph>(_glyph(_key(key), 'rows')).icon,
-                Icons.segment_rounded);
+              tester.widget<WorkspaceGlyph>(_glyph(_key(key), 'rows')).icon,
+              Icons.segment_rounded,
+            );
           }
           for (var i = 0; i < _emailIdentities.length; i++) {
             final (icon, name) = _emailIdentities[i];
             final parent = _key('email-$i');
-            _expectGlyph(tester, parent, name, style,
-                size: 16, ink: email.textSoft);
-            expect(
-                tester.widget<WorkspaceGlyph>(_glyph(parent, name)).icon, icon);
-          }
-          _expectGlyph(tester, _key('email-disabled'), 'inboxes', style,
+            _expectGlyph(
+              tester,
+              parent,
+              name,
+              style,
               size: 16,
-              ink: email.textSoft.withValues(alpha: 0.45),
-              preserveInk: true);
-          _expectGlyph(tester, _key('email-tint'), 'star', style,
-              size: 16, ink: _chosenInk, preserveInk: true);
-          _expectGlyph(tester, _key('status'), 'hourglass', style,
-              size: 11, ink: email.textSoft, preserveInk: true);
-          _expectGlyph(tester, _key('status-tone'), 'refresh', style,
-              size: 11, ink: _chosenInk, preserveInk: true);
-          _expectGlyph(tester, _key('chip-action'), 'download', style,
-              size: 11, ink: email.textSoft);
-          _expectGlyph(tester, _key('chip-tone'), 'tag', style,
-              size: 11, ink: _chosenInk, preserveInk: true);
+              ink: email.textSoft,
+            );
+            expect(
+              tester.widget<WorkspaceGlyph>(_glyph(parent, name)).icon,
+              icon,
+            );
+          }
+          _expectGlyph(
+            tester,
+            _key('email-disabled'),
+            'inboxes',
+            style,
+            size: 16,
+            ink: email.textSoft.withValues(alpha: 0.45),
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('email-tint'),
+            'star',
+            style,
+            size: 16,
+            ink: _chosenInk,
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('status'),
+            'hourglass',
+            style,
+            size: 11,
+            ink: email.textSoft,
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('status-tone'),
+            'refresh',
+            style,
+            size: 11,
+            ink: _chosenInk,
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            _key('chip-action'),
+            'download',
+            style,
+            size: 11,
+            ink: email.textSoft,
+          );
+          _expectGlyph(
+            tester,
+            _key('chip-tone'),
+            'tag',
+            style,
+            size: 11,
+            ink: _chosenInk,
+            preserveInk: true,
+          );
           for (final (key, name) in [
             ('book-scoped', 'check-off'),
             ('repo-scoped', 'rows'),
             ('email-scoped', 'inboxes'),
           ]) {
-            _expectGlyph(tester, _key(key), name, style,
-                size: 16, ink: _inheritedInk, preserveInk: true);
+            _expectGlyph(
+              tester,
+              _key(key),
+              name,
+              style,
+              size: 16,
+              ink: _inheritedInk,
+              preserveInk: true,
+            );
           }
           expect(nativeButtons.evaluate().toList(), elements);
           for (var i = 0; i < elements.length; i++) {
             expect(
-                tester.getRect(find.byWidget(elements[i].widget)), bounds[i]);
+              tester.getRect(find.byWidget(elements[i].widget)),
+              bounds[i],
+            );
           }
           expect(FocusManager.instance.primaryFocus, same(focus));
           expect(_data(tester, bookButton).label, 'Mark unfinished');
-          expect(_data(tester, bookButton).hasFlag(ui.SemanticsFlag.isSelected),
-              isTrue);
-          expect(_data(tester, bookButton).hasFlag(ui.SemanticsFlag.isFocused),
-              isTrue);
+          expect(
+            _data(tester, bookButton).hasFlag(ui.SemanticsFlag.isSelected),
+            isTrue,
+          );
+          expect(
+            _data(tester, bookButton).hasFlag(ui.SemanticsFlag.isFocused),
+            isTrue,
+          );
           for (final key in [
             'book-disabled',
             'repo-disabled',
-            'email-disabled'
+            'email-disabled',
           ]) {
             final button = _native(_key(key), TextButton);
             _expectNativeButton(tester, button, enabled: false);
@@ -723,7 +911,7 @@ void main() {
           'email-3',
           'email-tint',
           'chip-action',
-          'chip-tone'
+          'chip-tone',
         ]) {
           await tester.tap(_key(key));
         }
@@ -744,11 +932,20 @@ void main() {
       final styles = ValueNotifier(DefaultIconStyle.monochrome);
       final transform = ValueNotifier(Matrix4.identity()..scale(1.5));
       const document = MindMapDocument(
-        root: MindMapNode(id: 'root', text: 'Root', children: [
-          MindMapNode(id: 'branch', text: 'Branch', colorIndex: 2, children: [
-            MindMapNode(id: 'leaf', text: 'Leaf'),
-          ]),
-        ]),
+        root: MindMapNode(
+          id: 'root',
+          text: 'Root',
+          children: [
+            MindMapNode(
+              id: 'branch',
+              text: 'Branch',
+              colorIndex: 2,
+              children: [
+                MindMapNode(id: 'leaf', text: 'Leaf'),
+              ],
+            ),
+          ],
+        ),
       );
       final controller = MindMapController(document: document);
       final calls = <String>[];
@@ -809,12 +1006,14 @@ void main() {
         final originalMatrix = List<double>.of(transform.value.storage);
         final chosenSwatch = find.descendant(
           of: _key('node-toolbar'),
-          matching: find.byWidgetPredicate((widget) =>
-              widget is Container &&
-              widget.constraints?.maxWidth == 13 &&
-              widget.decoration is BoxDecoration &&
-              (widget.decoration! as BoxDecoration).color ==
-                  palette.branchAt(2)),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Container &&
+                widget.constraints?.maxWidth == 13 &&
+                widget.decoration is BoxDecoration &&
+                (widget.decoration! as BoxDecoration).color ==
+                    palette.branchAt(2),
+          ),
         );
         expect(chosenSwatch, findsOneWidget);
         final swatchElement = tester.element(chosenSwatch);
@@ -822,20 +1021,49 @@ void main() {
         for (final style in _styleCycle) {
           styles.value = style;
           await settleVividIconPictures(tester);
-          _expectGlyph(tester, _key('viewport'), 'fit-page', style,
-              size: 15, ink: palette.textMuted);
-          _expectGlyph(tester, _key('viewport'), 'target', style,
-              size: 15, ink: palette.textMuted);
-          _expectGlyph(tester, _key('viewport'), 'fullscreen', style,
-              size: 15, ink: palette.textMuted);
-          _expectGlyph(tester, _key('node-toolbar'), 'pen', style,
-              size: 15, ink: palette.textMuted);
-          _expectGlyph(tester, _key('node-toolbar'), 'trash', style,
-              size: 15,
-              ink: palette.isDark
-                  ? const Color(0xFFE58B8B)
-                  : const Color(0xFFC0554F),
-              preserveInk: true);
+          _expectGlyph(
+            tester,
+            _key('viewport'),
+            'fit-page',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            _key('viewport'),
+            'target',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            _key('viewport'),
+            'fullscreen',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            _key('node-toolbar'),
+            'pen',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            _key('node-toolbar'),
+            'trash',
+            style,
+            size: 15,
+            ink: palette.isDark
+                ? const Color(0xFFE58B8B)
+                : const Color(0xFFC0554F),
+            preserveInk: true,
+          );
           expect(tester.element(fit), same(fitElement));
           expect(tester.getRect(fit), fitBounds);
           expect(fitBounds.size, const Size.square(26));
@@ -850,7 +1078,7 @@ void main() {
           'Zoom out',
           'Centre',
           'Fit to screen',
-          'Fullscreen'
+          'Fullscreen',
         ]) {
           await tester.tap(find.byTooltip(tooltip));
         }
@@ -864,7 +1092,9 @@ void main() {
         await tester.tap(find.byTooltip('Add child  ·  Tab'));
         expect(controller.document.nodeCount, document.nodeCount + 1);
         expect(
-            controller.document.parentOf(controller.editingId!)!.id, 'branch');
+          controller.document.parentOf(controller.editingId!)!.id,
+          'branch',
+        );
         controller.endEditing();
         await tester.pump();
         await tester.tap(find.byTooltip('Colour'));
@@ -872,8 +1102,15 @@ void main() {
         styles.value = DefaultIconStyle.vivid;
         await settleVividIconPictures(tester);
         final swatches = find.byType(PopupMenuItem<int>);
-        _expectGlyph(tester, swatches, 'paint-off', DefaultIconStyle.vivid,
-            size: 11, ink: palette.textMuted, preserveInk: true);
+        _expectGlyph(
+          tester,
+          swatches,
+          'paint-off',
+          DefaultIconStyle.vivid,
+          size: 11,
+          ink: palette.textMuted,
+          preserveInk: true,
+        );
         await tester.tap(_glyph(swatches, 'paint-off'));
         await tester.pumpAndSettle();
         expect(controller.document.find('branch')!.colorIndex, isNull);
@@ -893,8 +1130,11 @@ void main() {
   }
 }
 
-Widget _app(String appearance, ValueNotifier<DefaultIconStyle> styles,
-        Widget child) =>
+Widget _app(
+  String appearance,
+  ValueNotifier<DefaultIconStyle> styles,
+  Widget child,
+) =>
     MaterialApp(
       theme: vividIconTestTheme(appearance),
       themeAnimationDuration: Duration.zero,
@@ -907,8 +1147,10 @@ Widget _app(String appearance, ValueNotifier<DefaultIconStyle> styles,
 void _expectAppearance(WidgetTester tester, String appearance) {
   final context = tester.element(find.byType(Scaffold));
   expect(PaperTheme.isEnabled(context), appearance == 'paper');
-  expect(Theme.of(context).brightness,
-      appearance == 'dark' ? Brightness.dark : Brightness.light);
+  expect(
+    Theme.of(context).brightness,
+    appearance == 'dark' ? Brightness.dark : Brightness.light,
+  );
 }
 
 Finder _key(String name) => find.byKey(ValueKey(name));
@@ -919,7 +1161,8 @@ Finder _native(Finder parent, Type type) =>
 Finder _glyph(Finder parent, String name) => find.descendant(
       of: parent,
       matching: find.byWidgetPredicate(
-          (widget) => widget is WorkspaceGlyph && widget.name == name),
+        (widget) => widget is WorkspaceGlyph && widget.name == name,
+      ),
     );
 
 SemanticsData _data(WidgetTester tester, Finder finder) {
@@ -928,8 +1171,11 @@ SemanticsData _data(WidgetTester tester, Finder finder) {
   return node.getSemanticsData();
 }
 
-void _expectNativeButton(WidgetTester tester, Finder button,
-    {required bool enabled}) {
+void _expectNativeButton(
+  WidgetTester tester,
+  Finder button, {
+  required bool enabled,
+}) {
   expect(button, findsOneWidget);
   final data = _data(tester, button);
   expect(data.hasFlag(ui.SemanticsFlag.isButton), isTrue);
@@ -942,8 +1188,10 @@ Future<void> _focusWithTab(WidgetTester tester, Finder button) async {
   for (var i = 0;
       i < 8 && !_data(tester, button).hasFlag(ui.SemanticsFlag.isFocused);
       i++) {
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab,
-        physicalKey: PhysicalKeyboardKey.tab);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.tab,
+      physicalKey: PhysicalKeyboardKey.tab,
+    );
     await tester.pump();
   }
   expect(_data(tester, button).hasFlag(ui.SemanticsFlag.isFocused), isTrue);
@@ -965,9 +1213,10 @@ void _expectGlyph(
   final context = tester.element(finder);
   final scope = WorkspaceGlyphScope.maybeOf(context);
   expect(
-      glyph.role == WorkspaceGlyphRole.preserveInk ||
-          scope?.role == WorkspaceGlyphRole.preserveInk,
-      preserveInk);
+    glyph.role == WorkspaceGlyphRole.preserveInk ||
+        scope?.role == WorkspaceGlyphRole.preserveInk,
+    preserveInk,
+  );
   expect(glyph.size, size);
   expect(tester.getSize(finder), slot ?? Size.square(size));
   final picture = tester.widget<SvgPicture>(
@@ -979,14 +1228,22 @@ void _expectGlyph(
       : defaultIconSvg(name)!;
   final loader = picture.bytesLoader as SvgStringLoader;
   expect(
-      loader,
-      SvgStringLoader(source,
-          theme: loader.theme, colorMapper: loader.colorMapper));
-  expect(picture.colorFilter,
-      vivid ? null : ColorFilter.mode(ink, BlendMode.srcIn));
+    loader,
+    SvgStringLoader(
+      source,
+      theme: loader.theme,
+      colorMapper: loader.colorMapper,
+    ),
+  );
+  expect(
+    picture.colorFilter,
+    vivid ? null : ColorFilter.mode(ink, BlendMode.srcIn),
+  );
   expect(picture.width, size);
   expect(picture.height, size);
   expect(picture.excludeFromSemantics, isTrue);
   expect(
-      find.descendant(of: finder, matching: find.byType(Icon)), findsNothing);
+    find.descendant(of: finder, matching: find.byType(Icon)),
+    findsNothing,
+  );
 }

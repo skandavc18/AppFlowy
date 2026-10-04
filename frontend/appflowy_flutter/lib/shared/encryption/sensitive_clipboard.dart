@@ -59,8 +59,10 @@ class SensitiveClipboard {
       if (identical(_tail, tail)) _tail = null;
     }
 
-    tail = result.then((_) => finished(),
-        onError: (Object _, StackTrace __) => finished());
+    tail = result.then(
+      (_) => finished(),
+      onError: (Object _, StackTrace __) => finished(),
+    );
     _tail = tail;
     return result;
   }

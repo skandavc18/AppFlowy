@@ -41,7 +41,7 @@ class BackupOmission {
       names: names is List
           ? [
               for (final name in names)
-                if (name is String) name
+                if (name is String) name,
             ]
           : const <String>[],
     );

@@ -736,7 +736,9 @@ class _SurfaceFindTargetState extends State<SurfaceFindTarget> {
         controller.current?.id != widget.id ||
         controller._navigation == _revealedNavigation ||
         !identical(controller._currentTarget, this) ||
-        _render?.currentRect == null) return;
+        _render?.currentRect == null) {
+      return;
+    }
     // A LazyBox/stream can finish after the host's first reveal frame. Honor
     // only the still-current request; ordinary streaming must not drag back.
     _reveal();

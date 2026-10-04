@@ -34,66 +34,75 @@ void main() {
   tearDownAll(() => GoogleFonts.config.allowRuntimeFetching = fetchFonts);
 
   testWidgets(
-      'real WebView widget starts blank; acknowledged policy precedes target load and opt-out reload',
-      (tester) async {
-    final fixture = _Fixture(tester);
-    try {
-      await fixture.mount();
-      expect((fixture.creations.single['initialUrlRequest'] as Map)['url'],
-          'about:blank');
-      expect(fixture.events, ['probe', 'install']);
-      expect(fixture.shield.onPressed, isNull);
-      fixture.gate.complete();
-      await fixture.pump();
-      expect(fixture.events, ['probe', 'install', 'load']);
-      expect(fixture.loads.single, _url);
-      fixture.shield.onPressed!();
-      await fixture.pump();
-      expect(fixture.events, ['probe', 'install', 'load', 'clear', 'reload']);
-      expect(fixture.creations, hasLength(1));
-      expect(fixture.shield.active, isFalse);
-    } finally {
-      await fixture.dispose();
-    }
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-  for (final change in ['navigation', 'dispose']) {
-    testWidgets('$change during installation forbids a late target load',
-        (tester) async {
+    'real WebView widget starts blank; acknowledged policy precedes target load and opt-out reload',
+    (tester) async {
       final fixture = _Fixture(tester);
       try {
         await fixture.mount();
-        if (change == 'dispose') {
-          await tester.pumpWidget(const SizedBox.shrink());
-        } else {
-          await fixture
-              .event('onLoadStart', {'url': 'https://news.example/other'});
-        }
+        expect(
+          (fixture.creations.single['initialUrlRequest'] as Map)['url'],
+          'about:blank',
+        );
+        expect(fixture.events, ['probe', 'install']);
+        expect(fixture.shield.onPressed, isNull);
         fixture.gate.complete();
         await fixture.pump();
-        expect(fixture.loads, isEmpty);
+        expect(fixture.events, ['probe', 'install', 'load']);
+        expect(fixture.loads.single, _url);
+        fixture.shield.onPressed!();
+        await fixture.pump();
+        expect(fixture.events, ['probe', 'install', 'load', 'clear', 'reload']);
+        expect(fixture.creations, hasLength(1));
+        expect(fixture.shield.active, isFalse);
       } finally {
         await fixture.dispose();
       }
-    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  for (final change in ['navigation', 'dispose']) {
+    testWidgets(
+      '$change during installation forbids a late target load',
+      (tester) async {
+        final fixture = _Fixture(tester);
+        try {
+          await fixture.mount();
+          if (change == 'dispose') {
+            await tester.pumpWidget(const SizedBox.shrink());
+          } else {
+            await fixture
+                .event('onLoadStart', {'url': 'https://news.example/other'});
+          }
+          fixture.gate.complete();
+          await fixture.pump();
+          expect(fixture.loads, isEmpty);
+        } finally {
+          await fixture.dispose();
+        }
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
   }
 
   testWidgets(
-      'old CDP is unavailable, but explicit off recreates and navigates',
-      (tester) async {
-    final fixture = _Fixture(tester)..supportsPatterns = false;
-    try {
-      await fixture.mount();
-      expect(fixture.loads, isEmpty);
-      expect(fixture.shield.active, isFalse);
-      fixture.shield.onPressed!();
-      await fixture.pump();
-      expect(fixture.loads, [_url]);
-      expect(fixture.shield.active, isFalse);
-    } finally {
-      await fixture.dispose();
-    }
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+    'old CDP is unavailable, but explicit off recreates and navigates',
+    (tester) async {
+      final fixture = _Fixture(tester)..supportsPatterns = false;
+      try {
+        await fixture.mount();
+        expect(fixture.loads, isEmpty);
+        expect(fixture.shield.active, isFalse);
+        fixture.shield.onPressed!();
+        await fixture.pump();
+        expect(fixture.loads, [_url]);
+        expect(fixture.shield.active, isFalse);
+      } finally {
+        await fixture.dispose();
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   for (final kind in [
     'unsolicited',
@@ -102,203 +111,237 @@ void main() {
     'external',
     'unsafe',
     'inactive',
-    'covered'
+    'covered',
   ]) {
-    testWidgets('$kind popup awaits rejectWindow and never loads a second page',
-        (tester) async {
+    testWidgets(
+      '$kind popup awaits rejectWindow and never loads a second page',
+      (tester) async {
+        final fixture = _Fixture(tester);
+        final ack = fixture.rejectGate = Completer<bool>();
+        try {
+          await fixture.mount();
+          fixture.gate.complete();
+          await fixture.pump();
+          if (kind == 'inactive') {
+            fixture.active.value = false;
+            await fixture.pump();
+          }
+          if (kind == 'covered') {
+            unawaited(
+              showDialog<void>(
+                context: tester.element(find.byType(BookmarkWebPage)),
+                builder: (_) => const AlertDialog(content: Text('Newer route')),
+              ),
+            );
+            await tester.pump(const Duration(milliseconds: 300));
+          }
+          final uri = switch (kind) {
+            'null' => null,
+            'external' => 'mailto:reader@example.com',
+            'unsafe' => 'file:///C:/private.txt',
+            _ => 'https://news.example/followed',
+          };
+          var completed = false;
+          final reply = fixture
+              .send(
+            'onCreateWindow',
+            CreateWindowAction(
+              windowId: 902,
+              isForMainFrame: true,
+              request: URLRequest(url: uri == null ? null : WebUri(uri)),
+              hasGesture: kind == 'unknown' ? null : kind != 'unsolicited',
+            ).toMap(),
+          )
+              .then((value) {
+            completed = true;
+            return value;
+          });
+          await fixture.pump();
+          expect(fixture.rejected, [902]);
+          expect(
+            completed,
+            isFalse,
+            reason: 'Handled reply must wait for rejection ACK.',
+          );
+          expect(fixture.loads, [_url]);
+          ack.complete(true);
+          expect(await fixture.waitFor(reply), isTrue);
+          expect(
+            fixture.external.map((uri) => uri.toString()).toList(),
+            kind == 'external' ? ['mailto:reader@example.com'] : isEmpty,
+          );
+          expect(fixture.creations, hasLength(1));
+        } finally {
+          await fixture.dispose();
+        }
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
+
+  testWidgets(
+    'activated HTTP popup delegates once to native same-view fallback',
+    (tester) async {
       final fixture = _Fixture(tester);
-      final ack = fixture.rejectGate = Completer<bool>();
       try {
         await fixture.mount();
         fixture.gate.complete();
         await fixture.pump();
-        if (kind == 'inactive') {
-          fixture.active.value = false;
-          await fixture.pump();
-        }
-        if (kind == 'covered') {
-          unawaited(showDialog<void>(
-              context: tester.element(find.byType(BookmarkWebPage)),
-              builder: (_) => const AlertDialog(content: Text('Newer route'))));
-          await tester.pump(const Duration(milliseconds: 300));
-        }
-        final uri = switch (kind) {
-          'null' => null,
-          'external' => 'mailto:reader@example.com',
-          'unsafe' => 'file:///C:/private.txt',
-          _ => 'https://news.example/followed',
-        };
-        var completed = false;
-        final reply = fixture
-            .send(
-                'onCreateWindow',
-                CreateWindowAction(
-                  windowId: 902,
-                  isForMainFrame: true,
-                  request: URLRequest(url: uri == null ? null : WebUri(uri)),
-                  hasGesture: kind == 'unknown' ? null : kind != 'unsolicited',
-                ).toMap())
-            .then((value) {
-          completed = true;
-          return value;
-        });
-        await fixture.pump();
-        expect(fixture.rejected, [902]);
-        expect(completed, isFalse,
-            reason: 'Handled reply must wait for rejection ACK.');
-        expect(fixture.loads, [_url]);
-        ack.complete(true);
-        expect(await fixture.waitFor(reply), isTrue);
-        expect(fixture.external.map((uri) => uri.toString()).toList(),
-            kind == 'external' ? ['mailto:reader@example.com'] : isEmpty);
-        expect(fixture.creations, hasLength(1));
-      } finally {
-        await fixture.dispose();
-      }
-    },
-        timeout: const Timeout(Duration(seconds: 30)),
-        variant: TargetPlatformVariant.only(TargetPlatform.windows));
-  }
-
-  testWidgets(
-      'activated HTTP popup delegates once to native same-view fallback',
-      (tester) async {
-    final fixture = _Fixture(tester);
-    try {
-      await fixture.mount();
-      fixture.gate.complete();
-      await fixture.pump();
-      final reply = await fixture.event(
+        final reply = await fixture.event(
           'onCreateWindow',
           CreateWindowAction(
             windowId: 903,
             isForMainFrame: true,
             hasGesture: true,
             request: URLRequest(url: WebUri('https://news.example/followed')),
-          ).toMap());
-      expect(reply, isFalse,
-          reason: 'Windows owns the single same-view navigation.');
-      expect(fixture.rejected, isEmpty);
-      expect(fixture.loads, [_url],
-          reason: 'Dart must not also issue loadUrl.');
-      expect(fixture.external, isEmpty);
-      expect(fixture.creations, hasLength(1));
-    } finally {
-      await fixture.dispose();
-    }
-  },
-      timeout: const Timeout(Duration(seconds: 30)),
-      variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-  testWidgets('stalled rejection reaches deadline but never enables fallback',
-      (tester) async {
-    final fixture = _Fixture(tester)..rejectGate = Completer<bool>();
-    try {
-      await fixture.mount();
-      fixture.gate.complete();
-      await fixture.pump();
-      var completed = false;
-      final reply = fixture
-          .send(
-              'onCreateWindow',
-              CreateWindowAction(
-                windowId: 904,
-                isForMainFrame: true,
-                hasGesture: false,
-                request: URLRequest(url: WebUri('https://news.example/popup')),
-              ).toMap())
-          .then((value) {
-        completed = true;
-        return value;
-      });
-      await fixture.pump();
-      await tester
-          .pump(bookmarkReaderDeadline - const Duration(milliseconds: 1));
-      expect(completed, isFalse);
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(await fixture.waitFor(reply), isTrue);
-      fixture.rejectGate!.complete(true);
-      await fixture.pump();
-      expect(fixture.rejected, [904]);
-      expect(fixture.loads, [_url]);
-    } finally {
-      await fixture.dispose();
-    }
-  },
-      timeout: const Timeout(Duration(seconds: 30)),
-      variant: TargetPlatformVariant.only(TargetPlatform.windows));
+          ).toMap(),
+        );
+        expect(
+          reply,
+          isFalse,
+          reason: 'Windows owns the single same-view navigation.',
+        );
+        expect(fixture.rejected, isEmpty);
+        expect(
+          fixture.loads,
+          [_url],
+          reason: 'Dart must not also issue loadUrl.',
+        );
+        expect(fixture.external, isEmpty);
+        expect(fixture.creations, hasLength(1));
+      } finally {
+        await fixture.dispose();
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets(
-      'website gestures toggle retains native view, history defaults and clear Find controls',
-      (tester) async {
-    final fixture = _Fixture(tester);
-    final semantics = tester.ensureSemantics();
-    try {
-      await fixture.mount();
-      fixture.gate.complete();
-      await fixture.pump();
-      final native = tester
-          .state<CustomPlatformViewState>(find.byType(CustomPlatformView));
-      final scopeElement =
-          tester.element(find.byType(WindowsWebViewGestureScope));
-      final settings = Map<Object?, Object?>.from(
-          fixture.creations.single['initialSettings'] as Map);
-      expect(settings['allowsBackForwardNavigationGestures'], isTrue);
-      expect(settings['disableHorizontalScroll'], isTrue);
-      expect(fixture.gestures.active, isFalse);
-      expect(fixture.gestures.tooltip, BookmarkReaderStrings.gesturesAuto);
-      expect(
+    'stalled rejection reaches deadline but never enables fallback',
+    (tester) async {
+      final fixture = _Fixture(tester)..rejectGate = Completer<bool>();
+      try {
+        await fixture.mount();
+        fixture.gate.complete();
+        await fixture.pump();
+        var completed = false;
+        final reply = fixture
+            .send(
+          'onCreateWindow',
+          CreateWindowAction(
+            windowId: 904,
+            isForMainFrame: true,
+            hasGesture: false,
+            request: URLRequest(url: WebUri('https://news.example/popup')),
+          ).toMap(),
+        )
+            .then((value) {
+          completed = true;
+          return value;
+        });
+        await fixture.pump();
+        await tester
+            .pump(bookmarkReaderDeadline - const Duration(milliseconds: 1));
+        expect(completed, isFalse);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(await fixture.waitFor(reply), isTrue);
+        fixture.rejectGate!.complete(true);
+        await fixture.pump();
+        expect(fixture.rejected, [904]);
+        expect(fixture.loads, [_url]);
+      } finally {
+        await fixture.dispose();
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'website gestures toggle retains native view, history defaults and clear Find controls',
+    (tester) async {
+      final fixture = _Fixture(tester);
+      final semantics = tester.ensureSemantics();
+      try {
+        await fixture.mount();
+        fixture.gate.complete();
+        await fixture.pump();
+        final native = tester
+            .state<CustomPlatformViewState>(find.byType(CustomPlatformView));
+        final scopeElement =
+            tester.element(find.byType(WindowsWebViewGestureScope));
+        final settings = Map<Object?, Object?>.from(
+          fixture.creations.single['initialSettings'] as Map,
+        );
+        expect(settings['allowsBackForwardNavigationGestures'], isTrue);
+        expect(settings['disableHorizontalScroll'], isTrue);
+        expect(fixture.gestures.active, isFalse);
+        expect(fixture.gestures.tooltip, BookmarkReaderStrings.gesturesAuto);
+        expect(
           WindowsWebViewGestureScope.maybeOf(native.context)!
               .preferWebsiteGestures,
-          isFalse);
-      final toggle = find.byKey(const ValueKey('bookmark-website-gestures'));
-      await tester.tap(toggle);
-      await fixture.pump();
-      expect(fixture.gestures.active, isTrue);
-      expect(fixture.gestures.tooltip, BookmarkReaderStrings.gesturesSite);
-      expect(
+          isFalse,
+        );
+        final toggle = find.byKey(const ValueKey('bookmark-website-gestures'));
+        await tester.tap(toggle);
+        await fixture.pump();
+        expect(fixture.gestures.active, isTrue);
+        expect(fixture.gestures.tooltip, BookmarkReaderStrings.gesturesSite);
+        expect(
           WindowsWebViewGestureScope.maybeOf(native.context)!
               .preferWebsiteGestures,
-          isTrue);
-      expect(tester.state(find.byType(CustomPlatformView)), same(native));
-      expect(tester.element(find.byType(WindowsWebViewGestureScope)),
-          same(scopeElement));
-      expect(fixture.creations, hasLength(1));
-      expect(fixture.creations.single['initialSettings'], settings);
-      expect(fixture.settingWrites, isEmpty);
-      expect(fixture.loads, [_url]);
-      expect(fixture.events.where((event) => event == 'reload'), isEmpty);
-      // Exercise the actual button semantics, not just a tooltip widget.
-      final button = find.descendant(
+          isTrue,
+        );
+        expect(tester.state(find.byType(CustomPlatformView)), same(native));
+        expect(
+          tester.element(find.byType(WindowsWebViewGestureScope)),
+          same(scopeElement),
+        );
+        expect(fixture.creations, hasLength(1));
+        expect(fixture.creations.single['initialSettings'], settings);
+        expect(fixture.settingWrites, isEmpty);
+        expect(fixture.loads, [_url]);
+        expect(fixture.events.where((event) => event == 'reload'), isEmpty);
+        // Exercise the actual button semantics, not just a tooltip widget.
+        final button = find.descendant(
           of: toggle,
           matching: find.byWidgetPredicate(
-              (w) => w is Semantics && w.properties.button == true));
-      expect(button, findsOneWidget);
-      final data = tester.getSemantics(button).getSemanticsData();
-      expect(data.label, BookmarkReaderStrings.gesturesSite);
-      expect(data.hasAction(SemanticsAction.tap), isTrue);
-      expect(ContextualFindRegion.dispatch(native.context), isTrue);
-      await fixture.pump();
-      final bar = tester.getRect(find.byType(FindReplaceBar));
-      for (final key in ['bookmark-website-gestures', 'bookmark-ad-blocking']) {
-        final control = find.byKey(ValueKey(key));
-        expect(bar.overlaps(tester.getRect(control)), isFalse);
-        expect(control.hitTestable(), findsOneWidget);
-      }
-      await tester.tap(toggle);
-      await fixture.pump();
-      expect(
+            (w) => w is Semantics && w.properties.button == true,
+          ),
+        );
+        expect(button, findsOneWidget);
+        final data = tester.getSemantics(button).getSemanticsData();
+        expect(data.label, BookmarkReaderStrings.gesturesSite);
+        expect(data.hasAction(SemanticsAction.tap), isTrue);
+        expect(ContextualFindRegion.dispatch(native.context), isTrue);
+        await fixture.pump();
+        final bar = tester.getRect(find.byType(FindReplaceBar));
+        for (final key in [
+          'bookmark-website-gestures',
+          'bookmark-ad-blocking',
+        ]) {
+          final control = find.byKey(ValueKey(key));
+          expect(bar.overlaps(tester.getRect(control)), isFalse);
+          expect(control.hitTestable(), findsOneWidget);
+        }
+        await tester.tap(toggle);
+        await fixture.pump();
+        expect(
           WindowsWebViewGestureScope.maybeOf(native.context)!
               .preferWebsiteGestures,
-          isFalse);
-      expect(fixture.creations, hasLength(1));
-    } finally {
-      semantics.dispose();
-      await fixture.dispose();
-    }
-  },
-      timeout: const Timeout(Duration(seconds: 30)),
-      variant: TargetPlatformVariant.only(TargetPlatform.windows));
+          isFalse,
+        );
+        expect(fixture.creations, hasLength(1));
+      } finally {
+        semantics.dispose();
+        await fixture.dispose();
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }
 
 // Real vendored Windows Dart adapter, fake native channels only. This fixture
@@ -320,7 +363,8 @@ class _Fixture {
       final input =
           MethodChannel('com.pichillilorenzo/custom_platform_view_$id');
       final nativeEvents = MethodChannel(
-          'com.pichillilorenzo/custom_platform_view_${id}_events');
+        'com.pichillilorenzo/custom_platform_view_${id}_events',
+      );
       channels.addAll([web, input, nativeEvents]);
       messenger.setMockMethodCallHandler(input, (call) async {
         if (call.method == 'querySiteGesturePolicyState') {
@@ -331,7 +375,7 @@ class _Fixture {
             'current': _url,
             'back': true,
             'forward': false,
-            'loading': false
+            'loading': false,
           };
         }
         return null;
@@ -353,8 +397,9 @@ class _Fixture {
           final patterns = parameters['urlPatterns'] as List;
           if (patterns.isNotEmpty && (patterns.first as Map).isEmpty) {
             events.add('probe');
-            if (supportsPatterns)
+            if (supportsPatterns) {
               throw PlatformException(code: 'invalid-parameters');
+            }
             return '{}';
           }
           if (patterns.isEmpty) {
@@ -368,7 +413,8 @@ class _Fixture {
         if (call.method == 'loadUrl') {
           events.add('load');
           loads.add(
-              ((call.arguments as Map)['urlRequest'] as Map)['url'] as String);
+            ((call.arguments as Map)['urlRequest'] as Map)['url'] as String,
+          );
         }
         if (call.method == 'reload') events.add('reload');
         return null;
@@ -402,27 +448,37 @@ class _Fixture {
   int id = 710;
   late MethodChannel web;
   BookmarkAction get shield => tester.widget<BookmarkAction>(
-      find.byKey(const ValueKey('bookmark-ad-blocking')));
+        find.byKey(const ValueKey('bookmark-ad-blocking')),
+      );
   BookmarkAction get gestures => tester.widget<BookmarkAction>(
-      find.byKey(const ValueKey('bookmark-website-gestures')));
+        find.byKey(const ValueKey('bookmark-website-gestures')),
+      );
 
   Future<void> mount() async {
-    await tester.pumpWidget(BookmarkReaderTestLocalizations.wrap(
-      theme: DesktopAppearance().getThemeData(AppTheme.fallback,
-          Brightness.light, 'DM Sans', builtInCodeFontFamily),
-      home: Scaffold(
-          body: ContextualFindScope(
-              child: ValueListenableBuilder<bool>(
-        valueListenable: active,
-        builder: (context, active, _) => BookmarkWebPage(
-          url: _url,
-          theme: bookmarkThemeOf(context),
-          environmentLoader: () async => null,
-          active: active,
-          onOpenExternally: external.add,
+    await tester.pumpWidget(
+      BookmarkReaderTestLocalizations.wrap(
+        theme: DesktopAppearance().getThemeData(
+          AppTheme.fallback,
+          Brightness.light,
+          'DM Sans',
+          builtInCodeFontFamily,
         ),
-      ))),
-    ));
+        home: Scaffold(
+          body: ContextualFindScope(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: active,
+              builder: (context, active, _) => BookmarkWebPage(
+                url: _url,
+                theme: bookmarkThemeOf(context),
+                environmentLoader: () async => null,
+                active: active,
+                onOpenExternally: external.add,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     var ready = false;
     for (var turn = 0; turn < 12 && !ready; turn++) {
       await pump();
@@ -435,8 +491,11 @@ class _Fixture {
                   .isNotEmpty &&
               shield.onPressed != null;
     }
-    expect(ready, isTrue,
-        reason: 'Localized native host must reach its policy gate.');
+    expect(
+      ready,
+      isTrue,
+      reason: 'Localized native host must reach its policy gate.',
+    );
     expect(creations, hasLength(1));
   }
 
@@ -462,18 +521,26 @@ class _Fixture {
     var done = false;
     dynamic value;
     Object? error;
-    future.then<void>((result) {
-      value = result;
-      done = true;
-    }, onError: (Object caught) {
-      error = caught;
-      done = true;
-    });
+    unawaited(
+      future.then<void>(
+        (result) {
+          value = result;
+          done = true;
+        },
+        onError: (Object caught) {
+          error = caught;
+          done = true;
+        },
+      ),
+    );
     for (var turn = 0; turn < 12 && !done; turn++) {
       await pump();
     }
-    expect(done, isTrue,
-        reason: 'Native fixture ACK must complete in bounded turns.');
+    expect(
+      done,
+      isTrue,
+      reason: 'Native fixture ACK must complete in bounded turns.',
+    );
     if (error != null) throw error!;
     return value;
   }
@@ -484,7 +551,8 @@ class _Fixture {
     await tester.pump();
     await tester.pump();
     for (final state in tester.stateList<CustomPlatformViewState>(
-        find.byType(CustomPlatformView, skipOffstage: false))) {
+      find.byType(CustomPlatformView, skipOffstage: false),
+    )) {
       nativeControllers.add(state.controller);
     }
   }
@@ -492,8 +560,9 @@ class _Fixture {
   Future<void> dispose() async {
     await tester.pumpWidget(const SizedBox.shrink());
     if (!gate.isCompleted) gate.complete();
-    if (rejectGate != null && !rejectGate!.isCompleted)
+    if (rejectGate != null && !rejectGate!.isCompleted) {
       rejectGate!.complete(true);
+    }
     await pump();
     for (final controller in nativeControllers) {
       await waitFor(controller.dispose());

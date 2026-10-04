@@ -56,9 +56,13 @@ void main() {
           expect(host.bodyWrites, 0);
           expect(host.editor.document.toJson(), before);
           expect(
-              tester.element(find.byType(AppFlowyEditor)), same(nativeEditor));
+            tester.element(find.byType(AppFlowyEditor)),
+            same(nativeEditor),
+          );
           expect(
-              tester.element(find.byKey(rowFindTitleKey)), same(fieldElement));
+            tester.element(find.byKey(rowFindTitleKey)),
+            same(fieldElement),
+          );
 
           final start = host.title.text.indexOf('needle');
           final end = host.title.text.lastIndexOf('needle');
@@ -421,7 +425,9 @@ void main() {
         expect(titleField.autofocus, isFalse);
         expect(host.scope, same(scope));
         expect(
-            tester.element(find.byType(AppFlowyEditor)), same(editorElement));
+          tester.element(find.byType(AppFlowyEditor)),
+          same(editorElement),
+        );
         expect(
           tester.element(find.byKey(const ValueKey('findTextField'))),
           same(queryElement),

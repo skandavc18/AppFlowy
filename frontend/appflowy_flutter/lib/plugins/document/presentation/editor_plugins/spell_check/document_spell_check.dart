@@ -142,7 +142,8 @@ class DocumentSpellCheckController extends ChangeNotifier {
       // are read again instead.
       final parent = operation.path.length > 1
           ? editorState.getNodeAtPath(
-              operation.path.sublist(0, operation.path.length - 1))
+              operation.path.sublist(0, operation.path.length - 1),
+            )
           : null;
       if (parent != null) {
         _markDirty(parent);

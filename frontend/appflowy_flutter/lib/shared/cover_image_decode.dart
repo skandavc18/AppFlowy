@@ -24,10 +24,12 @@ class CoverImageDecodeSize {
     double? width,
     double? height,
   }) {
-    final size = constraints.constrain(Size(
-      width ?? constraints.maxWidth,
-      height ?? constraints.maxHeight,
-    ));
+    final size = constraints.constrain(
+      Size(
+        width ?? constraints.maxWidth,
+        height ?? constraints.maxHeight,
+      ),
+    );
     if (!size.width.isFinite ||
         !size.height.isFinite ||
         size.isEmpty ||
@@ -59,7 +61,10 @@ class CoverImageDecodeSize {
   /// Extreme aspect ratios hit the explicit 4096px safety ceiling, not an
   /// unbounded allocation. Fullscreen providers never opt into this policy.
   ui.TargetImageSize target(
-      int intrinsicWidth, int intrinsicHeight, BoxFit fit) {
+    int intrinsicWidth,
+    int intrinsicHeight,
+    BoxFit fit,
+  ) {
     // Keep the scale rational until the final integer ceiling. For example,
     // 800 * (224 / 800) can be 224.00000000000003; ceil would allocate 225
     // pixels and break contain's bound on an otherwise exact-sized axis.
@@ -118,7 +123,9 @@ class CoverImageProvider extends ImageProvider<CoverImageKey> {
 
   @override
   ImageStreamCompleter loadImage(
-      CoverImageKey key, ImageDecoderCallback decode) {
+    CoverImageKey key,
+    ImageDecoderCallback decode,
+  ) {
     final completer = imageProvider.loadImage(
       key.source,
       (buffer, {getTargetSize}) => decode(

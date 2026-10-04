@@ -59,48 +59,61 @@ class _CoverAppearanceSettingState extends State<CoverAppearanceSetting> {
             key: const ValueKey('cover-appearance-setting'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(coverLabel('title', 'Default page covers'),
-                  style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                coverLabel('title', 'Default page covers'),
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: 4),
               Text(
-                coverLabel('description',
-                    'Appearance on this device. Existing images, positions and page height overrides are kept.'),
+                coverLabel(
+                  'description',
+                  'Appearance on this device. Existing images, positions and page height overrides are kept.',
+                ),
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
                     ?.copyWith(color: palette.secondaryText),
               ),
               const SizedBox(height: 12),
-              LayoutBuilder(builder: (context, constraints) {
-                final width =
-                    constraints.hasBoundedWidth ? constraints.maxWidth : 360.0;
-                final height = PageCoverHeight.resolve(
-                    width: width, appearance: preview, fallback: 144);
-                return PageCoverPresentation(
-                  appearance: preview,
-                  alignment: preview.alignment,
-                  child: SizedBox(
-                    key: const ValueKey('cover-appearance-preview'),
-                    height: height,
-                    child: const WorkspacePageCover(
-                      image: ViewCoverImage(
-                        cover: PageStyleCover(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.hasBoundedWidth
+                      ? constraints.maxWidth
+                      : 360.0;
+                  final height = PageCoverHeight.resolve(
+                    width: width,
+                    appearance: preview,
+                    fallback: 144,
+                  );
+                  return PageCoverPresentation(
+                    appearance: preview,
+                    alignment: preview.alignment,
+                    child: SizedBox(
+                      key: const ValueKey('cover-appearance-preview'),
+                      height: height,
+                      child: const WorkspacePageCover(
+                        image: ViewCoverImage(
+                          cover: PageStyleCover(
                             type: PageStyleCoverImageType.builtInImage,
-                            value: 'n1'),
-                        width: double.infinity,
-                        height: double.infinity,
+                            value: 'n1',
+                          ),
+                          width: double.infinity,
+                          height: double.infinity,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
               const SizedBox(height: 12),
               _choices<CoverCorners>(
                 label: coverLabel('corners', 'Corners'),
                 values: CoverCorners.values,
                 selected: value.corners,
                 name: (v) => coverLabel(
-                    v.name, v == CoverCorners.rounded ? 'Rounded' : 'Square'),
+                  v.name,
+                  v == CoverCorners.rounded ? 'Rounded' : 'Square',
+                ),
                 enabled: enabled,
                 onChanged: (v) =>
                     _store.update((current) => current.copyWith(corners: v)),
@@ -110,12 +123,13 @@ class _CoverAppearanceSettingState extends State<CoverAppearanceSetting> {
                 values: CoverImageFit.values,
                 selected: value.fit,
                 name: (v) => coverLabel(
-                    v.name,
-                    switch (v) {
-                      CoverImageFit.fit => 'Fit',
-                      CoverImageFit.crop => 'Fill / crop',
-                      CoverImageFit.stretch => 'Stretch',
-                    }),
+                  v.name,
+                  switch (v) {
+                    CoverImageFit.fit => 'Fit',
+                    CoverImageFit.crop => 'Fill / crop',
+                    CoverImageFit.stretch => 'Stretch',
+                  },
+                ),
                 enabled: enabled,
                 onChanged: (v) =>
                     _store.update((current) => current.copyWith(fit: v)),
@@ -125,12 +139,13 @@ class _CoverAppearanceSettingState extends State<CoverAppearanceSetting> {
                 values: CoverPosition.values,
                 selected: value.position,
                 name: (v) => coverLabel(
-                    v.name,
-                    switch (v) {
-                      CoverPosition.top => 'Top',
-                      CoverPosition.center => 'Center',
-                      CoverPosition.bottom => 'Bottom',
-                    }),
+                  v.name,
+                  switch (v) {
+                    CoverPosition.top => 'Top',
+                    CoverPosition.center => 'Center',
+                    CoverPosition.bottom => 'Bottom',
+                  },
+                ),
                 enabled: enabled,
                 onChanged: (v) =>
                     _store.update((current) => current.copyWith(position: v)),
@@ -139,19 +154,28 @@ class _CoverAppearanceSettingState extends State<CoverAppearanceSetting> {
                 key: const ValueKey('cover-appearance-ratio-enabled'),
                 contentPadding: EdgeInsets.zero,
                 title: Text(coverLabel('aspectRatio', 'Use an aspect ratio')),
-                subtitle: Text(coverLabel('ratioHint',
-                    'Width ÷ height, bounded to keep the page usable. Resized pages retain their height.')),
+                subtitle: Text(
+                  coverLabel(
+                    'ratioHint',
+                    'Width ÷ height, bounded to keep the page usable. Resized pages retain their height.',
+                  ),
+                ),
                 value: value.aspectRatio != null,
                 onChanged: !enabled
                     ? null
-                    : (useRatio) => unawaited(_store.update(
-                          (current) => current.copyWith(
-                              aspectRatio: 3, resetAspectRatio: !useRatio),
-                        )),
+                    : (useRatio) => unawaited(
+                          _store.update(
+                            (current) => current.copyWith(
+                              aspectRatio: 3,
+                              resetAspectRatio: !useRatio,
+                            ),
+                          ),
+                        ),
               ),
               if (value.aspectRatio != null) ...[
                 Text(
-                    '${(_ratioDraft ?? value.aspectRatio!).toStringAsFixed(2)} : 1'),
+                  '${(_ratioDraft ?? value.aspectRatio!).toStringAsFixed(2)} : 1',
+                ),
                 Slider(
                   key: const ValueKey('cover-appearance-ratio'),
                   min: 1,
@@ -166,10 +190,12 @@ class _CoverAppearanceSettingState extends State<CoverAppearanceSetting> {
                       ? null
                       : (ratio) async {
                           final store = _store;
-                          await store.update((current) =>
-                              current.copyWith(aspectRatio: ratio));
-                          if (mounted && identical(store, _store))
+                          await store.update(
+                            (current) => current.copyWith(aspectRatio: ratio),
+                          );
+                          if (mounted && identical(store, _store)) {
                             setState(() => _ratioDraft = null);
+                          }
                         },
                 ),
               ],
@@ -190,13 +216,16 @@ class _CoverAppearanceSettingState extends State<CoverAppearanceSetting> {
                         ? coverLabel('loading', 'Loading')
                         : _store.isSaving
                             ? coverLabel('saving', 'Saving')
-                            : coverLabel('settingsFailed',
-                                'Cover preferences could not be loaded or saved. Try again.'),
+                            : coverLabel(
+                                'settingsFailed',
+                                'Cover preferences could not be loaded or saved. Try again.',
+                              ),
                     key: const ValueKey('cover-appearance-status'),
                     style: TextStyle(
-                        color: _store.failure == null
-                            ? palette.secondaryText
-                            : palette.destructive),
+                      color: _store.failure == null
+                          ? palette.secondaryText
+                          : palette.destructive,
+                    ),
                   ),
                 ),
               if (!_loading && !_store.isLoaded)

@@ -93,7 +93,8 @@ class MindMapDocument {
         title: json['title'] as String? ?? '',
         root: json['root'] is Map
             ? MindMapNode.fromJson(
-                Map<String, dynamic>.from(json['root'] as Map))
+                Map<String, dynamic>.from(json['root'] as Map),
+              )
             : MindMapDocument.blank().root,
       );
 

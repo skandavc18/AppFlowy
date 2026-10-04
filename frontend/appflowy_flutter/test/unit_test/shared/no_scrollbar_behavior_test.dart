@@ -13,7 +13,7 @@ void main() {
     'retains parent behavior and removes only scrollbar decoration after copies',
     (tester) async {
       final tracker = VelocityTracker.withKind(PointerDeviceKind.stylus);
-      final GestureVelocityTrackerBuilder trackerBuilder = (_) => tracker;
+      VelocityTracker trackerBuilder(_) => tracker;
       final parent = _ParentScrollBehavior(trackerBuilder);
       final behavior = NoScrollbarBehavior(parent);
       final controller = ScrollController();
@@ -54,7 +54,9 @@ void main() {
           same(tracker),
         );
         expect(
-            candidate.pointerAxisModifiers, same(parent.pointerAxisModifiers));
+          candidate.pointerAxisModifiers,
+          same(parent.pointerAxisModifiers),
+        );
 
         for (final direction in [AxisDirection.down, AxisDirection.right]) {
           const child = SizedBox(width: 20, height: 20);
@@ -67,7 +69,9 @@ void main() {
             isA<RawScrollbar>(),
           );
           expect(
-              candidate.buildScrollbar(context, child, details), same(child));
+            candidate.buildScrollbar(context, child, details),
+            same(child),
+          );
 
           final overscroll =
               candidate.buildOverscrollIndicator(context, child, details);
@@ -196,7 +200,9 @@ void main() {
         );
         expect(bar, findsOneWidget);
         expect(
-            tester.widget<Scrollbar>(bar).controller, same(entry.controller));
+          tester.widget<Scrollbar>(bar).controller,
+          same(entry.controller),
+        );
       }
       expect(find.byType(Scrollbar), findsNWidgets(2));
       expect(tester.takeException(), isNull);
@@ -263,7 +269,6 @@ void main() {
 
         await tester.sendEventToBinding(
           PointerScrollEvent(
-            kind: PointerDeviceKind.mouse,
             position: tester.getCenter(viewport),
             scrollDelta: wheelDelta,
           ),
@@ -278,7 +283,7 @@ void main() {
         );
         final offsetAfterWheel = controller.offset;
 
-        await tester.drag(viewport, -wheelDelta, kind: PointerDeviceKind.touch);
+        await tester.drag(viewport, -wheelDelta);
         await tester.pumpAndSettle();
 
         expect(downEvents, 1);
@@ -383,8 +388,10 @@ void main() {
 
       expect(readOnly.focusNode.hasFocus, isTrue);
       expect(readOnly.controller.selection.textInside(source), 'alpha');
-      await tester.sendKeyEvent(LogicalKeyboardKey.backspace,
-          platform: 'windows');
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.backspace,
+        platform: 'windows',
+      );
       await tester.pump();
       expect(readOnly.controller.text, source);
 

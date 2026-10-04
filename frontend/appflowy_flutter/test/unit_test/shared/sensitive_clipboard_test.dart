@@ -7,7 +7,9 @@ void main() {
   testWidgets('a sensitive copy expires without trimming', (tester) async {
     String? text;
     final clipboard = SensitiveClipboard(
-        write: (value) async => text = value, read: () async => text);
+      write: (value) async => text = value,
+      read: () async => text,
+    );
     await clipboard.copy('  secret\n', sensitive: true);
     expect(text, '  secret\n');
     await tester.pump(const Duration(seconds: 29));
@@ -20,7 +22,9 @@ void main() {
       (tester) async {
     String? text;
     final clipboard = SensitiveClipboard(
-        write: (value) async => text = value, read: () async => text);
+      write: (value) async => text = value,
+      read: () async => text,
+    );
     await clipboard.copy('secret', sensitive: true);
     text = 'Other application';
     await tester.pump(const Duration(seconds: 30));
@@ -31,7 +35,9 @@ void main() {
       (tester) async {
     String? text;
     final clipboard = SensitiveClipboard(
-        write: (value) async => text = value, read: () async => text);
+      write: (value) async => text = value,
+      read: () async => text,
+    );
     await clipboard.copy('secret', sensitive: true);
     await clipboard.copy('ordinary', sensitive: false);
     await tester.pump(const Duration(minutes: 1));
@@ -61,9 +67,13 @@ void main() {
 
   testWidgets('a refused OS clipboard does not leave a timer', (tester) async {
     final clipboard = SensitiveClipboard(
-        write: (_) async => throw StateError('denied'), read: () async => null);
+      write: (_) async => throw StateError('denied'),
+      read: () async => null,
+    );
     await expectLater(
-        clipboard.copy('secret', sensitive: true), throwsStateError);
+      clipboard.copy('secret', sensitive: true),
+      throwsStateError,
+    );
     await clipboard.clear();
     await tester.pump(const Duration(minutes: 1));
   });
@@ -72,7 +82,9 @@ void main() {
       (tester) async {
     String? text;
     final clipboard = SensitiveClipboard(
-        write: (value) async => text = value, read: () async => text);
+      write: (value) async => text = value,
+      read: () async => text,
+    );
     await clipboard.copy('secret', sensitive: true);
     await Future.wait([clipboard.clear(), clipboard.clear()]);
     expect(text, '');

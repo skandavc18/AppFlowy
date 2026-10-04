@@ -48,10 +48,12 @@ class FolderBrowserPresentation extends StatelessWidget {
     }
   }
 
-  Widget _items(String folderId,
-      {String? activeChildId,
-      ScrollController? columnScroll,
-      bool column = false}) {
+  Widget _items(
+    String folderId, {
+    String? activeChildId,
+    ScrollController? columnScroll,
+    bool column = false,
+  }) {
     final loading = controller.currentFolder.id == folderId &&
         controller.isLoading &&
         !controller.hasLoaded(folderId);

@@ -172,6 +172,8 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   flutter_inappwebview: ^6.1.5
+  # Imported directly; the vendored copy comes from dependency_overrides.
+  flutter_inappwebview_windows: any
   file_picker: 8.1.4
 dev_dependencies:
   # Introduce talker to log the bloc events, and only log the events in the development mode

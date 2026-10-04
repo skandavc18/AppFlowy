@@ -274,7 +274,7 @@ class _StageHeader extends StatelessWidget {
                         : LocaleKeys.collections_database_tableSummary.tr(
                             args: [
                               '${summary.rowCount}',
-                              '${summary.fields.length}'
+                              '${summary.fields.length}',
                             ],
                           ),
                     maxLines: 1,

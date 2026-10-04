@@ -20,8 +20,11 @@ import 'package:string_validator/string_validator.dart';
 
 /// Allows isolated caches in previews/tests without replacing the singleton.
 class FlowyImageCacheScope extends InheritedWidget {
-  const FlowyImageCacheScope(
-      {super.key, required this.manager, required super.child});
+  const FlowyImageCacheScope({
+    super.key,
+    required this.manager,
+    required super.child,
+  });
   final BaseCacheManager manager;
 
   static BaseCacheManager? maybeOf(BuildContext context) => context
@@ -176,7 +179,9 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
         _sourceUrl == widget.url &&
         _token == token &&
         _userId == userId &&
-        identical(_manager, next)) return false;
+        identical(_manager, next)) {
+      return false;
+    }
     _releaseSource();
     _manager = next;
     _sourceUrl = widget.url;
@@ -198,11 +203,15 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
     final isolatedCache = next is! CustomImageCacheManager;
     final authenticated = token?.isNotEmpty ?? false;
     _cacheKey = authenticated || isolatedCache
-        ? 'flowy-image-${sha256.convert(utf8.encode(jsonEncode([
+        ? 'flowy-image-${sha256.convert(
+            utf8.encode(
+              jsonEncode([
                 widget.url,
                 if (authenticated) ...[userId, token],
                 if (isolatedCache) identityHashCode(next),
-              ])))}'
+              ]),
+            ),
+          )}'
         : null;
     retryTag = retryCounter.add(widget.url);
     _unsubscribe = retryCounter.listenToUrl(widget.url, () {
@@ -274,8 +283,12 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
       return Image(
         key: key,
         image: CoverImageProvider(
-          CachedNetworkImageProvider(widget.url,
-              cacheKey: _cacheKey, cacheManager: _manager, headers: _headers),
+          CachedNetworkImageProvider(
+            widget.url,
+            cacheKey: _cacheKey,
+            cacheManager: _manager,
+            headers: _headers,
+          ),
           decodeSize,
           widget.fit,
         ),
@@ -355,10 +368,13 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
         retryCounter.getRetryCount(widget.url) != attempt ||
         attempt >= widget.maxRetries ||
         error is! HttpExceptionWithStatus ||
-        !widget.retryErrorCodes.contains(error.statusCode)) return;
+        !widget.retryErrorCodes.contains(error.statusCode)) {
+      return;
+    }
     // Never log a URL, authorization header, or server-provided error body.
     Log.debug(
-        'Image retry scheduled: HTTP ${error.statusCode}, attempt $attempt');
+      'Image retry scheduled: HTTP ${error.statusCode}, attempt $attempt',
+    );
     _retryPending = true;
     final version = ++_retryVersion;
     final url = widget.url;

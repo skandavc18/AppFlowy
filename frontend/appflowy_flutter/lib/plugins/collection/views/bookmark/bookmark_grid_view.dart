@@ -74,13 +74,14 @@ class _WallState extends State<_Wall> {
         header: FileBrowserPageHeader.maybeOf(context),
         slivers: [
           SliverFillRemaining(
-              hasScrollBody: false,
-              child: bookmarkEmptyView(
-                context: context,
-                controller: controller,
-                collection: widget.collection,
-                theme: theme,
-              ))
+            hasScrollBody: false,
+            child: bookmarkEmptyView(
+              context: context,
+              controller: controller,
+              collection: widget.collection,
+              theme: theme,
+            ),
+          ),
         ],
       );
     }
@@ -118,44 +119,46 @@ class _WallState extends State<_Wall> {
                     BookmarkMetrics.space8,
                   ),
                   sliver: SliverToBoxAdapter(
-                      child: Wrap(
-                    spacing: BookmarkMetrics.space4,
-                    runSpacing: BookmarkMetrics.space4,
-                    children: [
-                      for (final entry in entries)
-                        BookmarkCard(
-                          key: ValueKey(entry.id),
-                          entry: entry,
-                          theme: theme,
-                          width: width,
-                          showDescription: controller.settings.showDescriptions,
-                          working: controller.isWorkingOn(entry.id),
-                          onOpen: () => openBookmarkReader(
-                            context: context,
+                    child: Wrap(
+                      spacing: BookmarkMetrics.space4,
+                      runSpacing: BookmarkMetrics.space4,
+                      children: [
+                        for (final entry in entries)
+                          BookmarkCard(
+                            key: ValueKey(entry.id),
                             entry: entry,
-                            controller: controller,
-                            collection: widget.collection,
-                            readOnly: bookmarkCollectionReadOnly(
-                              context,
-                              widget.collection,
+                            theme: theme,
+                            width: width,
+                            showDescription:
+                                controller.settings.showDescriptions,
+                            working: controller.isWorkingOn(entry.id),
+                            onOpen: () => openBookmarkReader(
+                              context: context,
+                              entry: entry,
+                              controller: controller,
+                              collection: widget.collection,
+                              readOnly: bookmarkCollectionReadOnly(
+                                context,
+                                widget.collection,
+                              ),
+                            ),
+                            onToggleStar: () => controller.setStarred(
+                              entry,
+                              !entry.metadata.starred,
+                            ),
+                            onTagTapped: controller.toggleTagFilter,
+                            onContextMenu: (position) => showBookmarkMenu(
+                              context: context,
+                              entry: entry,
+                              controller: controller,
+                              collection: widget.collection,
+                              position: position,
                             ),
                           ),
-                          onToggleStar: () => controller.setStarred(
-                            entry,
-                            !entry.metadata.starred,
-                          ),
-                          onTagTapped: controller.toggleTagFilter,
-                          onContextMenu: (position) => showBookmarkMenu(
-                            context: context,
-                            entry: entry,
-                            controller: controller,
-                            collection: widget.collection,
-                            position: position,
-                          ),
-                        ),
-                    ],
-                  )),
-                )
+                      ],
+                    ),
+                  ),
+                ),
               ],
             );
           },

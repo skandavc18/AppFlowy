@@ -105,7 +105,9 @@ class BookmarkSnapshotStore {
         (article != null &&
             utf8.encode(article.markdown).length > maxBookmarkPageBytes) ||
         (heroBytes != null && heroBytes.length > maxBookmarkImageBytes) ||
-        !RegExp(r'^[a-zA-Z0-9]{1,5}$').hasMatch(heroExtension)) return null;
+        !RegExp(r'^[a-zA-Z0-9]{1,5}$').hasMatch(heroExtension)) {
+      return null;
+    }
     try {
       final Directory directory;
       if (isolated) {

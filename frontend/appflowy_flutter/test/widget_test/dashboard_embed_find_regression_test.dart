@@ -13,7 +13,6 @@ import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.d
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' show AppFlowyEditor;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'database_find_test_support.dart';
@@ -27,25 +26,31 @@ void main() {
         'dashboard searches authorized native ${document ? 'document' : 'database draft'} without nested query mutation',
         (tester) async {
       final reads = DatabaseFindReads(
-          layout: document ? ViewLayoutPB.Document : ViewLayoutPB.Grid);
+        layout: document ? ViewLayoutPB.Document : ViewLayoutPB.Grid,
+      );
       final spec = DashboardWidgetSpec(
         id: 'embed',
         type: document ? 'page' : 'database',
         source: DashboardDataSource(
-            kind: document
-                ? DashboardSourceKind.page
-                : DashboardSourceKind.database,
-            viewId: databaseFindViewId),
+          kind: document
+              ? DashboardSourceKind.page
+              : DashboardSourceKind.database,
+          viewId: databaseFindViewId,
+        ),
       );
       final dashboard = DashboardController(
-          viewId: '',
-          document: DashboardDocument(
-            sections: [
-              DashboardSection(id: 'section', widgets: [spec])
-            ],
-          ));
-      final controller = DashboardFindController(dashboard,
-          title: () => '', readProvider: reads.provider());
+        viewId: '',
+        document: DashboardDocument(
+          sections: [
+            DashboardSection(id: 'section', widgets: [spec]),
+          ],
+        ),
+      );
+      final controller = DashboardFindController(
+        dashboard,
+        title: () => '',
+        readProvider: reads.provider(),
+      );
       final draft = TextEditingController(text: 'prefix needle needle');
       final nested = SurfaceFindController(search: (_, __) => const []);
       nested.setQuery('independent nested query');
@@ -55,36 +60,49 @@ void main() {
       List<TextRange>? childMarks;
       var nestedFinds = 0;
       try {
-        await tester.pumpWidget(surfaceFindTestApp(SurfaceFindHost(
-          controller: controller,
-          child: SingleChildScrollView(
-              controller: scroll,
-              child: Column(children: [
-                const SizedBox(height: 850),
-                SizedBox(
-                    height: 200,
-                    child: DashboardFindEmbed(
-                      dashboard: dashboard,
-                      spec: spec,
-                      child: SurfaceFindScope(
+        await tester.pumpWidget(
+          surfaceFindTestApp(
+            SurfaceFindHost(
+              controller: controller,
+              child: SingleChildScrollView(
+                controller: scroll,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 850),
+                    SizedBox(
+                      height: 200,
+                      child: DashboardFindEmbed(
+                        dashboard: dashboard,
+                        spec: spec,
+                        child: SurfaceFindScope(
                           controller: nested,
                           child: ContextualFindRegion(
                             onFind: () => nestedFinds++,
                             child: document
                                 ? const AIMarkdownText(
-                                    markdown: '**needle** and *needle*')
+                                    markdown: '**needle** and *needle*',
+                                  )
                                 : DatabaseFindAnchor(
                                     target: const DatabaseFindTarget.cell(
-                                        databaseFindViewId,
-                                        databaseFindRowId,
-                                        databaseFindFieldId),
+                                      databaseFindViewId,
+                                      databaseFindRowId,
+                                      databaseFindFieldId,
+                                    ),
                                     child: TextField(
-                                        controller: draft, readOnly: true),
+                                      controller: draft,
+                                      readOnly: true,
+                                    ),
                                   ),
-                          )),
-                    )),
-              ])),
-        )));
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
         await pumpSurfaceFind(tester);
         if (document) {
           final editor = tester
@@ -94,8 +112,10 @@ void main() {
           childFind.search('and', const FindOptions());
           await pumpSurfaceFind(tester);
           childSelection = editor.selection;
-          childMarks = List.of(DocumentSearchHighlight.instance
-              .rangesOf(editor.document.root.children.single));
+          childMarks = List.of(
+            DocumentSearchHighlight.instance
+                .rangesOf(editor.document.root.children.single),
+          );
           expect(childMarks, hasLength(1));
         }
         // Query is entered AFTER the real renderer has laid out its words.
@@ -104,19 +124,27 @@ void main() {
         await pumpSurfaceFind(tester);
         await pumpSurfaceFind(tester);
         expect(controller.matches, hasLength(2));
-        expect(controller.matches.every((match) => !match.entry.replaceable),
-            isTrue);
-        final highlight =
-            tester.renderObject<RenderSurfaceFindHighlight>(find.descendant(
-          of: find.byType(DashboardFindEmbed),
-          matching: find.byType(SurfaceFindHighlight),
-        ));
+        expect(
+          controller.matches.every((match) => !match.entry.replaceable),
+          isTrue,
+        );
+        final highlight = tester.renderObject<RenderSurfaceFindHighlight>(
+          find.descendant(
+            of: find.byType(DashboardFindEmbed),
+            matching: find.byType(SurfaceFindHighlight),
+          ),
+        );
         final native = <Rect>[];
         for (final run in highlight.textRuns) {
           for (final match in RegExp('needle').allMatches(run.text)) {
-            native.addAll(run.boxes(match.start, match.end).map((box) =>
-                MatrixUtils.transformRect(
-                    run.render.getTransformTo(highlight), box.toRect())));
+            native.addAll(
+              run.boxes(match.start, match.end).map(
+                    (box) => MatrixUtils.transformRect(
+                      run.render.getTransformTo(highlight),
+                      box.toRect(),
+                    ),
+                  ),
+            );
           }
         }
         expect(native, isNotEmpty);
@@ -126,16 +154,22 @@ void main() {
         expect(highlight.currentRect, native.last);
         final viewport = tester.getRect(find.byType(SurfaceFindHost));
         expect(
-            viewport.contains(controller.currentTargetRect!.topLeft), isTrue);
-        expect(viewport.contains(controller.currentTargetRect!.bottomRight),
-            isTrue);
+          viewport.contains(controller.currentTargetRect!.topLeft),
+          isTrue,
+        );
+        expect(
+          viewport.contains(controller.currentTargetRect!.bottomRight),
+          isTrue,
+        );
         expect(scroll.offset, greaterThan(0));
         expect(nested.query, 'independent nested query');
         expect(nested.isOpen, isFalse);
         expect(nestedFinds, 0);
         expect(reads.forbiddenReads, isEmpty);
-        expect(reads.calls.where((call) => call.startsWith('preflight:')),
-            hasLength(2));
+        expect(
+          reads.calls.where((call) => call.startsWith('preflight:')),
+          hasLength(2),
+        );
         expect(dashboard.canUndo, isFalse);
 
         if (document) {
@@ -143,9 +177,10 @@ void main() {
           expect(childFind.query, 'and');
           expect(editor.selection, childSelection);
           expect(
-              DocumentSearchHighlight.instance
-                  .rangesOf(editor.document.root.children.single),
-              childMarks);
+            DocumentSearchHighlight.instance
+                .rangesOf(editor.document.root.children.single),
+            childMarks,
+          );
           expect(editor.undoManager.undoStack.isEmpty, isTrue);
           controller.replacementController.text = 'changed';
           controller.replaceCurrent();
@@ -158,12 +193,14 @@ void main() {
 
         if (!document) {
           final field = find.byWidgetPredicate(
-              (widget) => widget is TextField && widget.controller == draft);
+            (widget) => widget is TextField && widget.controller == draft,
+          );
           final nativeState = tester.state(field);
           const value = TextEditingValue(
-              text: 'draft needle needle needle',
-              selection: TextSelection(baseOffset: 1, extentOffset: 3),
-              composing: TextRange(start: 0, end: 5));
+            text: 'draft needle needle needle',
+            selection: TextSelection(baseOffset: 1, extentOffset: 3),
+            composing: TextRange(start: 0, end: 5),
+          );
           draft.value = value;
           await pumpSurfaceFind(tester);
           await pumpSurfaceFind(tester);
@@ -177,20 +214,21 @@ void main() {
         reads.allowed = false;
         reads.access.value++;
         expect(
-            controller.matches
-                .where((match) => match.id is DashboardEmbedFindId),
-            isEmpty,
-            reason:
-                'Revoke cached embed text synchronously, not after debounce.');
+          controller.matches.where((match) => match.id is DashboardEmbedFindId),
+          isEmpty,
+          reason: 'Revoke cached embed text synchronously, not after debounce.',
+        );
         await pumpSurfaceFind(tester);
         expect(highlight.matchRects, isEmpty);
         if (document) {
           expect(childFind!.query, 'and');
           expect(childFind.editorState.selection, childSelection);
           expect(
-              DocumentSearchHighlight.instance.rangesOf(
-                  childFind.editorState.document.root.children.single),
-              childMarks);
+            DocumentSearchHighlight.instance.rangesOf(
+              childFind.editorState.document.root.children.single,
+            ),
+            childMarks,
+          );
         }
       } finally {
         childFind?.dispose();
@@ -211,33 +249,46 @@ void main() {
     final reads = DatabaseFindReads();
     final gate = reads.hold('view:$databaseFindViewId');
     const spec = DashboardWidgetSpec(
-        id: 'embed',
-        type: 'database',
-        source: DashboardDataSource(
-          kind: DashboardSourceKind.database,
-          viewId: databaseFindViewId,
-        ));
+      id: 'embed',
+      type: 'database',
+      source: DashboardDataSource(
+        kind: DashboardSourceKind.database,
+        viewId: databaseFindViewId,
+      ),
+    );
     final dashboard = DashboardController(
-        viewId: '',
-        document: const DashboardDocument(
-          sections: [
-            DashboardSection(id: 's', widgets: [spec])
-          ],
-        ));
-    final controller = DashboardFindController(dashboard,
-        title: () => '', readProvider: reads.provider());
+      viewId: '',
+      document: const DashboardDocument(
+        sections: [
+          DashboardSection(id: 's', widgets: [spec]),
+        ],
+      ),
+    );
+    final controller = DashboardFindController(
+      dashboard,
+      title: () => '',
+      readProvider: reads.provider(),
+    );
     try {
-      await tester.pumpWidget(surfaceFindTestApp(SurfaceFindHost(
-        controller: controller,
-        child: DashboardFindEmbed(
-            dashboard: dashboard,
-            spec: spec,
-            child: const DatabaseFindAnchor(
-              target: DatabaseFindTarget.cell(
-                  databaseFindViewId, databaseFindRowId, databaseFindFieldId),
-              child: Text('needle'),
-            )),
-      )));
+      await tester.pumpWidget(
+        surfaceFindTestApp(
+          SurfaceFindHost(
+            controller: controller,
+            child: DashboardFindEmbed(
+              dashboard: dashboard,
+              spec: spec,
+              child: const DatabaseFindAnchor(
+                target: DatabaseFindTarget.cell(
+                  databaseFindViewId,
+                  databaseFindRowId,
+                  databaseFindFieldId,
+                ),
+                child: Text('needle'),
+              ),
+            ),
+          ),
+        ),
+      );
       await pumpSurfaceFind(tester);
       controller.open();
       controller.setQuery('needle');

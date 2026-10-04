@@ -266,7 +266,9 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
           if (!mounted ||
               generation != _viewListenerGeneration ||
               updated.id != viewId ||
-              widget.view.id != viewId) return;
+              widget.view.id != viewId) {
+            return;
+          }
           setState(() {
             viewIcon = EmojiIconData.fromViewIconPB(updated.icon);
             cover = updated.cover;
@@ -1219,7 +1221,9 @@ class DocumentCoverState extends State<DocumentCover> {
           widget.view.id != source.view.id ||
           widget.node != source.node ||
           widget.editorState != source.editorState ||
-          !samePageCoverSource(source.view, widget.view)) return;
+          !samePageCoverSource(source.view, widget.view)) {
+        return;
+      }
       widget.onChangeCover(type, details);
 
       // After cover change,delete from localstorage if previous cover was image type

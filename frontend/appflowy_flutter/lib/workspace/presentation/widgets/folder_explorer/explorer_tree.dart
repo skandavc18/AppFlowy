@@ -227,7 +227,8 @@ class _ExplorerTreeState extends State<ExplorerTree> {
                       if (draft != null &&
                           key ==
                               ValueKey(
-                                  'draft-${draft.kind}-${draft.parentId}')) {
+                                'draft-${draft.kind}-${draft.parentId}',
+                              )) {
                         return insertIndex;
                       }
                       final index = rows

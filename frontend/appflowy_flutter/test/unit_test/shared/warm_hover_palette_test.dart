@@ -42,9 +42,13 @@ void main() {
             reason: 'Dark gets warm charcoal, never a cream overlay surface.',
           );
           expect(
-              _contrast(palette.textPrimary, color), greaterThanOrEqualTo(7));
-          expect(_contrast(palette.textSecondary, color),
-              greaterThanOrEqualTo(4.5));
+            _contrast(palette.textPrimary, color),
+            greaterThanOrEqualTo(7),
+          );
+          expect(
+            _contrast(palette.textSecondary, color),
+            greaterThanOrEqualTo(4.5),
+          );
           expect(_contrast(palette.accent, color), greaterThanOrEqualTo(3));
         }
       }
@@ -100,7 +104,9 @@ void main() {
       expect(fill.contentVisibleHover, palette.focusRing);
       expect(fill.errorThick, isNot(fill.contentHover));
       expect(
-          theme.textColorScheme.error, isNot(theme.textColorScheme.tertiary));
+        theme.textColorScheme.error,
+        isNot(theme.textColorScheme.tertiary),
+      );
     });
 
     test('$mode: native focus is opaque; hover does not change ink or fields',
@@ -160,7 +166,7 @@ void main() {
       expect(wash.withValues(alpha: 1), const Color(0xFF8B6042));
       for (final surface in [
         const Color(0xFF342922),
-        const Color(0xFFF3E9D6)
+        const Color(0xFFF3E9D6),
       ]) {
         expect(palette.hoverOn(surface), Color.alphaBlend(wash, surface));
         expect(palette.hoverOn(surface).a, 1);

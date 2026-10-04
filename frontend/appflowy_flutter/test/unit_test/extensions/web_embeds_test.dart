@@ -961,7 +961,9 @@ void main() {
         wholePage: true,
       );
       expect(
-          _read('https://1drv.ms/w/s!AbCdEf').provider.id, 'microsoft_office');
+        _read('https://1drv.ms/w/s!AbCdEf').provider.id,
+        'microsoft_office',
+      );
     });
 
     test('iCloud, Apple Notes and JioCloud', () {

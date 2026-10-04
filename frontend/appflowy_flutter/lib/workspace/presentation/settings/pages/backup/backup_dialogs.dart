@@ -52,7 +52,9 @@ Future<Uint8List?> askForBackupPassphrase(
     );
 
 Future<bool> _ask(
-        BuildContext context, BackupPassphrasePurpose purpose) async =>
+  BuildContext context,
+  BackupPassphrasePurpose purpose,
+) async =>
     await showDialog<bool>(
       context: context,
       builder: (context) => _BackupPassphraseDialog(purpose: purpose),

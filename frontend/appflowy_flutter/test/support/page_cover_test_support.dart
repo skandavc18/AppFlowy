@@ -59,22 +59,26 @@ class CoverMemoryViews extends PageIconBackendService {
   }
 
   @override
-  Future<FlowyResult<ViewPB, FlowyError>> updateView(
-      {required String viewId, required String extra}) async {
+  Future<FlowyResult<ViewPB, FlowyError>> updateView({
+    required String viewId,
+    required String extra,
+  }) async {
     writes.add(extra);
     if (!writeStarted.isCompleted) writeStarted.complete();
     await writeGate?.future;
-    if (failWrite)
+    if (failWrite) {
       return FlowyResult.failure(FlowyError(msg: 'private write details'));
+    }
     view = ViewPB.fromBuffer(view.writeToBuffer())..extra = extra;
     return FlowyResult.success(ViewPB()); // real empty-success ACK contract
   }
 
   @override
-  VoidCallback listen(
-      {required String viewId,
-      required ValueChanged<ViewPB> onView,
-      required VoidCallback onUnavailable}) {
+  VoidCallback listen({
+    required String viewId,
+    required ValueChanged<ViewPB> onView,
+    required VoidCallback onUnavailable,
+  }) {
     listeners.add(onView);
     unavailable.add(onUnavailable);
     return () {

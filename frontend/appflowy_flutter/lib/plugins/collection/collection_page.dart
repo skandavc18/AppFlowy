@@ -216,7 +216,11 @@ class _CollectionPageState extends State<CollectionPage> {
                               child: KeyedSubtree(
                                 key: _pageHeaderKey,
                                 child: _buildHeader(
-                                    context, palette, definition, view),
+                                  context,
+                                  palette,
+                                  definition,
+                                  view,
+                                ),
                               ),
                             ),
                           ],

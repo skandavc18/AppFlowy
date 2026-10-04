@@ -195,7 +195,8 @@ class BookmarkController extends ChangeNotifier {
   /// Normal HTTP only when the caller has no live renderer. No challenge
   /// fallback, hidden WebView, browser cookie export or paywall workaround.
   Future<BookmarkReaderCapture?> readArticleForReader(
-      BookmarkEntry entry) async {
+    BookmarkEntry entry,
+  ) async {
     final fetcher = BookmarkFetcher();
     try {
       final result = await fetcher
@@ -209,9 +210,14 @@ class BookmarkController extends ChangeNotifier {
       if (_disposed ||
           entryFor(entry.id)?.url != entry.url ||
           article == null ||
-          article.isEmpty) return null;
+          article.isEmpty) {
+        return null;
+      }
       return BookmarkReaderCapture(
-          url: entry.url, generation: 0, article: article);
+        url: entry.url,
+        generation: 0,
+        article: article,
+      );
     } on Object {
       return null;
     } finally {
@@ -264,12 +270,13 @@ class BookmarkController extends ChangeNotifier {
       if (allowed()) {
         final latest = entryFor(entry.id)!;
         _applyLocally(
-            entry.id,
-            latest.metadata.copyWith(
-              snapshotPath: saved.directory,
-              snapshotAt: saved.savedAt,
-              snapshotBytes: saved.bytes,
-            ));
+          entry.id,
+          latest.metadata.copyWith(
+            snapshotPath: saved.directory,
+            snapshotAt: saved.savedAt,
+            snapshotBytes: saved.bytes,
+          ),
+        );
       }
       return allowed();
     } on Object {

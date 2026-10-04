@@ -133,8 +133,10 @@ void main() {
             .source;
         expect(_glyph(tester).icon.isEmpty, isTrue);
         expect(_identityPicker, findsOneWidget);
-        expect(find.byKey(const ValueKey('workspace-file-change-icon')),
-            findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('workspace-file-change-icon')),
+          findsOneWidget,
+        );
 
         await tester.tap(_identityPicker);
         await tester.pumpAndSettle();

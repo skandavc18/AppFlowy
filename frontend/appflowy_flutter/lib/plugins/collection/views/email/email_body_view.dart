@@ -338,18 +338,15 @@ ${batch.join('\n')}
                       supportZoom: false,
                       transparentBackground: true,
                       useShouldOverrideUrlLoading: true,
-                      // One native owner; the file runtime intercepts only
-                      // ordinary vertical reading, never editing/map/pinch hits.
-                      disableHorizontalScroll: false,
-                      disableVerticalScroll: false,
                     ),
                     onWebViewCreated: (controller) {
                       if (!_alive) {
                         return;
                       }
                       _controller = controller;
-                      if (_drivesScrolling)
+                      if (_drivesScrolling) {
                         _nativePageScroll.attach(controller);
+                      }
                       environment?.onCreated?.call(controller);
                       _loaded = widget.html;
                     },

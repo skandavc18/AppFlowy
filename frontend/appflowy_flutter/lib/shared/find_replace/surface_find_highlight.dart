@@ -169,8 +169,9 @@ bool surfaceFindPaintsChild(RenderObject parent, RenderObject child) {
   if (!parent.paintsChild(child) ||
       (parent is RenderOffstage && parent.offstage) ||
       (parent is RenderOpacity && parent.opacity == 0) ||
-      (parent is RenderAnimatedOpacity && parent.opacity.value == 0))
+      (parent is RenderAnimatedOpacity && parent.opacity.value == 0)) {
     return false;
+  }
   if (parent is RenderIndexedStack) {
     if (parent.index == null) return false;
     var displayed = parent.firstChild;
@@ -186,8 +187,9 @@ bool surfaceFindRenderAvailable(RenderObject render) {
   if (!render.attached) return false;
   var child = render;
   for (var parent = child.parent; parent != null; parent = child.parent) {
-    if (!parent.attached || !surfaceFindPaintsChild(parent, child))
+    if (!parent.attached || !surfaceFindPaintsChild(parent, child)) {
       return false;
+    }
     child = parent;
   }
   return true;
@@ -209,10 +211,14 @@ List<SurfaceFindTextRun> surfaceFindTextRuns(
         object is _RenderSurfaceFindExclude ||
         object is PlatformViewRenderBox ||
         object is RenderUiKitView ||
-        object is RenderAppKitView) return;
+        object is RenderAppKitView) {
+      return;
+    }
     if (object is RenderParagraph || object is RenderEditable) {
-      if (object is RenderEditable && (!includeEditable || object.obscureText))
+      if (object is RenderEditable &&
+          (!includeEditable || object.obscureText)) {
         return;
+      }
       final text = object is RenderParagraph
           ? object.text.toPlainText(includeSemanticsLabels: false)
           : (object as RenderEditable)
@@ -225,18 +231,30 @@ List<SurfaceFindTextRun> surfaceFindTextRuns(
       var inline = 0;
       for (var index = 0; index < text.length; index++) {
         if (text.codeUnitAt(index) != 0xFFFC) continue;
-        if (from < index)
-          runs.add(SurfaceFindTextRun(
-              object as RenderBox, text.substring(from, index), from));
+        if (from < index) {
+          runs.add(
+            SurfaceFindTextRun(
+              object as RenderBox,
+              text.substring(from, index),
+              from,
+            ),
+          );
+        }
         if (inline < children.length) {
           final child = children[inline++];
           if (surfaceFindPaintsChild(object, child)) visit(child);
         }
         from = index + 1;
       }
-      if (from < text.length)
-        runs.add(SurfaceFindTextRun(
-            object as RenderBox, text.substring(from), from));
+      if (from < text.length) {
+        runs.add(
+          SurfaceFindTextRun(
+            object as RenderBox,
+            text.substring(from),
+            from,
+          ),
+        );
+      }
       return;
     }
     object.visitChildren((child) {
@@ -284,15 +302,20 @@ class RenderSurfaceFindHighlight extends RenderProxyBox {
     final excluded = _excluded?.call() ?? const <RenderObject>{};
     return [
       for (final root in roots)
-        ...surfaceFindTextRuns(root,
-            includeEditable: _includeEditable, excluded: excluded),
+        ...surfaceFindTextRuns(
+          root,
+          includeEditable: _includeEditable,
+          excluded: excluded,
+        ),
     ];
   }
 
   void _watch() {
     if (_watching ||
         !attached ||
-        (_pattern == null && onGeometryChanged == null)) return;
+        (_pattern == null && onGeometryChanged == null)) {
+      return;
+    }
     _watching = true;
     final epoch = _watchEpoch;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -384,7 +407,8 @@ class RenderSurfaceFindHighlight extends RenderProxyBox {
       final clip = parent.describeApproximatePaintClip(child);
       if (clip != null) {
         rect = rect.intersect(
-            MatrixUtils.transformRect(parent.getTransformTo(this), clip));
+          MatrixUtils.transformRect(parent.getTransformTo(this), clip),
+        );
       }
       child = parent;
     }

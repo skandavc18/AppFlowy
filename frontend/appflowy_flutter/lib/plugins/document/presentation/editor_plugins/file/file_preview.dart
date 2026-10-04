@@ -1791,7 +1791,9 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     smoothScrollingEnabled = nextSmoothScrollingEnabled;
     physicsConfig = nextPhysicsConfig;
     nativePageScroll.configure(
-        kinetic: smoothScrollingEnabled, config: physicsConfig);
+      kinetic: smoothScrollingEnabled,
+      config: physicsConfig,
+    );
     if (scrollReady && (shouldReinstallEngine || shouldStopMomentum)) {
       _queueRendererCommand(
         shouldReinstallEngine
@@ -1990,11 +1992,14 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
           // A slow/failed scrolling world must not hold find hostage.
           if (Platform.isWindows) {
             unawaited(
-                nativePageScroll.install(kinetic: smoothScrollingEnabled));
-            unawaited(controller.evaluateJavascript(
-              source: buildHtmlPreviewScrollbarAutoHideScript(),
-              contentWorld: htmlPreviewScrollContentWorld,
-            ));
+              nativePageScroll.install(kinetic: smoothScrollingEnabled),
+            );
+            unawaited(
+              controller.evaluateJavascript(
+                source: buildHtmlPreviewScrollbarAutoHideScript(),
+                contentWorld: htmlPreviewScrollContentWorld,
+              ),
+            );
           } else {
             unawaited(_prepareScrollAfterLoad(controller));
           }
@@ -2002,10 +2007,6 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         },
         initialSettings: InAppWebViewSettings(
           allowFileAccessFromFileURLs: true,
-          // Native owns gestures, including horizontal/pinch/site-owned hits.
-          // The sanitized file runtime intercepts only ordinary vertical input.
-          disableHorizontalScroll: false,
-          disableVerticalScroll: false,
           javaScriptEnabled: Platform.isWindows,
           transparentBackground: true,
           useShouldOverrideUrlLoading: true,

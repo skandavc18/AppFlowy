@@ -23,38 +23,47 @@ const _document = DashboardDocument(
   subtitle: 'Dashboard subtitle',
   settings: DashboardSettings(showControlBar: false, reduceMotion: true),
   sections: [
-    DashboardSection(id: 'top', widgets: [
-      DashboardWidgetSpec(
+    DashboardSection(
+      id: 'top',
+      widgets: [
+        DashboardWidgetSpec(
           id: 'top-note',
           type: 'text',
           showTitle: false,
           placement: DashboardPlacement(columnSpan: 12, rowSpan: 3),
-          settings: {'text': 'Saved top note'}),
-      DashboardWidgetSpec(
+          settings: {'text': 'Saved top note'},
+        ),
+        DashboardWidgetSpec(
           id: 'space',
           type: 'spacer',
           showTitle: false,
-          placement: DashboardPlacement(row: 3, columnSpan: 12, rowSpan: 30)),
-    ]),
+          placement: DashboardPlacement(row: 3, columnSpan: 12, rowSpan: 30),
+        ),
+      ],
+    ),
     DashboardSection(
-        id: 'tail',
-        title: 'sectionword',
-        collapsed: true,
-        widgets: [
-          DashboardWidgetSpec(
-              id: 'tail-note',
-              type: 'text',
-              title: 'cardlabel',
-              placement: DashboardPlacement(columnSpan: 12, rowSpan: 4),
-              settings: {'text': 'tailword and another tailword'}),
-        ]),
+      id: 'tail',
+      title: 'sectionword',
+      collapsed: true,
+      widgets: [
+        DashboardWidgetSpec(
+          id: 'tail-note',
+          type: 'text',
+          title: 'cardlabel',
+          placement: DashboardPlacement(columnSpan: 12),
+          settings: {'text': 'tailword and another tailword'},
+        ),
+      ],
+    ),
   ],
 );
 
 Finder _field(String id) => find.descendant(
-      of: find.byWidgetPredicate((widget) =>
-          widget is SurfaceFindTarget &&
-          widget.id == dashboardFindWidget(id, 'text')),
+      of: find.byWidgetPredicate(
+        (widget) =>
+            widget is SurfaceFindTarget &&
+            widget.id == dashboardFindWidget(id, 'text'),
+      ),
       matching: find.byType(TextField),
     );
 
@@ -67,32 +76,46 @@ void main() {
           '${appearance.name}: dashboard Ctrl+F reveals collapsed text (readonly=$readOnly)',
           (tester) async {
         final controller = DashboardController(
-            viewId: '',
-            document: _document,
-            mode: readOnly ? DashboardMode.presentation : DashboardMode.edit);
+          viewId: '',
+          document: _document,
+          mode: readOnly ? DashboardMode.presentation : DashboardMode.edit,
+        );
         try {
-          await tester.pumpWidget(surfaceFindTestApp(
-            DashboardPage(
-                view: ViewPB(name: 'Titleword'), controller: controller),
-            appearance: appearance,
-          ));
+          await tester.pumpWidget(
+            surfaceFindTestApp(
+              DashboardPage(
+                view: ViewPB(name: 'Titleword'),
+                controller: controller,
+              ),
+              appearance: appearance,
+            ),
+          );
           await pumpSurfaceFind(tester);
           final topField = tester.widget<TextField>(_field('top-note'));
           final topState = tester.state(_field('top-note'));
-          final cardState = tester.state(find.byWidgetPredicate((widget) =>
-              widget is DashboardCard && widget.spec.id == 'top-note'));
-          final outerScroll = tester.state<ScrollableState>(find
-              .descendant(
-                of: find
-                    .byKey(const PageStorageKey('dashboard-workspace-scroll')),
-                matching: find.byType(Scrollable),
-              )
-              .first);
+          final cardState = tester.state(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is DashboardCard && widget.spec.id == 'top-note',
+            ),
+          );
+          final outerScroll = tester.state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byKey(
+                    const PageStorageKey('dashboard-workspace-scroll'),
+                  ),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
           expect(outerScroll.position.pixels, 0);
           await openSurfaceFind(tester);
           expect(find.byType(FindReplaceBar), findsOneWidget);
           await tester.enterText(
-              find.byKey(const ValueKey('findTextField')), 'tailword');
+            find.byKey(const ValueKey('findTextField')),
+            'tailword',
+          );
           await pumpSurfaceFind(tester);
           final session = tester
               .widget<SurfaceFindHost>(find.byType(SurfaceFindHost))
@@ -100,43 +123,61 @@ void main() {
           expect(session.matches, hasLength(2));
           expect(outerScroll.position.pixels, greaterThan(700));
           final paint = surfaceFindPaint(
-              tester, dashboardFindWidget('tail-note', 'text'));
+            tester,
+            dashboardFindWidget('tail-note', 'text'),
+          );
           expect(paint.matchRects, hasLength(2));
           expect(paint.currentRect, isNotNull);
           _expectCurrentWordVisible(tester, session);
           expect(
-              tester.widget<TextField>(_field('tail-note')).readOnly, readOnly);
+            tester.widget<TextField>(_field('tail-note')).readOnly,
+            readOnly,
+          );
           expect(tester.state(_field('top-note')), same(topState));
-          expect(tester.widget<TextField>(_field('top-note')).controller,
-              same(topField.controller));
           expect(
-              tester.state(find.byWidgetPredicate((widget) =>
-                  widget is DashboardCard && widget.spec.id == 'top-note')),
-              same(cardState));
+            tester.widget<TextField>(_field('top-note')).controller,
+            same(topField.controller),
+          );
+          expect(
+            tester.state(
+              find.byWidgetPredicate(
+                (widget) =>
+                    widget is DashboardCard && widget.spec.id == 'top-note',
+              ),
+            ),
+            same(cardState),
+          );
           expect(controller.document, same(_document));
           expect(controller.document.sections.last.collapsed, isTrue);
           if (readOnly) {
             expect(
-                tester
-                    .widget<FindReplaceBar>(find.byType(FindReplaceBar))
-                    .replaceController,
-                isNull);
+              tester
+                  .widget<FindReplaceBar>(find.byType(FindReplaceBar))
+                  .replaceController,
+              isNull,
+            );
           }
-          await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-              physicalKey: PhysicalKeyboardKey.f3);
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.f3,
+            physicalKey: PhysicalKeyboardKey.f3,
+          );
           await pumpSurfaceFind(tester);
           expect(session.currentIndex, 1);
           for (final query in ['cardlabel', 'sectionword', 'Titleword']) {
             await tester.enterText(
-                find.byKey(const ValueKey('findTextField')), query);
+              find.byKey(const ValueKey('findTextField')),
+              query,
+            );
             await pumpSurfaceFind(tester);
             expect(session.matches, hasLength(1));
             expect(session.currentTargetRect, isNotNull);
             _expectCurrentWordVisible(tester, session);
           }
           expect(outerScroll.position.pixels, lessThan(500));
-          await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-              physicalKey: PhysicalKeyboardKey.escape);
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.escape,
+            physicalKey: PhysicalKeyboardKey.escape,
+          );
           await pumpSurfaceFind(tester);
           expect(find.byType(FindReplaceBar), findsNothing);
           expect(controller.document, same(_document));
@@ -157,45 +198,56 @@ void main() {
       const fieldKey = ValueKey('section-retained-draft');
       final draft = TextEditingController(text: 'An embedded draft');
       final focus = FocusNode();
-      DashboardWidgetRegistry.register(DashboardWidgetDefinition(
-        type: type,
-        extensionId: type,
-        label: () => 'Viewer',
-        icon: Icons.description_outlined,
-        group: DashboardWidgetGroup.content,
-        builder: (_) => Semantics(
-          label: 'Retained section draft',
-          child: TextField(
-            key: fieldKey,
-            controller: draft,
-            focusNode: focus,
+      DashboardWidgetRegistry.register(
+        DashboardWidgetDefinition(
+          type: type,
+          extensionId: type,
+          label: () => 'Viewer',
+          icon: Icons.description_outlined,
+          group: DashboardWidgetGroup.content,
+          builder: (_) => Semantics(
+            label: 'Retained section draft',
+            child: TextField(
+              key: fieldKey,
+              controller: draft,
+              focusNode: focus,
+            ),
           ),
         ),
-      ));
+      );
       final controller = DashboardController(
         viewId: '',
         document: DashboardDocument(
           settings: const DashboardSettings(showControlBar: false),
           sections: [
-            DashboardSection(id: 'section', title: 'Collapsible', widgets: [
-              DashboardWidgetSpec(
-                id: 'viewer',
-                type: type,
-                title: 'cardneedle',
-                placement: const DashboardPlacement(columnSpan: 12, rowSpan: 4),
-              ),
-            ]),
+            DashboardSection(
+              id: 'section',
+              title: 'Collapsible',
+              widgets: [
+                DashboardWidgetSpec(
+                  id: 'viewer',
+                  type: type,
+                  title: 'cardneedle',
+                  placement: const DashboardPlacement(columnSpan: 12),
+                ),
+              ],
+            ),
           ],
         ),
       );
       Widget page({required bool reduceMotion}) => surfaceFindTestApp(
             DashboardPage(
-                view: ViewPB(name: 'Dashboard'), controller: controller),
+              view: ViewPB(name: 'Dashboard'),
+              controller: controller,
+            ),
             appearance: appearance,
             reduceMotion: reduceMotion,
           );
-      void collapse(bool value) => controller.edit((document) => document
-          .withSection(document.sections.single.copyWith(collapsed: value)));
+      void collapse(bool value) => controller.edit(
+            (document) => document.withSection(
+              document.sections.single.copyWith(collapsed: value),
+            ),
+          );
       final semantics = tester.ensureSemantics();
       final field = find.byKey(fieldKey);
       final retainedField = find.byKey(fieldKey, skipOffstage: false);
@@ -234,7 +286,9 @@ void main() {
         final saved = controller.document;
         await openSurfaceFind(tester);
         await tester.enterText(
-            find.byKey(const ValueKey('findTextField')), 'cardneedle');
+          find.byKey(const ValueKey('findTextField')),
+          'cardneedle',
+        );
         await pumpSurfaceFind(tester);
         final session = tester
             .widget<SurfaceFindHost>(find.byType(SurfaceFindHost))
@@ -247,8 +301,10 @@ void main() {
         expect(draft.value, value);
         expect(controller.document, same(saved));
 
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-            physicalKey: PhysicalKeyboardKey.escape);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.escape,
+          physicalKey: PhysicalKeyboardKey.escape,
+        );
         await pumpSurfaceFind(tester);
         expect(field, findsNothing);
         expect(label, findsNothing);
@@ -286,9 +342,14 @@ void main() {
       (tester) async {
     final controller = DashboardController(viewId: '', document: _document);
     try {
-      await tester.pumpWidget(surfaceFindTestApp(
-        DashboardPage(view: ViewPB(name: 'Dashboard'), controller: controller),
-      ));
+      await tester.pumpWidget(
+        surfaceFindTestApp(
+          DashboardPage(
+            view: ViewPB(name: 'Dashboard'),
+            controller: controller,
+          ),
+        ),
+      );
       await pumpSurfaceFind(tester);
       await tester.enterText(_field('top-note'), 'Unsaved draftword');
       final native = tester.widget<TextField>(_field('top-note'));
@@ -300,15 +361,19 @@ void main() {
       await tester.pump();
       await openSurfaceFind(tester);
       await tester.enterText(
-          find.byKey(const ValueKey('findTextField')), 'draftword');
+        find.byKey(const ValueKey('findTextField')),
+        'draftword',
+      );
       await pumpSurfaceFind(tester);
       final session = tester
           .widget<SurfaceFindHost>(find.byType(SurfaceFindHost))
           .controller;
       expect(session.matches, hasLength(1));
       expect(session.current!.entry.replaceable, isFalse);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-          physicalKey: PhysicalKeyboardKey.escape);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.escape,
+        physicalKey: PhysicalKeyboardKey.escape,
+      );
       await pumpSurfaceFind(tester);
       expect(tester.state(_field('top-note')), same(state));
       expect(native.controller!.value, draft);
@@ -325,40 +390,50 @@ void main() {
     var nestedFinds = 0;
     final draft = TextEditingController(text: 'An embedded draft');
     const draftKey = ValueKey('embedded-find-draft');
-    DashboardWidgetRegistry.register(DashboardWidgetDefinition(
-      type: type,
-      extensionId: type,
-      label: () => 'Viewer',
-      icon: Icons.description_outlined,
-      group: DashboardWidgetGroup.content,
-      builder: (_) => ContextualFindRegion(
-        debugLabel: 'Test embedded viewer',
-        findInEditable: true,
-        onFind: () => nestedFinds++,
-        child: TextField(key: draftKey, controller: draft),
+    DashboardWidgetRegistry.register(
+      DashboardWidgetDefinition(
+        type: type,
+        extensionId: type,
+        label: () => 'Viewer',
+        icon: Icons.description_outlined,
+        group: DashboardWidgetGroup.content,
+        builder: (_) => ContextualFindRegion(
+          debugLabel: 'Test embedded viewer',
+          findInEditable: true,
+          onFind: () => nestedFinds++,
+          child: TextField(key: draftKey, controller: draft),
+        ),
       ),
-    ));
+    );
     final controller = DashboardController(
-        viewId: '',
-        document: const DashboardDocument(
-          settings:
-              DashboardSettings(reduceMotion: true, showControlBar: false),
-          sections: [
-            DashboardSection(id: 's', widgets: [
+      viewId: '',
+      document: const DashboardDocument(
+        settings: DashboardSettings(reduceMotion: true, showControlBar: false),
+        sections: [
+          DashboardSection(
+            id: 's',
+            widgets: [
               DashboardWidgetSpec(
                 id: 'viewer',
                 type: type,
-                placement: DashboardPlacement(columnSpan: 12, rowSpan: 4),
-              )
-            ])
-          ],
-        ));
+                placement: DashboardPlacement(columnSpan: 12),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(-20, -20));
     try {
-      await tester.pumpWidget(surfaceFindTestApp(
-        DashboardPage(view: ViewPB(name: 'Dashboard'), controller: controller),
-      ));
+      await tester.pumpWidget(
+        surfaceFindTestApp(
+          DashboardPage(
+            view: ViewPB(name: 'Dashboard'),
+            controller: controller,
+          ),
+        ),
+      );
       await pumpSurfaceFind(tester);
       final before = tester.state(find.byKey(draftKey));
       await openSurfaceFind(tester);
@@ -381,7 +456,9 @@ void main() {
 }
 
 void _expectCurrentWordVisible(
-    WidgetTester tester, SurfaceFindController session) {
+  WidgetTester tester,
+  SurfaceFindController session,
+) {
   final word = session.currentTargetRect;
   expect(word, isNotNull);
   final viewport = tester.getRect(find.byType(SurfaceFindHost));
@@ -391,6 +468,9 @@ void _expectCurrentWordVisible(
   expect(word.right, lessThanOrEqualTo(viewport.right));
   expect(word.top, greaterThanOrEqualTo(viewport.top));
   expect(word.bottom, lessThanOrEqualTo(viewport.bottom));
-  expect(word.overlaps(tester.getRect(find.byType(FindReplaceBar))), isFalse,
-      reason: 'The Find bar must not cover the selected dashboard word.');
+  expect(
+    word.overlaps(tester.getRect(find.byType(FindReplaceBar))),
+    isFalse,
+    reason: 'The Find bar must not cover the selected dashboard word.',
+  );
 }

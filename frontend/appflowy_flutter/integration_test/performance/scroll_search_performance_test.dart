@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_card.dart';
@@ -54,7 +53,8 @@ final _body = List.filled(_occurrences, 'needle').join(' ');
 void main() {
   if (!_consent || !Platform.isWindows) {
     throw StateError(
-        'Requires Windows and --dart-define=PERF_SCROLL_SEARCH=true');
+      'Requires Windows and --dart-define=PERF_SCROLL_SEARCH=true',
+    );
   }
   if (!const {'light', 'dark', 'paper'}.contains(_appearance)) {
     throw StateError('PERF_THEME must be light, dark or paper.');
@@ -111,134 +111,147 @@ void main() {
   // A direct file receipt also works in AOT, without a VM service or new plugin.
   if (output.isNotEmpty) unawaited(_nativeReport(binding, report, output));
 
-  testWidgets('offline scroll/search native AFTER measurements',
-      (tester) async {
-    final semanticsHandlesBefore = binding.debugOutstandingSemanticsHandles;
-    report['semantics_handles_before_body'] = semanticsHandlesBefore;
-    final elapsed = Stopwatch()..start();
-    final oldFonts = GoogleFonts.config.allowRuntimeFetching;
-    final oldHttp = HttpOverrides.current;
-    final network = _NoNetwork();
-    final frames = _Frames(binding);
-    _ImageLease? preload;
-    GoogleFonts.config.allowRuntimeFetching = false;
-    HttpOverrides.global = network;
-    // Avoid native IME side effects; no synthetic OS keys or debug-name inference.
-    binding.testTextInput.register();
-    try {
-      await tester.runAsync(() => _loadAssets().timeout(_deadline));
-      expect(tester.takeException(), isNull);
-      final theme = _theme();
-      final png = (await tester.runAsync(_makePng))!;
-      final view = binding.platformDispatcher.implicitView!;
-      final dpr = view.devicePixelRatio;
-      final target = CoverImageDecodeSize.fromConstraints(
-        const BoxConstraints.tightFor(width: 320, height: 180),
-        dpr,
-      )!;
-      report['environment'] = {
-        'logical_width': view.physicalSize.width / dpr,
-        'logical_height': view.physicalSize.height / dpr,
-        'device_pixel_ratio': dpr,
-        'reported_refresh_hz':
-            view.display.refreshRate.isFinite ? view.display.refreshRate : null,
-        'semantics_enabled': binding.semanticsEnabled,
-        'font': preferredFontFamily,
-      };
-      report['png'] = {
-        'width': 3000,
-        'height': 2000,
-        'encoded_bytes': png.length,
-        'pattern': 'synthetic gradient with bands, generated before timing',
-        'target_width': target.width,
-        'target_height': target.height,
-      };
-      // Cover-only probes finish before the scroll preload. Each pair has a
-      // fresh identity; bypass and optimized both receive exactly these bytes.
-      for (final delayed in [false, true]) {
-        for (final optimized in delayed ? [true, false] : [false, true]) {
-          final source = _BytesImage(
-              png, delayed ? const Duration(milliseconds: 80) : Duration.zero);
-          final ImageProvider provider;
-          if (optimized) {
-            provider = CoverImageProvider(source, target, BoxFit.cover);
-          } else {
-            provider = source;
-          }
-          final lease =
-              (await tester.runAsync(() async => _ImageLease(provider)))!;
-          try {
-            (report['cover'] as List).add(await _coverProbe(
-              tester,
-              theme,
-              frames,
-              lease,
-              source,
-              target,
-              optimized: optimized,
-              warm: false,
-              delayed: delayed,
-            ));
-            if (!delayed) {
-              (report['cover'] as List).add(await _coverProbe(
-                tester,
-                theme,
-                frames,
-                lease,
-                source,
-                target,
-                optimized: optimized,
-                warm: true,
-                delayed: false,
-              ));
+  testWidgets(
+    'offline scroll/search native AFTER measurements',
+    (tester) async {
+      final semanticsHandlesBefore = binding.debugOutstandingSemanticsHandles;
+      report['semantics_handles_before_body'] = semanticsHandlesBefore;
+      final elapsed = Stopwatch()..start();
+      final oldFonts = GoogleFonts.config.allowRuntimeFetching;
+      final oldHttp = HttpOverrides.current;
+      final network = _NoNetwork();
+      final frames = _Frames(binding);
+      _ImageLease? preload;
+      GoogleFonts.config.allowRuntimeFetching = false;
+      HttpOverrides.global = network;
+      // Avoid native IME side effects; no synthetic OS keys or debug-name inference.
+      binding.testTextInput.register();
+      try {
+        await tester.runAsync(() => _loadAssets().timeout(_deadline));
+        expect(tester.takeException(), isNull);
+        final theme = _theme();
+        final png = (await tester.runAsync(_makePng))!;
+        final view = binding.platformDispatcher.implicitView!;
+        final dpr = view.devicePixelRatio;
+        final target = CoverImageDecodeSize.fromConstraints(
+          const BoxConstraints.tightFor(width: 320, height: 180),
+          dpr,
+        )!;
+        report['environment'] = {
+          'logical_width': view.physicalSize.width / dpr,
+          'logical_height': view.physicalSize.height / dpr,
+          'device_pixel_ratio': dpr,
+          'reported_refresh_hz': view.display.refreshRate.isFinite
+              ? view.display.refreshRate
+              : null,
+          'semantics_enabled': binding.semanticsEnabled,
+          'font': preferredFontFamily,
+        };
+        report['png'] = {
+          'width': 3000,
+          'height': 2000,
+          'encoded_bytes': png.length,
+          'pattern': 'synthetic gradient with bands, generated before timing',
+          'target_width': target.width,
+          'target_height': target.height,
+        };
+        // Cover-only probes finish before the scroll preload. Each pair has a
+        // fresh identity; bypass and optimized both receive exactly these bytes.
+        for (final delayed in [false, true]) {
+          for (final optimized in delayed ? [true, false] : [false, true]) {
+            final source = _BytesImage(
+              png,
+              delayed ? const Duration(milliseconds: 80) : Duration.zero,
+            );
+            final ImageProvider provider;
+            if (optimized) {
+              provider = CoverImageProvider(source, target, BoxFit.cover);
+            } else {
+              provider = source;
             }
-          } finally {
-            await tester.pumpWidget(const SizedBox.shrink());
-            lease.dispose();
-            await provider.evict(); // Only the fixture-owned key.
+            final lease =
+                (await tester.runAsync(() async => _ImageLease(provider)))!;
+            try {
+              (report['cover'] as List).add(
+                await _coverProbe(
+                  tester,
+                  theme,
+                  frames,
+                  lease,
+                  source,
+                  target,
+                  optimized: optimized,
+                  warm: false,
+                  delayed: delayed,
+                ),
+              );
+              if (!delayed) {
+                (report['cover'] as List).add(
+                  await _coverProbe(
+                    tester,
+                    theme,
+                    frames,
+                    lease,
+                    source,
+                    target,
+                    optimized: optimized,
+                    warm: true,
+                    delayed: false,
+                  ),
+                );
+              }
+            } finally {
+              await tester.pumpWidget(const SizedBox.shrink());
+              lease.dispose();
+              await provider.evict(); // Only the fixture-owned key.
+            }
           }
         }
-      }
-      final cover = CoverImageProvider(MemoryImage(png), target, BoxFit.cover);
-      // Resolve AND await before any scrolling surface mounts. Keep the stream
-      // listener/ImageInfo alive throughout all windows; no fake-clock decode.
-      preload = await tester.runAsync(() async {
-        final lease = _ImageLease(cover);
-        try {
-          await lease.ready.future.timeout(_deadline);
-          return lease;
-        } catch (_) {
-          lease.dispose();
-          rethrow;
+        final cover =
+            CoverImageProvider(MemoryImage(png), target, BoxFit.cover);
+        // Resolve AND await before any scrolling surface mounts. Keep the stream
+        // listener/ImageInfo alive throughout all windows; no fake-clock decode.
+        preload = await tester.runAsync(() async {
+          final lease = _ImageLease(cover);
+          try {
+            await lease.ready.future.timeout(_deadline);
+            return lease;
+          } catch (_) {
+            lease.dispose();
+            rethrow;
+          }
+        });
+        expect(preload, isNotNull);
+        for (final count in [10, 50, 100]) {
+          await _scrollCase(tester, theme, frames, cover, count, report);
         }
-      });
-      expect(preload, isNotNull);
-      for (final count in [10, 50, 100]) {
-        await _scrollCase(tester, theme, frames, cover, count, report);
+        expect(network.attempts, 0);
+        expect(tester.takeException(), isNull);
+        report['http_attempts'] = network.attempts;
+        report['measurement_complete'] = true;
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        frames.dispose();
+        preload?.dispose();
+        if (preload != null) await preload.provider.evict();
+        binding.testTextInput.unregister();
+        HttpOverrides.global = oldHttp;
+        GoogleFonts.config.allowRuntimeFetching = oldFonts;
+        report['total_elapsed_us'] = elapsed.elapsedMicroseconds;
+        report['http_attempts'] = network.attempts;
+        report['cleanup_complete'] = true;
+        report['remaining_transient_callbacks'] =
+            binding.transientCallbackCount;
+        report['semantics_handles_after_body'] =
+            binding.debugOutstandingSemanticsHandles;
+        expect(
+          binding.debugOutstandingSemanticsHandles,
+          semanticsHandlesBefore,
+        );
       }
-      expect(network.attempts, 0);
-      expect(tester.takeException(), isNull);
-      report['http_attempts'] = network.attempts;
-      report['measurement_complete'] = true;
-    } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
-      frames.dispose();
-      preload?.dispose();
-      if (preload != null) await preload.provider.evict();
-      binding.testTextInput.unregister();
-      HttpOverrides.global = oldHttp;
-      GoogleFonts.config.allowRuntimeFetching = oldFonts;
-      report['total_elapsed_us'] = elapsed.elapsedMicroseconds;
-      report['http_attempts'] = network.attempts;
-      report['cleanup_complete'] = true;
-      report['remaining_transient_callbacks'] = binding.transientCallbackCount;
-      report['semantics_handles_after_body'] =
-          binding.debugOutstandingSemanticsHandles;
-      expect(binding.debugOutstandingSemanticsHandles, semanticsHandlesBefore);
-    }
-  },
-      variant: const DefaultTestVariant(),
-      timeout: const Timeout(Duration(minutes: 2)));
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }
 
 /// Flutter 3.27's LiveTest.handleDrawFrame schedules another engine frame in
@@ -275,8 +288,11 @@ class _DemandBinding extends IntegrationTestWidgetsFlutterBinding {
   }
 }
 
-Future<void> _nativeReport(IntegrationTestWidgetsFlutterBinding binding,
-    Map<String, dynamic> report, String output) async {
+Future<void> _nativeReport(
+  IntegrationTestWidgetsFlutterBinding binding,
+  Map<String, dynamic> report,
+  String output,
+) async {
   final passed = await binding.allTestsPassed.future;
   report['test_success'] = passed && report['measurement_complete'] == true;
   report['failed_test_count'] = binding.failureMethodsDetails.length;
@@ -301,8 +317,10 @@ Future<void> _loadAssets() async {
   final translations = jsonDecode(
     await rootBundle.loadString('assets/translations/en-US.json'),
   ) as Map<String, dynamic>;
-  Localization.load(const Locale('en', 'US'),
-      translations: Translations(translations));
+  Localization.load(
+    const Locale('en', 'US'),
+    translations: Translations(translations),
+  );
   for (final entry in {
     preferredFontFamily: 'assets/google_fonts/DM_Sans/DMSans-Variable.ttf',
     builtInCodeFontFamily:
@@ -337,12 +355,16 @@ Widget _app(ThemeData theme, Widget child) => MaterialApp(
           brightness: theme.brightness,
         ),
         child: Scaffold(
-            body: Builder(
-                builder: (context) => ColoredBox(
-                      color: EditorSurfaceStyle.canvasBackground(context),
-                      child: ContextualFindScope(
-                          findInControls: true, child: child),
-                    ))),
+          body: Builder(
+            builder: (context) => ColoredBox(
+              color: EditorSurfaceStyle.canvasBackground(context),
+              child: ContextualFindScope(
+                findInControls: true,
+                child: child,
+              ),
+            ),
+          ),
+        ),
       ),
     );
 
@@ -378,7 +400,10 @@ class _Reads {
       views++;
       if (id != 'synthetic-page') return _forbidden();
       return ViewPB(
-          id: id, name: 'Fixture page', layout: ViewLayoutPB.Document);
+        id: id,
+        name: 'Fixture page',
+        layout: ViewLayoutPB.Document,
+      );
     },
     preflight: (_) async {
       preflights++;
@@ -400,29 +425,36 @@ class _Reads {
 class _Pane {
   _Pane(int count) {
     specs = List.generate(
-        count,
-        (i) => DashboardWidgetSpec(
-              id: 'card-$i',
-              type: i.isEven ? 'text' : 'unsupported-fixture',
-              showTitle: false,
-              settings:
-                  i.isEven ? const {'text': 'needle card body'} : const {},
-            ));
+      count,
+      (i) => DashboardWidgetSpec(
+        id: 'card-$i',
+        type: i.isEven ? 'text' : 'unsupported-fixture',
+        showTitle: false,
+        settings: i.isEven ? const {'text': 'needle card body'} : const {},
+      ),
+    );
     dashboard = DashboardController(
-        viewId: '',
-        document: DashboardDocument(
-          sections: [
-            DashboardSection(id: 'fixture-section', widgets: [page, ...specs])
-          ],
-        ))
-      ..setReadOnly(true);
-    controller = DashboardFindController(dashboard,
-        title: () => '', readProvider: reads.provider);
+      viewId: '',
+      document: DashboardDocument(
+        sections: [
+          DashboardSection(id: 'fixture-section', widgets: [page, ...specs]),
+        ],
+      ),
+    )..setReadOnly(true);
+    controller = DashboardFindController(
+      dashboard,
+      title: () => '',
+      readProvider: reads.provider,
+    );
     editor = EditorState(
-        document: Document(
-            root: pageNode(children: [
-      paragraphNode(text: _body),
-    ])));
+      document: Document(
+        root: pageNode(
+          children: [
+            paragraphNode(text: _body),
+          ],
+        ),
+      ),
+    );
     editorScroll =
         EditorScrollController(editorState: editor, shrinkWrap: true);
   }
@@ -432,7 +464,9 @@ class _Pane {
     type: 'page',
     showTitle: false,
     source: DashboardDataSource(
-        kind: DashboardSourceKind.page, viewId: 'synthetic-page'),
+      kind: DashboardSourceKind.page,
+      viewId: 'synthetic-page',
+    ),
   );
   final reads = _Reads();
   final nodeMounted = Completer<bool>();
@@ -456,103 +490,126 @@ class _Pane {
         key: key,
         controller: controller,
         child: Focus(
-            focusNode: focus,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 80, 16, 16),
-              child: Row(children: [
+          focusNode: focus,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 80, 16, 16),
+            child: Row(
+              children: [
                 Expanded(
-                    child: SingleChildScrollView(
-                  key: cardsKey,
-                  controller: cardsScroll,
-                  child: Column(children: [
-                    for (final (index, spec) in specs.indexed)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(children: [
-                          // Gallery-like image face, deliberately NOT a replacement
-                          // rectangle or a claim to cover production gallery loading.
-                          Image(
-                              key: ValueKey((key, index)),
-                              image: cover,
-                              height: 90,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              frameBuilder:
-                                  (context, child, frame, synchronous) {
-                                // A resolved cache entry is not an ImageState frame:
-                                // Flutter listens only while TickerMode is enabled.
-                                if (frame != null &&
-                                    TickerMode.of(context) &&
-                                    coverFrameIndices.add(index)) {
-                                  WidgetsBinding.instance
-                                      .addPostFrameCallback((_) {
-                                    if (context.mounted &&
+                  child: SingleChildScrollView(
+                    key: cardsKey,
+                    controller: cardsScroll,
+                    child: Column(
+                      children: [
+                        for (final (index, spec) in specs.indexed)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(
+                              children: [
+                                // Gallery-like image face, deliberately NOT a replacement
+                                // rectangle or a claim to cover production gallery loading.
+                                Image(
+                                  key: ValueKey((key, index)),
+                                  image: cover,
+                                  height: 90,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  frameBuilder:
+                                      (context, child, frame, synchronous) {
+                                    // A resolved cache entry is not an ImageState frame:
+                                    // Flutter listens only while TickerMode is enabled.
+                                    if (frame != null &&
                                         TickerMode.of(context) &&
-                                        coverFrameIndices.length ==
-                                            specs.length &&
-                                        !coversReady.isCompleted) {
-                                      coversReady.complete();
+                                        coverFrameIndices.add(index)) {
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                        if (context.mounted &&
+                                            TickerMode.of(context) &&
+                                            coverFrameIndices.length ==
+                                                specs.length &&
+                                            !coversReady.isCompleted) {
+                                          coversReady.complete();
+                                        }
+                                      });
                                     }
-                                  });
-                                }
-                                return child;
-                              },
-                              excludeFromSemantics: true),
-                          SizedBox(
-                              height: 110,
-                              child: Builder(
-                                  builder: (context) => DashboardCard(
+                                    return child;
+                                  },
+                                  excludeFromSemantics: true,
+                                ),
+                                SizedBox(
+                                  height: 110,
+                                  child: Builder(
+                                    builder: (context) => DashboardCard(
                                       controller: dashboard,
                                       spec: spec,
                                       palette: DashboardPalette.of(context),
                                       selected: false,
-                                      dragging: false))),
-                        ]),
-                      ),
-                  ]),
-                )),
+                                      dragging: false,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 20),
                 Expanded(
-                    child: SingleChildScrollView(
-                  key: editorViewportKey,
-                  controller: bodyScroll,
-                  child: DashboardFindEmbed(
-                    key: embedKey,
-                    dashboard: dashboard,
-                    spec: page,
-                    child: IntrinsicHeight(
+                  child: SingleChildScrollView(
+                    key: editorViewportKey,
+                    controller: bodyScroll,
+                    child: DashboardFindEmbed(
+                      key: embedKey,
+                      dashboard: dashboard,
+                      spec: page,
+                      child: IntrinsicHeight(
                         child: AppFlowyEditor(
-                      key: editorKey,
-                      editorState: editor,
-                      editable: false,
-                      shrinkWrap: true,
-                      editorScrollController: editorScroll,
-                      disableAutoScroll: true,
-                      blockWrapper: (context,
-                              {required Node node, required Widget child}) =>
-                          _NodeReceipt(
-                              node: node, receipt: nodeMounted, child: child),
-                      editorStyle: EditorStyle.desktop(
-                        padding: const EdgeInsets.all(12),
-                        textStyleConfiguration: TextStyleConfiguration(
-                          text: TextStyle(
-                              fontFamily: preferredFontFamily,
-                              fontSize: 16,
-                              color: theme.colorScheme.onSurface),
+                          key: editorKey,
+                          editorState: editor,
+                          editable: false,
+                          shrinkWrap: true,
+                          editorScrollController: editorScroll,
+                          disableAutoScroll: true,
+                          blockWrapper: (
+                            context, {
+                            required Node node,
+                            required Widget child,
+                          }) =>
+                              _NodeReceipt(
+                            node: node,
+                            receipt: nodeMounted,
+                            child: child,
+                          ),
+                          editorStyle: EditorStyle.desktop(
+                            padding: const EdgeInsets.all(12),
+                            textStyleConfiguration: TextStyleConfiguration(
+                              text: TextStyle(
+                                fontFamily: preferredFontFamily,
+                                fontSize: 16,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    )),
+                    ),
                   ),
-                )),
-              ]),
-            )),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
 
   RenderSurfaceFindHighlight paint(WidgetTester tester) =>
-      tester.renderObject<RenderSurfaceFindHighlight>(find.descendant(
-        of: find.byKey(embedKey, skipOffstage: false),
-        matching: find.byType(SurfaceFindHighlight, skipOffstage: false),
-      ));
+      tester.renderObject<RenderSurfaceFindHighlight>(
+        find.descendant(
+          of: find.byKey(embedKey, skipOffstage: false),
+          matching: find.byType(SurfaceFindHighlight, skipOffstage: false),
+        ),
+      );
 
   Future<void> dispose() async {
     controller.dispose();
@@ -568,8 +625,11 @@ class _Pane {
 
 /// One native-node attachment receipt, not a polling timer or readiness sleep.
 class _NodeReceipt extends StatefulWidget {
-  const _NodeReceipt(
-      {required this.node, required this.receipt, required this.child});
+  const _NodeReceipt({
+    required this.node,
+    required this.receipt,
+    required this.child,
+  });
   final Node node;
   final Completer<bool> receipt;
   final Widget child;
@@ -593,59 +653,85 @@ class _NodeReceiptState extends State<_NodeReceipt> {
   Widget build(BuildContext context) => widget.child;
 }
 
-Future<void> _scrollCase(WidgetTester tester, ThemeData theme, _Frames frames,
-    ImageProvider cover, int count, Map<String, dynamic> report) async {
+Future<void> _scrollCase(
+  WidgetTester tester,
+  ThemeData theme,
+  _Frames frames,
+  ImageProvider cover,
+  int count,
+  Map<String, dynamic> report,
+) async {
   final visible = _Pane(count);
   final hidden = _Pane(count);
   final tab = ValueNotifier(1);
   try {
     // Both actual subtrees stay mounted; only offstage/focus/ticker status
     // changes. Warm the second tab with the SAME query before hiding it.
-    await tester.pumpWidget(_app(
+    await tester.pumpWidget(
+      _app(
         theme,
         ValueListenableBuilder<int>(
           valueListenable: tab,
-          builder: (context, selected, _) => Stack(children: [
-            for (final (index, pane) in [(0, visible), (1, hidden)])
-              Offstage(
+          builder: (context, selected, _) => Stack(
+            children: [
+              for (final (index, pane) in [(0, visible), (1, hidden)])
+                Offstage(
                   offstage: selected != index,
                   child: TickerMode(
                     enabled: selected == index,
                     child: ExcludeFocus(
-                        excluding: selected != index,
-                        child: pane.widget(cover, theme)),
-                  )),
-          ]),
-        )));
+                      excluding: selected != index,
+                      child: pane.widget(cover, theme),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
     expect(
-        await Future.wait(
-                [visible.nodeMounted.future, hidden.nodeMounted.future])
-            .timeout(_deadline),
-        [true, true]);
+      await Future.wait(
+        [visible.nodeMounted.future, hidden.nodeMounted.future],
+      ).timeout(_deadline),
+      [true, true],
+    );
     await _setupFrames(tester);
-    expect(PaperTheme.isEnabled(tester.element(find.byKey(hidden.key))),
-        _appearance == 'paper');
-    expect(find.byType(DashboardCard, skipOffstage: false),
-        findsNWidgets(2 * count));
+    expect(
+      PaperTheme.isEnabled(tester.element(find.byKey(hidden.key))),
+      _appearance == 'paper',
+    );
+    expect(
+      find.byType(DashboardCard, skipOffstage: false),
+      findsNWidgets(2 * count),
+    );
     expect(find.byType(AppFlowyEditor, skipOffstage: false), findsNWidgets(2));
     await hidden.coversReady.future.timeout(_deadline);
-    expect(hidden.coverFrameIndices,
-        unorderedEquals(List.generate(count, (i) => i)));
+    expect(
+      hidden.coverFrameIndices,
+      unorderedEquals(List.generate(count, (i) => i)),
+    );
     expect(visible.reads.total + hidden.reads.total, 0);
     await _open(tester, hidden, count);
     _wordBoxes(tester, hidden);
     final retainedNode = hidden.editor.document.root.children.single;
     final activeNode = visible.editor.document.root.children.single;
     final retainedEditor = tester.element(find.byKey(hidden.editorKey));
-    final retainedCard = tester.element(find
-        .descendant(
-            of: find.byKey(hidden.key), matching: find.byType(DashboardCard))
-        .first);
+    final retainedCard = tester.element(
+      find
+          .descendant(
+            of: find.byKey(hidden.key),
+            matching: find.byType(DashboardCard),
+          )
+          .first,
+    );
     tab.value = 0;
     await _setupFrames(tester);
     await visible.coversReady.future.timeout(_deadline);
-    expect(visible.coverFrameIndices,
-        unorderedEquals(List.generate(count, (i) => i)));
+    expect(
+      visible.coverFrameIndices,
+      unorderedEquals(List.generate(count, (i) => i)),
+    );
     // Both panes have now had an actual onstage image lifecycle. The hidden
     // pane must retain every previous frame, not merely its decoded cache key.
     _loadedCoverFrames(tester, count);
@@ -691,17 +777,24 @@ Future<void> _scrollCase(WidgetTester tester, ThemeData theme, _Frames frames,
       _loadedCoverFrames(tester, count);
       expect(visible.editor.selection, initialSelection);
       expect(
-          tester.element(find.byKey(visible.editorKey)), same(activeElement));
-      expect(tester.element(find.byKey(hidden.editorKey, skipOffstage: false)),
-          same(retainedEditor));
+        tester.element(find.byKey(visible.editorKey)),
+        same(activeElement),
+      );
       expect(
-          tester.element(find
+        tester.element(find.byKey(hidden.editorKey, skipOffstage: false)),
+        same(retainedEditor),
+      );
+      expect(
+        tester.element(
+          find
               .descendant(
                 of: find.byKey(hidden.key, skipOffstage: false),
                 matching: find.byType(DashboardCard, skipOffstage: false),
               )
-              .first),
-          same(retainedCard));
+              .first,
+        ),
+        same(retainedCard),
+      );
       if (active) _wordBoxes(tester, visible);
       expect(tester.takeException(), isNull);
       (report['scroll'] as List).add({
@@ -749,7 +842,9 @@ Future<void> _open(WidgetTester tester, _Pane pane, int count) async {
   final complete = Completer<void>();
   void changed() {
     if (pane.controller.matches.length == _occurrences + count ~/ 2 &&
-        !complete.isCompleted) complete.complete();
+        !complete.isCompleted) {
+      complete.complete();
+    }
   }
 
   pane.controller.addListener(changed);
@@ -793,12 +888,18 @@ int _wordBoxes(WidgetTester tester, _Pane pane) {
   final expected = <Rect>[];
   // Independent offsets from the synthetic input, not from Find's matches.
   for (var i = 0; i < _occurrences; i++) {
-    for (final box in paragraph.getBoxesForSelection(TextSelection(
-      baseOffset: i * 7,
-      extentOffset: i * 7 + 6,
-    ))) {
-      expected.add(MatrixUtils.transformRect(
-          paragraph.getTransformTo(paint), box.toRect()));
+    for (final box in paragraph.getBoxesForSelection(
+      TextSelection(
+        baseOffset: i * 7,
+        extentOffset: i * 7 + 6,
+      ),
+    )) {
+      expected.add(
+        MatrixUtils.transformRect(
+          paragraph.getTransformTo(paint),
+          box.toRect(),
+        ),
+      );
     }
   }
   expect(expected, hasLength(_occurrences));
@@ -809,7 +910,10 @@ int _wordBoxes(WidgetTester tester, _Pane pane) {
 }
 
 Future<Map<String, Object?>> _wheelWindow(
-    WidgetTester tester, _Frames frames, _Pane pane) async {
+  WidgetTester tester,
+  _Frames frames,
+  _Pane pane,
+) async {
   final targets = [pane.cardsKey, pane.editorViewportKey];
   final points = targets.map((key) {
     final rect = tester.getRect(find.byKey(key));
@@ -839,14 +943,15 @@ Future<Map<String, Object?>> _wheelWindow(
     // Reverse every 500ms; enough travel to exercise both native scrollables,
     // never a jumpTo animation masquerading as user scrolling.
     final delta = (slot ~/ 25).isEven ? 72.0 : -72.0;
-    await tester.sendEventToBinding(PointerScrollEvent(
-      viewId: frames.binding.platformDispatcher.implicitView!.viewId,
-      device: 73,
-      kind: PointerDeviceKind.mouse,
-      timeStamp: Duration(microseconds: now),
-      position: points[target],
-      scrollDelta: Offset(0, delta),
-    ));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        viewId: frames.binding.platformDispatcher.implicitView!.viewId,
+        device: 73,
+        timeStamp: Duration(microseconds: now),
+        position: points[target],
+        scrollDelta: Offset(0, delta),
+      ),
+    );
     events.add({'slot': slot, 'actual_us': now, 'target': target});
     for (var i = 0; i < positions.length; i++) {
       final value = positions[i].pixels;
@@ -877,7 +982,9 @@ Future<Map<String, Object?>> _wheelWindow(
     'cards_scroll_range': maximum[0] - minimum[0],
     'editor_scroll_range': maximum[1] - minimum[1],
     'frames': _frameSummary(
-        sample, sample.first.timestampInMicroseconds(ui.FramePhase.buildStart)),
+      sample,
+      sample.first.timestampInMicroseconds(ui.FramePhase.buildStart),
+    ),
   };
 }
 
@@ -908,10 +1015,13 @@ class _Frames {
     final waiter = (end, Completer<void>());
     _waiters.add(waiter);
     try {
-      await waiter.$2.future.timeout(_deadline, onTimeout: () {
-        throw StateError('FrameTiming deadline: requested=$end '
-            'current=$currentFrame received=${_values.map((f) => f.frameNumber).join(",")}');
-      });
+      await waiter.$2.future.timeout(
+        _deadline,
+        onTimeout: () {
+          throw StateError('FrameTiming deadline: requested=$end '
+              'current=$currentFrame received=${_values.map((f) => f.frameNumber).join(",")}');
+        },
+      );
     } finally {
       _waiters.remove(waiter);
     }
@@ -935,7 +1045,7 @@ Map<String, Object?> _frameSummary(List<ui.FrameTiming> values, int origin) {
         'build_us': frame.buildDuration.inMicroseconds,
         'raster_us': frame.rasterDuration.inMicroseconds,
         'total_span_us': frame.totalSpan.inMicroseconds,
-      }
+      },
   ];
   for (final row in raw) {
     expect(row.values.every((value) => value >= 0 && value.isFinite), isTrue);
@@ -955,8 +1065,9 @@ Map<String, Object?> _frameSummary(List<ui.FrameTiming> values, int origin) {
 
 Map<String, Object?> _distribution(Iterable<int> samples) {
   final sorted = samples.toList()..sort();
-  if (sorted.isEmpty)
+  if (sorted.isEmpty) {
     return {'count': 0, 'p50': null, 'p95': null, 'p99': null};
+  }
   int percentile(double fraction) =>
       sorted[(fraction * sorted.length).ceil() - 1];
   return {
@@ -975,14 +1086,18 @@ Future<Uint8List> _makePng() async {
   final canvas = Canvas(recorder);
   const rect = Rect.fromLTWH(0, 0, 3000, 2000);
   canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          colors: [Color(0xFF34536C), Color(0xFFF3C78D), Color(0xFF668A6A)],
-        ).createShader(rect));
+    rect,
+    Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFF34536C), Color(0xFFF3C78D), Color(0xFF668A6A)],
+      ).createShader(rect),
+  );
   for (var i = 0; i < 40; i++) {
-    canvas.drawCircle(Offset(i * 79.0, (i * 137 % 2000).toDouble()), 110,
-        Paint()..color = const Color(0x4484A9CF));
+    canvas.drawCircle(
+      Offset(i * 79.0, (i * 137 % 2000).toDouble()),
+      110,
+      Paint()..color = const Color(0x4484A9CF),
+    );
   }
   final picture = recorder.endRecording();
   ui.Image? image;
@@ -1010,7 +1125,9 @@ class _BytesImage extends ImageProvider<_BytesImage> {
       SynchronousFuture(this);
   @override
   ImageStreamCompleter loadImage(
-          _BytesImage key, ImageDecoderCallback decode) =>
+    _BytesImage key,
+    ImageDecoderCallback decode,
+  ) =>
       MultiFrameImageStreamCompleter(codec: _codec(decode), scale: 1);
   Future<ui.Codec> _codec(ImageDecoderCallback decode) async {
     loads++;
@@ -1022,18 +1139,22 @@ class _BytesImage extends ImageProvider<_BytesImage> {
 class _ImageLease {
   _ImageLease(this.provider) {
     stream = provider.resolve(ImageConfiguration.empty);
-    listener = ImageStreamListener((value, _) {
-      if (info != null) {
-        value.dispose();
-        return;
-      }
-      info = value;
-      decodeUs = clock.elapsedMicroseconds;
-      ready.complete();
-    }, onError: (Object _, StackTrace? __) {
-      if (!ready.isCompleted)
-        ready.completeError(StateError('Fixture PNG decode failed.'));
-    });
+    listener = ImageStreamListener(
+      (value, _) {
+        if (info != null) {
+          value.dispose();
+          return;
+        }
+        info = value;
+        decodeUs = clock.elapsedMicroseconds;
+        ready.complete();
+      },
+      onError: (Object _, StackTrace? __) {
+        if (!ready.isCompleted) {
+          ready.completeError(StateError('Fixture PNG decode failed.'));
+        }
+      },
+    );
     stream.addListener(listener);
   }
   final ImageProvider provider;
@@ -1050,15 +1171,16 @@ class _ImageLease {
 }
 
 Future<Map<String, Object?>> _coverProbe(
-    WidgetTester tester,
-    ThemeData theme,
-    _Frames frames,
-    _ImageLease lease,
-    _BytesImage source,
-    CoverImageDecodeSize target,
-    {required bool optimized,
-    required bool warm,
-    required bool delayed}) async {
+  WidgetTester tester,
+  ThemeData theme,
+  _Frames frames,
+  _ImageLease lease,
+  _BytesImage source,
+  CoverImageDecodeSize target, {
+  required bool optimized,
+  required bool warm,
+  required bool delayed,
+}) async {
   final painted = Completer<int>();
   final clock = Stopwatch()..start();
   final readyBeforeMount = lease.info != null;
@@ -1067,30 +1189,34 @@ Future<Map<String, Object?>> _coverProbe(
   var announced = false;
   // Attach failure handling before mounting; decode can finish during a pump.
   final decoded = lease.ready.future.timeout(_deadline);
-  await tester.pumpWidget(_app(
+  await tester.pumpWidget(
+    _app(
       theme,
       Center(
-          child: SizedBox(
-        width: 320,
-        height: 180,
-        child: Image(
-          key: UniqueKey(),
-          image: lease.provider,
-          fit: BoxFit.cover,
-          excludeFromSemantics: true,
-          frameBuilder: (context, child, frame, synchronous) {
-            if (frame != null && !announced) {
-              announced = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                firstUiUs = clock.elapsedMicroseconds;
-                sourceToUiUs = lease.clock.elapsedMicroseconds;
-                painted.complete(frames.currentFrame);
-              });
-            }
-            return child;
-          },
+        child: SizedBox(
+          width: 320,
+          height: 180,
+          child: Image(
+            key: UniqueKey(),
+            image: lease.provider,
+            fit: BoxFit.cover,
+            excludeFromSemantics: true,
+            frameBuilder: (context, child, frame, synchronous) {
+              if (frame != null && !announced) {
+                announced = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  firstUiUs = clock.elapsedMicroseconds;
+                  sourceToUiUs = lease.clock.elapsedMicroseconds;
+                  painted.complete(frames.currentFrame);
+                });
+              }
+              return child;
+            },
+          ),
         ),
-      ))));
+      ),
+    ),
+  );
   await decoded;
   final stamp = await painted.future.timeout(_deadline);
   await frames.through(stamp);
@@ -1098,10 +1224,15 @@ Future<Map<String, Object?>> _coverProbe(
   final raw = tester.widget<RawImage>(find.byType(RawImage));
   expect(raw.image, isNotNull);
   final expected = target.target(3000, 2000, BoxFit.cover);
-  expect((raw.image!.width, raw.image!.height),
-      optimized ? (expected.width, expected.height) : (3000, 2000));
-  expect(source.loads, 1,
-      reason: 'Warm remount must reuse the retained cache entry');
+  expect(
+    (raw.image!.width, raw.image!.height),
+    optimized ? (expected.width, expected.height) : (3000, 2000),
+  );
+  expect(
+    source.loads,
+    1,
+    reason: 'Warm remount must reuse the retained cache entry',
+  );
   expect(tester.takeException(), isNull);
   final finish = timing.timestampInMicroseconds(ui.FramePhase.rasterFinish);
   final build = timing.timestampInMicroseconds(ui.FramePhase.buildStart);

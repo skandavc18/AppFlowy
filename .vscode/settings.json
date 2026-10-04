@@ -1,0 +1,4 @@
+{
+  // TODO comments are backlog notes, not diagnostics; keep them out of Problems.
+  "dart.showTodos": false
+}

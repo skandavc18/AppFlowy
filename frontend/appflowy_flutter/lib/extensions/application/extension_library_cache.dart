@@ -133,7 +133,8 @@ class ExtensionLibraryCache {
       // A cached copy that no longer matches its pin is thrown away rather
       // than trusted; it is fetched again below.
       Log.warn(
-          '${library.id} did not match its recorded hash; fetching again.');
+        '${library.id} did not match its recorded hash; fetching again.',
+      );
     }
 
     final fetched = await _fetch(library);

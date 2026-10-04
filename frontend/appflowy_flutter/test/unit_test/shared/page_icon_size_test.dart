@@ -44,10 +44,10 @@ void main() {
       'document_style': {'font': 'serif', 'width': 720},
       'collection': {
         'kind': 'album',
-        'state': [1, 2, 3]
+        'state': [1, 2, 3],
       },
       'dashboard': {
-        'widgets': ['draft-widget']
+        'widgets': ['draft-widget'],
       },
       'workspace_item': {'storage_url': 'original.pdf'},
       'future_key': {'nested': null},

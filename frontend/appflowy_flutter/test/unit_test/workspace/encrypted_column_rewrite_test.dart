@@ -41,11 +41,13 @@ void main() {
     expect(marked, isTrue);
     for (final entry in written.entries) {
       expect(
-          openText(
-              key: originalKey,
-              value: entry.value,
-              context: encryptedCellContext),
-          values[entry.key]);
+        openText(
+          key: originalKey,
+          value: entry.value,
+          context: encryptedCellContext,
+        ),
+        values[entry.key],
+      );
     }
   });
 
@@ -56,8 +58,11 @@ void main() {
       key: key,
       values: {
         'a': sealText(
-            key: key, plaintext: 'kept', context: encryptedCellContext),
-        'b': 'af1.invalid.payload'
+          key: key,
+          plaintext: 'kept',
+          context: encryptedCellContext,
+        ),
+        'b': 'af1.invalid.payload',
       },
       encrypt: false,
       write: (_, __) async {

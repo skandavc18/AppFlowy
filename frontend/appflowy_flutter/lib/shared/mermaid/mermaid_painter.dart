@@ -17,8 +17,11 @@ class MermaidTypography {
   final TextStyle base;
   final TextStyle mono;
 
-  TextStyle styleFor(MermaidTextRole role,
-      {bool bold = false, bool italic = false}) {
+  TextStyle styleFor(
+    MermaidTextRole role, {
+    bool bold = false,
+    bool italic = false,
+  }) {
     final source =
         role == MermaidTextRole.mono || role == MermaidTextRole.member
             ? mono
@@ -187,7 +190,12 @@ class MermaidPainter extends CustomPainter {
     final ink = palette.resolve(shape.stroke, series: shape.series);
     _paintHead(canvas, shape.head, shape.points.last, shape.headDirection, ink);
     _paintHead(
-        canvas, shape.tail, shape.points.first, shape.tailDirection, ink);
+      canvas,
+      shape.tail,
+      shape.points.first,
+      shape.tailDirection,
+      ink,
+    );
   }
 
   void _paintHead(
@@ -412,7 +420,9 @@ class MermaidPainter extends CustomPainter {
         if (index.isEven) {
           result.addPath(
             metric.extractPath(
-                distance, math.min(distance + step, metric.length)),
+              distance,
+              math.min(distance + step, metric.length),
+            ),
             Offset.zero,
           );
         }

@@ -137,9 +137,13 @@ void main() {
       }
       expect(tracker.getVelocityEstimate()!.pixelsPerSecond, Offset.zero);
       tracker.addPosition(
-          const Duration(milliseconds: 100), const Offset(0, -200));
+        const Duration(milliseconds: 100),
+        const Offset(0, -200),
+      );
       tracker.addPosition(
-          const Duration(milliseconds: 90), const Offset(0, -220));
+        const Duration(milliseconds: 90),
+        const Offset(0, -220),
+      );
       expect(tracker.getVelocityEstimate()!.pixelsPerSecond, Offset.zero);
     },
     variant: _desktop,

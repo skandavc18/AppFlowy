@@ -1,0 +1,6 @@
+# The repository root is not a Dart package. Its build/ folder only holds local
+# performance runs, source backups and scratch fixtures, which cannot resolve
+# package imports and must not be analyzed.
+analyzer:
+  exclude:
+    - build/**

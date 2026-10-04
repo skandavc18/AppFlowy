@@ -156,18 +156,20 @@ class InteractiveImageToolbar extends StatelessWidget {
                   enabled: enabled,
                   entries: () => [
                     AppMenuCustom(
-                        builder: (_) => SizedBox(
-                              width: 220,
-                              child: _ScaleSlider(
-                                currentScale: currentScale,
-                                onScaleChanged: (value) {
-                                  // The zoom menu itself covers this route, so check
-                                  // the image binding without requiring current route.
-                                  if (enabled && (canRead?.call() ?? true))
-                                    onScaleChanged(value);
-                                },
-                              ),
-                            )),
+                      builder: (_) => SizedBox(
+                        width: 220,
+                        child: _ScaleSlider(
+                          currentScale: currentScale,
+                          onScaleChanged: (value) {
+                            // The zoom menu itself covers this route, so check
+                            // the image binding without requiring current route.
+                            if (enabled && (canRead?.call() ?? true)) {
+                              onScaleChanged(value);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 WorkspaceControlButton(
@@ -256,7 +258,7 @@ class InteractiveImageToolbar extends StatelessWidget {
           source: target.source,
           name: target.name,
         );
-        if (!_current(context)) return;
+        if (!context.mounted || !_current(context)) return;
         final result = await OpenFilex.open(file.path);
         if (result.type != ResultType.done) {
           throw StateError('Unable to open the image.');
@@ -289,8 +291,10 @@ class InteractiveImageToolbar extends StatelessWidget {
 }
 
 class _ScaleSlider extends StatefulWidget {
-  const _ScaleSlider(
-      {required this.currentScale, required this.onScaleChanged});
+  const _ScaleSlider({
+    required this.currentScale,
+    required this.onScaleChanged,
+  });
   final int currentScale;
   final ValueChanged<double> onScaleChanged;
 

@@ -15,46 +15,68 @@ void main() {
     final page = DatabaseFindHarness();
     page.view.name = 'Table';
     page.reads.fields[databaseFindViewId] = [
-      page.reads.fields[databaseFindViewId]!.first..name = 'Body'
+      page.reads.fields[databaseFindViewId]!.first..name = 'Body',
     ];
     page.reads.setText(databaseFindViewId, 'first needle second needle');
     const target = DatabaseFindTarget.cell(
-        databaseFindViewId, databaseFindRowId, databaseFindFieldId);
+      databaseFindViewId,
+      databaseFindRowId,
+      databaseFindFieldId,
+    );
     page.content = const Align(
-        alignment: Alignment.bottomLeft,
-        child: DatabaseFindAnchor(
-          target: target,
-          child: Text.rich(TextSpan(children: [
-            TextSpan(
+      alignment: Alignment.bottomLeft,
+      child: DatabaseFindAnchor(
+        target: target,
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
                 text: 'first ',
-                semanticsLabel: 'spoken prefix longer than ink'),
-            WidgetSpan(
-                child: Text('needle', key: ValueKey('inline-cell-word'))),
-            TextSpan(text: ' second '),
-            TextSpan(
-                text: 'needle', style: TextStyle(fontWeight: FontWeight.bold)),
-          ])),
-        ));
+                semanticsLabel: 'spoken prefix longer than ink',
+              ),
+              WidgetSpan(
+                child: Text('needle', key: ValueKey('inline-cell-word')),
+              ),
+              TextSpan(text: ' second '),
+              TextSpan(
+                text: 'needle',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     try {
       await page.mount(tester);
       final before = page.reads.snapshot();
-      final native = tester.renderObject<RenderParagraph>(find.descendant(
-        of: find.byKey(const ValueKey('inline-cell-word')),
-        matching: find.byType(RichText),
-      ));
+      final native = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.byKey(const ValueKey('inline-cell-word')),
+          matching: find.byType(RichText),
+        ),
+      );
       await page.open(tester, hover: false);
       await page.query(tester, 'needle');
       final navigation = tester
           .widget<DatabaseFindScope>(find.byType(DatabaseFindScope))
           .controller;
       await settleDatabaseFindNavigation(tester, navigation);
-      expect(navigation.reveal, DatabaseFindReveal.exact,
-          reason: navigation.message);
+      expect(
+        navigation.reveal,
+        DatabaseFindReveal.exact,
+        reason: navigation.message,
+      );
       final boxes = native
           .getBoxesForSelection(
-              const TextSelection(baseOffset: 0, extentOffset: 6))
-          .map((box) => MatrixUtils.transformRect(
-              native.getTransformTo(null), box.toRect()))
+            const TextSelection(baseOffset: 0, extentOffset: 6),
+          )
+          .map(
+            (box) => MatrixUtils.transformRect(
+              native.getTransformTo(null),
+              box.toRect(),
+            ),
+          )
           .toList();
       expect(boxes, isNotEmpty);
       expect(navigation.visibleMatchRects, boxes);
@@ -67,14 +89,16 @@ void main() {
       await settleDatabaseFindNavigation(tester, navigation);
       expect(navigation.reveal, DatabaseFindReveal.exact);
       final anchor = tester.renderObject<RenderDatabaseFindAnchor>(
-          find.byType(DatabaseFindAnchor));
+        find.byType(DatabaseFindAnchor),
+      );
       expect(
-          navigation.visibleMatchRects,
-          anchor
-              .measure(databaseFindSession(tester).current!)
-              .boxes
-              .map((box) => box.globalRect)
-              .toList());
+        navigation.visibleMatchRects,
+        anchor
+            .measure(databaseFindSession(tester).current!)
+            .boxes
+            .map((box) => box.globalRect)
+            .toList(),
+      );
       expect(page.reads.snapshot(), before);
     } finally {
       await page.dispose(tester);

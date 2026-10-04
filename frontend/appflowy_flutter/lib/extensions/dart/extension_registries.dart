@@ -27,7 +27,8 @@ class ExtensionBlockDefinition {
   /// Built fresh per editor, because a builder carries that editor's
   /// configuration.
   final BlockComponentBuilder Function(
-      BlockComponentConfiguration configuration) builder;
+    BlockComponentConfiguration configuration,
+  ) builder;
 
   /// How the block is written to and read from markdown. Without one the block
   /// is dropped on export, so it is worth supplying.

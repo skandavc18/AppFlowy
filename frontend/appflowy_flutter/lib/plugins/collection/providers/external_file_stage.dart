@@ -300,7 +300,9 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
   }
 
   Widget _header(
-          FolderExplorerPalette palette, StandaloneFileHeader controls) =>
+    FolderExplorerPalette palette,
+    StandaloneFileHeader controls,
+  ) =>
       Padding(
         key: const ValueKey('external-file-header'),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -377,11 +379,16 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
         ],
       );
   VoidCallback _sourceAction(
-      ProviderNode openedNode, ProviderController controller, int generation) {
+    ProviderNode openedNode,
+    ProviderController controller,
+    int generation,
+  ) {
     final source = controller.source;
     return () {
       if (!_isCurrent(controller, openedNode, source, generation) ||
-          _route?.isCurrent != true) return;
+          _route?.isCurrent != true) {
+        return;
+      }
       final uri = Uri.tryParse(openedNode.webUrl ?? '');
       if (uri != null) {
         unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));

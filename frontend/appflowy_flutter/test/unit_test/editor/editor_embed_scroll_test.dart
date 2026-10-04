@@ -91,7 +91,10 @@ void main() {
           final edgePoint = tester.getCenter(find.byKey(keys.first));
           await tester.sendEventToBinding(
             PointerPanZoomStartEvent(
-                pointer: 83, device: 83, position: edgePoint),
+              pointer: 83,
+              device: 83,
+              position: edgePoint,
+            ),
           );
           for (var step = 1; step <= 5; step++) {
             await tester.sendEventToBinding(
@@ -303,8 +306,11 @@ class _EmbedBuilder extends BlockComponentBuilder {
 }
 
 class _MixedEmbedBuilder extends BlockComponentBuilder {
-  _MixedEmbedBuilder(
-      {required this.keys, required this.csv, required this.onInnerInput});
+  _MixedEmbedBuilder({
+    required this.keys,
+    required this.csv,
+    required this.onInnerInput,
+  });
 
   final List<GlobalKey> keys;
   final String csv;

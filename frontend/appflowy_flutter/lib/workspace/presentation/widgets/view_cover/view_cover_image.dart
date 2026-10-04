@@ -45,27 +45,29 @@ class ViewCoverImage extends StatelessWidget {
         cover.type == PageStyleCoverImageType.localImage ||
         cover.type == PageStyleCoverImageType.customImage ||
         cover.type == PageStyleCoverImageType.unsplashImage) {
-      return LayoutBuilder(builder: (context, constraints) {
-        final decode = CoverImageDecodeSize.fromConstraints(
-          constraints,
-          MediaQuery.devicePixelRatioOf(context),
-          width: width,
-          height: height,
-        );
-        if (cover.type == PageStyleCoverImageType.builtInImage) {
-          return _buildImage(
-            AssetImage(PageStyleCoverImageType.builtInImagePath(cover.value)),
-            fallback,
-            fit,
-            alignment,
-            decode,
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final decode = CoverImageDecodeSize.fromConstraints(
+            constraints,
+            MediaQuery.devicePixelRatioOf(context),
+            width: width,
+            height: height,
           );
-        }
-        if (cover.type == PageStyleCoverImageType.localImage) {
-          return _buildLocalImage(fallback, fit, alignment, decode);
-        }
-        return _buildNetworkImage(fallback, fit, alignment, decode);
-      });
+          if (cover.type == PageStyleCoverImageType.builtInImage) {
+            return _buildImage(
+              AssetImage(PageStyleCoverImageType.builtInImagePath(cover.value)),
+              fallback,
+              fit,
+              alignment,
+              decode,
+            );
+          }
+          if (cover.type == PageStyleCoverImageType.localImage) {
+            return _buildLocalImage(fallback, fit, alignment, decode);
+          }
+          return _buildNetworkImage(fallback, fit, alignment, decode);
+        },
+      );
     }
     return switch (cover.type) {
       PageStyleCoverImageType.none => fallback,
@@ -96,8 +98,13 @@ class ViewCoverImage extends StatelessWidget {
     );
   }
 
-  Widget _buildImage(ImageProvider provider, Widget fallback, BoxFit fit,
-      Alignment alignment, CoverImageDecodeSize? decode) {
+  Widget _buildImage(
+    ImageProvider provider,
+    Widget fallback,
+    BoxFit fit,
+    Alignment alignment,
+    CoverImageDecodeSize? decode,
+  ) {
     return Image(
       image:
           decode == null ? provider : CoverImageProvider(provider, decode, fit),
@@ -111,8 +118,12 @@ class ViewCoverImage extends StatelessWidget {
     );
   }
 
-  Widget _buildLocalImage(Widget fallback, BoxFit fit, Alignment alignment,
-      CoverImageDecodeSize? decode) {
+  Widget _buildLocalImage(
+    Widget fallback,
+    BoxFit fit,
+    Alignment alignment,
+    CoverImageDecodeSize? decode,
+  ) {
     if (cover.value.isEmpty) return fallback;
     final uri = Uri.tryParse(cover.value);
     final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(cover.value);
@@ -121,8 +132,12 @@ class ViewCoverImage extends StatelessWidget {
     return _buildImage(FileImage(file), fallback, fit, alignment, decode);
   }
 
-  Widget _buildNetworkImage(Widget fallback, BoxFit fit, Alignment alignment,
-      CoverImageDecodeSize? decode) {
+  Widget _buildNetworkImage(
+    Widget fallback,
+    BoxFit fit,
+    Alignment alignment,
+    CoverImageDecodeSize? decode,
+  ) {
     final uri = Uri.tryParse(cover.value);
     if (uri == null ||
         (uri.scheme != 'http' && uri.scheme != 'https') ||

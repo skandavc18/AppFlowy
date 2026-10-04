@@ -153,7 +153,9 @@ void main() {
 
     test('a count keeps that many, newest first', () {
       expect(
-          expiredBackupCopies(['e', 'd', 'c', 'b', 'a'], 2), ['c', 'b', 'a']);
+        expiredBackupCopies(['e', 'd', 'c', 'b', 'a'], 2),
+        ['c', 'b', 'a'],
+      );
     });
 
     test('keeping every copy sweeps nothing', () {

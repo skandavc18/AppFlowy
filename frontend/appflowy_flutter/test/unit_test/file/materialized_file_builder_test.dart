@@ -242,7 +242,9 @@ void main() {
       );
       expect(loader.requests, hasLength(4));
       expect(
-          loader.requests.last.httpHeaders['Authorization'], 'Bearer test-c');
+        loader.requests.last.httpHeaders['Authorization'],
+        'Bearer test-c',
+      );
       expect(loader.requests[2].httpHeaders, {'Accept': 'text/plain'});
     });
 

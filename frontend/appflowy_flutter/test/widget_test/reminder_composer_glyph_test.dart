@@ -76,8 +76,10 @@ void main() {
         final context = tester.element(dialog);
         final palette = calendarPaletteOf(context);
         expect(PaperTheme.isEnabled(context), appearance == 'paper');
-        expect(Theme.of(context).brightness,
-            appearance == 'dark' ? Brightness.dark : Brightness.light);
+        expect(
+          Theme.of(context).brightness,
+          appearance == 'dark' ? Brightness.dark : Brightness.light,
+        );
         expect(DefaultIconStyleScope.of(context), same(styles));
         final repeat = find.byType(PopupMenuButton<CalendarRecurrenceKind>);
         final priority = find.byType(PopupMenuButton<ReminderPriority>);
@@ -125,20 +127,64 @@ void main() {
         ]) {
           styles.value = style;
           await settleVividIconPictures(tester);
-          _expectGlyph(tester, dialog, 'calendar-blank', style,
-              size: 14, ink: palette.textMuted);
-          _expectGlyph(tester, dialog, 'clock', style,
-              size: 14, ink: palette.textMuted);
-          _expectGlyph(tester, repeat, 'repeat', style,
-              size: 14, ink: palette.textMuted);
-          _expectGlyph(tester, repeat, 'caret-down', style,
-              size: 15, ink: palette.textMuted);
-          _expectGlyph(tester, priority, 'flag', style,
-              size: 14, ink: palette.textMuted, preserveInk: true);
-          _expectGlyph(tester, priority, 'caret-down', style,
-              size: 15, ink: palette.textMuted);
-          _expectGlyph(tester, dialog, 'volume', style,
-              size: 15, ink: palette.textMuted, preserveInk: true);
+          _expectGlyph(
+            tester,
+            dialog,
+            'calendar-blank',
+            style,
+            size: 14,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            dialog,
+            'clock',
+            style,
+            size: 14,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            repeat,
+            'repeat',
+            style,
+            size: 14,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            repeat,
+            'caret-down',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            priority,
+            'flag',
+            style,
+            size: 14,
+            ink: palette.textMuted,
+            preserveInk: true,
+          );
+          _expectGlyph(
+            tester,
+            priority,
+            'caret-down',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+          );
+          _expectGlyph(
+            tester,
+            dialog,
+            'volume',
+            style,
+            size: 15,
+            ink: palette.textMuted,
+            preserveInk: true,
+          );
           for (var i = 0; i < controls.length; i++) {
             expect(tester.element(controls[i]), same(elements[i]));
             expect(tester.getRect(controls[i]), rectangles[i]);
@@ -156,36 +202,58 @@ void main() {
         // These use the real native picker/switch callbacks, not their fields.
         await tester.tap(repeat);
         await tester.pumpAndSettle();
-        await tester.tap(find.widgetWithText(
-          PopupMenuItem<CalendarRecurrenceKind>,
-          LocaleKeys.reminders_repeats_daily.tr(),
-        ));
+        await tester.tap(
+          find.widgetWithText(
+            PopupMenuItem<CalendarRecurrenceKind>,
+            LocaleKeys.reminders_repeats_daily.tr(),
+          ),
+        );
         await tester.pumpAndSettle();
         expect(
-            find.descendant(
-                of: repeat,
-                matching: find.text(LocaleKeys.reminders_repeats_daily.tr())),
-            findsOneWidget);
+          find.descendant(
+            of: repeat,
+            matching: find.text(LocaleKeys.reminders_repeats_daily.tr()),
+          ),
+          findsOneWidget,
+        );
         await tester.tap(priority);
         await tester.pumpAndSettle();
-        await tester.tap(find.widgetWithText(
-          PopupMenuItem<ReminderPriority>,
-          LocaleKeys.reminders_priorities_high.tr(),
-        ));
+        await tester.tap(
+          find.widgetWithText(
+            PopupMenuItem<ReminderPriority>,
+            LocaleKeys.reminders_priorities_high.tr(),
+          ),
+        );
         await tester.pumpAndSettle();
         expect(
-            find.descendant(
-                of: priority,
-                matching: find.text(LocaleKeys.reminders_priorities_high.tr())),
-            findsOneWidget);
+          find.descendant(
+            of: priority,
+            matching: find.text(LocaleKeys.reminders_priorities_high.tr()),
+          ),
+          findsOneWidget,
+        );
         await tester.tap(find.byType(Switch));
         styles.value = DefaultIconStyle.vivid;
         await settleVividIconPictures(tester);
         expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
-        _expectGlyph(tester, dialog, 'volume-off', DefaultIconStyle.vivid,
-            size: 15, ink: palette.textMuted, preserveInk: true);
-        _expectGlyph(tester, priority, 'flag', DefaultIconStyle.vivid,
-            size: 14, ink: palette.textMuted, preserveInk: true);
+        _expectGlyph(
+          tester,
+          dialog,
+          'volume-off',
+          DefaultIconStyle.vivid,
+          size: 15,
+          ink: palette.textMuted,
+          preserveInk: true,
+        );
+        _expectGlyph(
+          tester,
+          priority,
+          'flag',
+          DefaultIconStyle.vivid,
+          size: 14,
+          ink: palette.textMuted,
+          preserveInk: true,
+        );
 
         // Both open AppFlowy's own date picker, anchored under the button.
         // Dismissing it outside the popup leaves the composer untouched.
@@ -237,8 +305,11 @@ void main() {
   }
 }
 
-Widget _app(String appearance, ValueNotifier<DefaultIconStyle> styles,
-        Widget child) =>
+Widget _app(
+  String appearance,
+  ValueNotifier<DefaultIconStyle> styles,
+  Widget child,
+) =>
     EasyLocalization(
       supportedLocales: const [Locale('en', 'US')],
       path: 'assets/translations',
@@ -263,7 +334,8 @@ Widget _app(String appearance, ValueNotifier<DefaultIconStyle> styles,
 Finder _glyph(Finder parent, String name) => find.descendant(
       of: parent,
       matching: find.byWidgetPredicate(
-          (widget) => widget is WorkspaceGlyph && widget.name == name),
+        (widget) => widget is WorkspaceGlyph && widget.name == name,
+      ),
     );
 
 void _expectGlyph(
@@ -290,11 +362,17 @@ void _expectGlyph(
       : defaultIconSvg(name)!;
   final loader = picture.bytesLoader as SvgStringLoader;
   expect(
-      loader,
-      SvgStringLoader(source,
-          theme: loader.theme, colorMapper: loader.colorMapper));
-  expect(picture.colorFilter,
-      vivid ? null : ColorFilter.mode(ink, BlendMode.srcIn));
+    loader,
+    SvgStringLoader(
+      source,
+      theme: loader.theme,
+      colorMapper: loader.colorMapper,
+    ),
+  );
+  expect(
+    picture.colorFilter,
+    vivid ? null : ColorFilter.mode(ink, BlendMode.srcIn),
+  );
   expect(picture.excludeFromSemantics, isTrue);
 }
 

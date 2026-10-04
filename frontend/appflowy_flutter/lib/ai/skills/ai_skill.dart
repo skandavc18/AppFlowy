@@ -136,7 +136,7 @@ When asked to track something:
       'move',
       'rename',
       'folder',
-      'sort'
+      'sort',
     ],
     instructions: '''
 When tidying up:

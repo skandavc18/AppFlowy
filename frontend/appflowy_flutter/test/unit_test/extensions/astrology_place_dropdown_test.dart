@@ -224,7 +224,9 @@ void main() {
     // Flutter may replace the position when inherited physics refreshes. The
     // owned controller and its current offset are the persistent UI contract.
     expect(
-        tester.widget<SingleChildScrollView>(_list).controller, same(scroll));
+      tester.widget<SingleChildScrollView>(_list).controller,
+      same(scroll),
+    );
     expect(scroll.offset, greaterThan(0));
     _expectInside(
       tester.getRect(_row(h.highlightedIndex)),

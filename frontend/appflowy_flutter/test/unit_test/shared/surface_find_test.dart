@@ -7,7 +7,10 @@ void main() {
     var text = 'cat cat';
     final find = SurfaceFindController(
       search: (q, o) => searchSurfaceEntries(
-          [SurfaceFindEntry('text', text, replaceable: true)], q, o),
+        [SurfaceFindEntry('text', text, replaceable: true)],
+        q,
+        o,
+      ),
       canReplace: () => true,
       applyReplacements: (edits) => text = edits.single.after,
     );
@@ -48,9 +51,12 @@ void main() {
     find.setQuery('[');
     expect(find.queryInvalid, isTrue);
     expect(find.matches, isEmpty);
-    find.setQuery(r'(?=cat)');
-    expect(find.matches, isEmpty,
-        reason: 'Zero-width hits have no word to show.');
+    find.setQuery('(?=cat)');
+    expect(
+      find.matches,
+      isEmpty,
+      reason: 'Zero-width hits have no word to show.',
+    );
     find.close();
     expect(find.isOpen, isFalse);
     expect(find.matches, isEmpty);

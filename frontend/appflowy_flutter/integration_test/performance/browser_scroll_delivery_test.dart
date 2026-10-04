@@ -36,8 +36,9 @@ void main() {
       !const bool.fromEnvironment('WEBVIEW_SITE_GESTURES_CONSENT') ||
       !const bool.fromEnvironment('FILE_WEBVIEW_PAGE_FLOW_CONSENT') ||
       const bool.fromEnvironment(
-          'INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE',
-          defaultValue: true) ||
+        'INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE',
+        defaultValue: true,
+      ) ||
       !p.isAbsolute(output) ||
       !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(run)) {
     throw StateError('Requires isolated Windows Release/Debug, all consents, '
@@ -62,7 +63,8 @@ void main() {
         // Never start a second view while the previous owner is unproven.
         if (reports.any((report) => !_clean(report))) {
           throw StateError(
-              'Previous fixture cleanup unproven; native execution fenced.');
+            'Previous fixture cleanup unproven; native execution fenced.',
+          );
         }
       });
       tearDown(() {
@@ -89,8 +91,19 @@ void main() {
   // Same direct-file mechanism as scroll_search_performance_test: the binding's
   // terminal future is the framework barrier, never "last test body returned".
   // Writer errors propagate; no catch converts a failure into a success receipt.
-  unawaited(binding.allTestsPassed.future.then((passed) =>
-      _writeReceipt(binding, reports, passed, output, run, started, elapsed)));
+  unawaited(
+    binding.allTestsPassed.future.then(
+      (passed) => _writeReceipt(
+        binding,
+        reports,
+        passed,
+        output,
+        run,
+        started,
+        elapsed,
+      ),
+    ),
+  );
 }
 
 bool _clean(Map<String, dynamic> report) {
@@ -109,7 +122,9 @@ bool _clean(Map<String, dynamic> report) {
       lifecycle['schema'] == 1 &&
       lifecycle['stages'] is List &&
       listEquals<dynamic>(
-          lifecycle['stages'] as List, const [0, 1, 2, 3, 4, 5]);
+        lifecycle['stages'] as List,
+        const [0, 1, 2, 3, 4, 5],
+      );
 }
 
 Future<void> _writeReceipt(
@@ -154,10 +169,12 @@ Future<void> _writeReceipt(
     'cleanup_complete': cleaned,
     'remaining_transient_callbacks': remaining,
     'semantics_baselines_restored': completeSet &&
-        reports.every((r) =>
-            r['semantics_handles_before_body'] is int &&
-            r['semantics_handles_before_body'] ==
-                r['semantics_handles_after_body']),
+        reports.every(
+          (r) =>
+              r['semantics_handles_before_body'] is int &&
+              r['semantics_handles_before_body'] ==
+                  r['semantics_handles_after_body'],
+        ),
     'native_dispose_ack_count':
         reports.where((r) => r['native_dispose_ack'] == true).length,
     'environment_dispose_ack_count':
@@ -183,8 +200,10 @@ Future<void> _writeReceipt(
   await directory.create(recursive: true);
   final own = await directory.createTemp('browser_scroll_${_mode}_${pid}_');
   final json = File(p.join(own.path, 'report.json.tmp'));
-  await json.writeAsString(const JsonEncoder.withIndent('  ').convert(report),
-      flush: true);
+  await json.writeAsString(
+    const JsonEncoder.withIndent('  ').convert(report),
+    flush: true,
+  );
   await json.rename(p.join(own.path, 'report.json'));
   final done = File(p.join(own.path, 'report.done.tmp'));
   await done.writeAsString('done', flush: true);

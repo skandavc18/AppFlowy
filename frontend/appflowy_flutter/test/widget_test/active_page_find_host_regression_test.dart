@@ -408,8 +408,10 @@ void _browserTest({
         await settleFileControls(tester);
         expect(controller.query, 'needle');
         expect(controller.isSearching, isFalse);
-        expect(controller.rows.map((row) => row.item.id),
-            ['first', ...repository.tailIds]);
+        expect(
+          controller.rows.map((row) => row.item.id),
+          ['first', ...repository.tailIds],
+        );
         expect(
           find.text('Needle notes.bin', findRichText: true),
           findsOneWidget,
@@ -432,7 +434,9 @@ void _browserTest({
               tester.getTopLeft(find.byType(CustomScrollView)).dy +
               40;
           expect(
-              collectionScroll.position.maxScrollExtent, greaterThan(distance));
+            collectionScroll.position.maxScrollExtent,
+            greaterThan(distance),
+          );
           collectionScroll.position.jumpTo(distance);
           await settleFileControls(tester);
           final hiddenSearch = _collectionSearch(skipOffstage: false);
@@ -869,7 +873,10 @@ class _BrowserRepository extends ExplorerPermissionRepository {
         final id = 'tail-$index';
         tailIds.add(id);
         views[id] = permissionFile(
-            id, root.id, 'Tail needle ${index.toString().padLeft(2, '0')}.bin');
+          id,
+          root.id,
+          'Tail needle ${index.toString().padLeft(2, '0')}.bin',
+        );
       }
     }
   }

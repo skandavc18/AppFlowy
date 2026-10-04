@@ -216,7 +216,9 @@ class MindMapController extends ChangeNotifier {
     }
     _apply(
       _document.mapNode(
-          id, (node) => node.copyWith(collapsed: !node.collapsed)),
+        id,
+        (node) => node.copyWith(collapsed: !node.collapsed),
+      ),
     );
   }
 

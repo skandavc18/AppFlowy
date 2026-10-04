@@ -200,19 +200,23 @@ class CommandPaletteBloc
     _SearchChanged event,
     Emitter<CommandPaletteState> emit,
   ) {
-    if (_contentSearchEnabled || _eventGenerations[event] != _searchGeneration)
+    if (_contentSearchEnabled ||
+        _eventGenerations[event] != _searchGeneration) {
       return;
-    emit(state.copyWith(
-      query: event.search,
-      searchId: null,
-      searchResponseStream: null,
-      searching: event.search.trim().isNotEmpty,
-      serverResponseItems: [],
-      localResponseItems: [],
-      combinedResponseItems: {},
-      resultSummaries: [],
-      generatingAIOverview: false,
-    ));
+    }
+    emit(
+      state.copyWith(
+        query: event.search,
+        searchId: null,
+        searchResponseStream: null,
+        searching: event.search.trim().isNotEmpty,
+        serverResponseItems: [],
+        localResponseItems: [],
+        combinedResponseItems: {},
+        resultSummaries: [],
+        generatingAIOverview: false,
+      ),
+    );
     final generation = _searchGeneration;
     // A command query or a question never reaches the backend, so there is
     // nothing to wait for — filtering the commands as fast as they are typed.
@@ -235,8 +239,10 @@ class CommandPaletteBloc
     _PerformSearch event,
     Emitter<CommandPaletteState> emit,
   ) async {
-    if (_contentSearchEnabled || _eventGenerations[event] != _searchGeneration)
+    if (_contentSearchEnabled ||
+        _eventGenerations[event] != _searchGeneration) {
       return;
+    }
     final generation = _searchGeneration;
     _pendingQuery = event.search;
     final isCommandQuery = isPaletteLocalQuery(event.search);
@@ -384,7 +390,9 @@ class CommandPaletteBloc
     Emitter<CommandPaletteState> emit,
   ) async {
     if (!_isActiveSearch(event.searchId) ||
-        _eventGenerations[event] != _searchGeneration) return;
+        _eventGenerations[event] != _searchGeneration) {
+      return;
+    }
 
     final combinedItems = <String, SearchResultItem>{};
     for (final item in event.serverItems ?? state.serverResponseItems) {

@@ -46,7 +46,8 @@ void main() {
         emphasized.fontVariations,
         [
           FontVariation.weight(
-              ObjectTypeTypography.emphasisFontWeight.value.toDouble())
+            ObjectTypeTypography.emphasisFontWeight.value.toDouble(),
+          ),
         ],
       );
     });

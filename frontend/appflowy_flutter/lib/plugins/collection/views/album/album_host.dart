@@ -195,8 +195,11 @@ class _AlbumHostState extends State<AlbumHost> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (FileBrowserPageHeader.maybeOf(context) case final header?) header,
-          controls(context, controller,
-              CollectionPalette.of(context, CollectionKind.album)),
+          controls(
+            context,
+            controller,
+            CollectionPalette.of(context, CollectionKind.album),
+          ),
         ],
       ),
       child: flow,
@@ -209,30 +212,31 @@ class _AlbumHostState extends State<AlbumHost> {
     if (source.isRemote &&
         (live == null || (live.isBusy && live.nodes.isEmpty))) {
       return _withPageHeader(
-          context,
-          ProviderStateView(
-            status: ProviderStatus.loading,
-            info: source.info,
-            palette: palette,
-          ));
+        context,
+        ProviderStateView(
+          status: ProviderStatus.loading,
+          info: source.info,
+          palette: palette,
+        ),
+      );
     }
     if (live != null && live.hasFailed && live.nodes.isEmpty) {
       return _withPageHeader(
-          context,
-          ProviderStateView(
-            status: live.status,
-            info: source.info,
-            palette: palette,
-            retryAfter: live.failure?.retryAfter,
-            onRetry: () => unawaited(live.refresh()),
-            onReconnect: () =>
-                ProviderReconnectRequest.of(context)?.call(source),
-            onPickAgain: pickPhotosAgainAction(
-              context,
-              collection: widget.collection,
-              failure: live.failure,
-            ),
-          ));
+        context,
+        ProviderStateView(
+          status: live.status,
+          info: source.info,
+          palette: palette,
+          retryAfter: live.failure?.retryAfter,
+          onRetry: () => unawaited(live.refresh()),
+          onReconnect: () => ProviderReconnectRequest.of(context)?.call(source),
+          onPickAgain: pickPhotosAgainAction(
+            context,
+            collection: widget.collection,
+            failure: live.failure,
+          ),
+        ),
+      );
     }
     if (live == null) {
       return widget.builder(context, controller, palette);
@@ -271,7 +275,8 @@ class _AlbumHostState extends State<AlbumHost> {
           children: [header, if (banner != null) banner],
         ),
         child: Builder(
-            builder: (context) => widget.builder(context, controller, palette)),
+          builder: (context) => widget.builder(context, controller, palette),
+        ),
       );
     }
     return Column(

@@ -655,7 +655,9 @@ theirs
       final scopes =
           OAuthServices.scopesForAccount(ProviderService.googleDrive);
       expect(
-          scopes, contains('https://www.googleapis.com/auth/drive.readonly'));
+        scopes,
+        contains('https://www.googleapis.com/auth/drive.readonly'),
+      );
       expect(
         scopes,
         contains(
@@ -675,8 +677,10 @@ theirs
       expect(ProviderAccountFamily.microsoft.sharesOneGrant, isFalse);
       expect(ProviderAccountFamily.google.sharesOneGrant, isTrue);
       final scopes = OAuthServices.scopesForAccount(ProviderService.oneDrive);
-      expect(scopes,
-          isNot(contains('https://outlook.office.com/IMAP.AccessAsUser.All')));
+      expect(
+        scopes,
+        isNot(contains('https://outlook.office.com/IMAP.AccessAsUser.All')),
+      );
     });
 
     test('what the account covers is read from what was granted', () {
@@ -767,8 +771,10 @@ theirs
     // second permission must join that account rather than make a new one.
     test('an account keeps one id however many permissions it gains', () {
       expect(
-        ProviderConnections.idFor(ProviderService.googleDrive,
-            account: 'sub-1'),
+        ProviderConnections.idFor(
+          ProviderService.googleDrive,
+          account: 'sub-1',
+        ),
         ProviderConnections.idFor(ProviderService.gmail, account: 'sub-1'),
       );
     });
@@ -1362,7 +1368,9 @@ class _MemoryKeyValue implements KeyValueStorage {
 
   @override
   Future<T?> getWithFormat<T>(
-      String key, T Function(String value) formatter) async {
+    String key,
+    T Function(String value) formatter,
+  ) async {
     final value = await get(key);
     return value == null ? null : formatter(value);
   }

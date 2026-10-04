@@ -191,7 +191,6 @@ class FavoriteMoreButton extends StatelessWidget {
       child: SidebarNavItem(
         icon: SidebarIcon.more,
         label: LocaleKeys.button_more.tr(),
-        height: SidebarMetrics.rowHeight,
       ),
     );
   }

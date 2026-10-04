@@ -1467,15 +1467,16 @@ class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                                child: DocumentViewportHeader(
-                              identity: DocumentIdentity(
-                                title: widget.name,
-                                icon: Icons.folder_zip_rounded,
+                              child: DocumentViewportHeader(
+                                identity: DocumentIdentity(
+                                  title: widget.name,
+                                  icon: Icons.folder_zip_rounded,
+                                ),
+                                background: palette.background,
+                                keepActionsVisible: controls.keepActionsVisible,
+                                toolbar: toolbar,
                               ),
-                              background: palette.background,
-                              keepActionsVisible: controls.keepActionsVisible,
-                              toolbar: toolbar,
-                            )),
+                            ),
                             // Route-owned, always visible, outside renderer reveal
                             // and horizontal overflow. FileAction slots stay unique.
                             WorkspaceControlButton(

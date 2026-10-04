@@ -170,7 +170,9 @@ class _MermaidViewState extends State<MermaidView> {
     final scene = widget.render.scene;
     if (scene.error != null) {
       return _MermaidNotice(
-          message: scene.error!, palette: widget.render.palette);
+        message: scene.error!,
+        palette: widget.render.palette,
+      );
     }
     if (scene.isEmpty) {
       return const SizedBox.shrink();

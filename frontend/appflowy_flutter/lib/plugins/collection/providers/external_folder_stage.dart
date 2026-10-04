@@ -189,15 +189,16 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
             header: _header(palette, live),
             slivers: [
               SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: ProviderStateView(
-                    status: live.status,
-                    info: widget.source.info,
-                    palette: palette,
-                    retryAfter: live.failure?.retryAfter,
-                    onRetry: () => unawaited(live.refresh()),
-                    onReconnect: () => unawaited(_reconnect(live)),
-                  ))
+                hasScrollBody: false,
+                child: ProviderStateView(
+                  status: live.status,
+                  info: widget.source.info,
+                  palette: palette,
+                  retryAfter: live.failure?.retryAfter,
+                  onRetry: () => unawaited(live.refresh()),
+                  onReconnect: () => unawaited(_reconnect(live)),
+                ),
+              ),
             ],
           );
         }

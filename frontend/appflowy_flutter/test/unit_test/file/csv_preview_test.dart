@@ -20,7 +20,9 @@ void main() {
     final list = _list(tester);
     expect(list.childrenDelegate, isA<SliverChildBuilderDelegate>());
     expect(
-        (list.childrenDelegate as SliverChildBuilderDelegate).childCount, 1000);
+      (list.childrenDelegate as SliverChildBuilderDelegate).childCount,
+      1000,
+    );
     expect(list.shrinkWrap, isFalse);
     expect(list.itemExtent, isNull);
     expect(_cell('0000:0'), findsOneWidget);
@@ -208,8 +210,10 @@ void main() {
         ),
       ),
     );
-    expect(_mountedCells(tester),
-        ['first', 'second', '', '"one', 'two"', ' last ']);
+    expect(
+      _mountedCells(tester),
+      ['first', 'second', '', '"one', 'two"', ' last '],
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -262,8 +266,10 @@ void main() {
   testWidgets('scrolls each axis independently with exactly two scrollbars',
       (tester) async {
     await tester.pumpWidget(
-      _host(CsvPreview(text: _csv(100), separator: ','),
-          size: const Size(300, 180)),
+      _host(
+        CsvPreview(text: _csv(100), separator: ','),
+        size: const Size(300, 180),
+      ),
     );
     final vertical = _list(tester).controller!;
     final horizontal = tester
@@ -325,20 +331,26 @@ void main() {
       240 - DocumentViewportStyle.contentTopInset,
     );
     expect(_list(tester).physics, isNull);
-    expect(_list(tester).controller!.position.physics,
-        isA<DocumentScrollPhysics>());
+    expect(
+      _list(tester).controller!.position.physics,
+      isA<DocumentScrollPhysics>(),
+    );
     final horizontal = tester.widget<SingleChildScrollView>(
       find.byType(SingleChildScrollView),
     );
     expect(horizontal.physics, isNull);
     expect(
-        horizontal.controller!.position.physics, isA<DocumentScrollPhysics>());
+      horizontal.controller!.position.physics,
+      isA<DocumentScrollPhysics>(),
+    );
     expect(find.byType(Scrollbar), findsNWidgets(2));
     // SelectableText creates its own zero-range scrolling wrappers. The
     // preview axes themselves must not get a second automatic scrollbar.
     expect(
       find.ancestor(
-          of: find.byType(ListView), matching: find.byType(DocumentScrollbar)),
+        of: find.byType(ListView),
+        matching: find.byType(DocumentScrollbar),
+      ),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -416,7 +428,9 @@ void main() {
       final context = tester.element(_cell('First'));
       final editable = tester.widget<EditableText>(
         find.descendant(
-            of: _cell('First'), matching: find.byType(EditableText)),
+          of: _cell('First'),
+          matching: find.byType(EditableText),
+        ),
       );
       expect(tester.state(find.byType(CsvPreview)), same(originalState));
       expect(editable.style.color, theme.textTheme.bodyMedium!.color);
@@ -429,7 +443,9 @@ void main() {
       // The ancestor paints the surface; the preview must not cover it.
       expect(
         find.descendant(
-            of: find.byType(CsvPreview), matching: find.byType(ColoredBox)),
+          of: find.byType(CsvPreview),
+          matching: find.byType(ColoredBox),
+        ),
         findsNothing,
       );
       expect(tester.takeException(), isNull);
@@ -440,7 +456,9 @@ void main() {
 String _csv(int rows) => List.generate(
       rows,
       (row) => List.generate(
-          6, (column) => '${row.toString().padLeft(4, '0')}:$column').join(','),
+        6,
+        (column) => '${row.toString().padLeft(4, '0')}:$column',
+      ).join(','),
     ).join('\n');
 
 Future<void> _trackpad(WidgetTester tester, Offset delta) async {

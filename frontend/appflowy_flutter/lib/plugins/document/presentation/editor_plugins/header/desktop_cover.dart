@@ -89,7 +89,9 @@ class _DesktopCoverState extends State<DesktopCover> {
       case CoverType.asset:
         return ViewCoverImage(
           cover: PageStyleCover(
-              type: PageStyleCoverImageType.builtInImage, value: detail),
+            type: PageStyleCoverImageType.builtInImage,
+            value: detail,
+          ),
           fit: fit,
           alignment: alignment,
           fallback: const SizedBox.shrink(),

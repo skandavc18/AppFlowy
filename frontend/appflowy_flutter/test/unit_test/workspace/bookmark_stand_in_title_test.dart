@@ -257,7 +257,9 @@ void main() {
       final link = ExtensionWebEmbedRegistry.recognize(_post)!;
       expect(webEmbedPageTitle(link, _verification), isNull);
       expect(
-          webEmbedPageTitle(link, 'Attention Required! | Cloudflare'), isNull);
+        webEmbedPageTitle(link, 'Attention Required! | Cloudflare'),
+        isNull,
+      );
       expect(
         webEmbedPageTitle(link, 'Some post title : r/FlutterDev'),
         'Some post title : r/FlutterDev',

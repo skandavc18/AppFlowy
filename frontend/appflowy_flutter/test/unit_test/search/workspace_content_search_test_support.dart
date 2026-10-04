@@ -100,8 +100,10 @@ class WorkspaceSearchReads {
         }),
         preflight: (view) {
           preflightViews.add(view);
-          return _read('preflight:${view.id}',
-              () => allowed && !denied.contains(view.id));
+          return _read(
+            'preflight:${view.id}',
+            () => allowed && !denied.contains(view.id),
+          );
         },
         readDocument: (id) {
           final document = documents[id];
@@ -112,8 +114,10 @@ class WorkspaceSearchReads {
         },
         readViewRows: (id) => _read('rows:$id', () => rows[id]),
         readFields: (id, requested) => _read('fields:$id', () => fields[id]),
-        readCell: (id, row, field) => _read('cell:$id:${row.id}:${field.id}',
-            () => cells[(id, row.id, field.id)]),
+        readCell: (id, row, field) => _read(
+          'cell:$id:${row.id}:${field.id}',
+          () => cells[(id, row.id, field.id)],
+        ),
         readRows: (id) async {
           forbidden.add(id);
           throw StateError('Relation-expanding export must not be used');
@@ -196,8 +200,11 @@ Future<void> finishContentSearch(
   for (var i = 0; i < 300 && controller.state.isSearching; i++) {
     await tester.pump(const Duration(milliseconds: 1));
   }
-  expect(controller.state.isSearching, isFalse,
-      reason: 'Bounded search completion');
+  expect(
+    controller.state.isSearching,
+    isFalse,
+    reason: 'Bounded search completion',
+  );
 }
 
 Future<void> disposeContentSearch(

@@ -21,19 +21,24 @@ void main() {
       'bad',
       '[]',
       'null',
-      '{"version":2,"fit":"stretch"}'
+      '{"version":2,"fit":"stretch"}',
     ]) {
       expect(CoverAppearance.decode(raw), CoverAppearance.defaults);
     }
     expect(
-        CoverAppearance.decode(
-                '{"version":1,"aspect_ratio":"3","fit":"unknown"}')
-            .aspectRatio,
-        isNull);
-    expect(CoverAppearance.decode('{"version":1,"aspect_ratio":0}').aspectRatio,
-        isNull);
-    expect(CoverAppearance.decode('{"version":1,"aspect_ratio":7}').aspectRatio,
-        isNull);
+      CoverAppearance.decode(
+        '{"version":1,"aspect_ratio":"3","fit":"unknown"}',
+      ).aspectRatio,
+      isNull,
+    );
+    expect(
+      CoverAppearance.decode('{"version":1,"aspect_ratio":0}').aspectRatio,
+      isNull,
+    );
+    expect(
+      CoverAppearance.decode('{"version":1,"aspect_ratio":7}').aspectRatio,
+      isNull,
+    );
   });
 
   test('all typed appearances roundtrip and only stretch distorts art', () {
@@ -41,58 +46,75 @@ void main() {
       for (final fit in CoverImageFit.values) {
         for (final position in CoverPosition.values) {
           final value = CoverAppearance(
-              corners: corners,
-              fit: fit,
-              position: position,
-              aspectRatio: 2.75);
+            corners: corners,
+            fit: fit,
+            position: position,
+            aspectRatio: 2.75,
+          );
           expect(CoverAppearance.decode(value.encode()), value);
           expect(value.boxFit == BoxFit.fill, fit == CoverImageFit.stretch);
         }
       }
     }
-    expect(() => const CoverAppearance(aspectRatio: double.nan).encode(),
-        throwsArgumentError);
+    expect(
+      () => const CoverAppearance(aspectRatio: double.nan).encode(),
+      throwsArgumentError,
+    );
   });
 
   test('height validation is continuous and actual-width bounded', () {
     for (final value in ['96', '123.456', '640']) {
-      expect(PageCoverHeight.decode('{"page_cover_height":$value}'),
-          double.parse(value));
+      expect(
+        PageCoverHeight.decode('{"page_cover_height":$value}'),
+        double.parse(value),
+      );
     }
     for (final value in ['null', '"200"', '-1', '95', '641', '{}']) {
       expect(PageCoverHeight.decode('{"page_cover_height":$value}'), isNull);
     }
     expect(PageCoverHeight.decode('broken'), isNull);
     expect(
-        PageCoverHeight.resolve(
-            width: 900,
-            appearance: const CoverAppearance(aspectRatio: 3),
-            fallback: 200),
-        300);
+      PageCoverHeight.resolve(
+        width: 900,
+        appearance: const CoverAppearance(aspectRatio: 3),
+        fallback: 200,
+      ),
+      300,
+    );
     expect(
-        PageCoverHeight.resolve(
-            width: 450,
-            appearance: const CoverAppearance(aspectRatio: 3),
-            fallback: 200),
-        150);
+      PageCoverHeight.resolve(
+        width: 450,
+        appearance: const CoverAppearance(aspectRatio: 3),
+        fallback: 200,
+      ),
+      150,
+    );
     expect(
-        PageCoverHeight.resolve(
-            width: 450,
-            appearance: const CoverAppearance(aspectRatio: 3),
-            fallback: 200,
-            override: 240.5),
-        240.5);
+      PageCoverHeight.resolve(
+        width: 450,
+        appearance: const CoverAppearance(aspectRatio: 3),
+        fallback: 200,
+        override: 240.5,
+      ),
+      240.5,
+    );
     expect(
-        PageCoverHeight.resolve(
-            width: 120,
-            appearance: CoverAppearance.defaults,
-            fallback: 200,
-            override: 600),
-        120);
+      PageCoverHeight.resolve(
+        width: 120,
+        appearance: CoverAppearance.defaults,
+        fallback: 200,
+        override: 600,
+      ),
+      120,
+    );
     expect(
-        PageCoverHeight.resolve(
-            width: 20, appearance: CoverAppearance.defaults, fallback: 200),
-        96);
+      PageCoverHeight.resolve(
+        width: 20,
+        appearance: CoverAppearance.defaults,
+        fallback: 200,
+      ),
+      96,
+    );
   });
 
   test('metadata merge/reset preserves every other field and explicit none',
@@ -108,23 +130,32 @@ void main() {
     final resized = PageCoverHeight.merge(original, 217.125);
     expect(ViewCoverCodec.decodeCover(resized), const PageStyleCover.none());
     expect(
-        jsonDecode(PageCoverHeight.merge(resized, null)), jsonDecode(original));
+      jsonDecode(PageCoverHeight.merge(resized, null)),
+      jsonDecode(original),
+    );
     expect(() => PageCoverHeight.merge('broken', 200), throwsFormatException);
     expect(() => PageCoverHeight.merge('[]', null), throwsFormatException);
-    expect(() => PageCoverHeight.merge('{}', double.infinity),
-        throwsArgumentError);
-    expect(ViewCoverCodec.decodeCover(PageCoverHeight.merge('', 200)), isNull,
-        reason: 'A height override must never migrate a legacy node cover.');
+    expect(
+      () => PageCoverHeight.merge('{}', double.infinity),
+      throwsArgumentError,
+    );
+    expect(
+      ViewCoverCodec.decodeCover(PageCoverHeight.merge('', 200)),
+      isNull,
+      reason: 'A height override must never migrate a legacy node cover.',
+    );
   });
 
   test('local store reads do not resolve storage; failed loads can retry',
       () async {
     CoverMemoryStorage? storage;
     var resolves = 0;
-    final store = CoverAppearanceStore(resolveStorage: () {
-      resolves++;
-      return storage;
-    });
+    final store = CoverAppearanceStore(
+      resolveStorage: () {
+        resolves++;
+        return storage;
+      },
+    );
     addTearDown(store.dispose);
     expect(store.value, CoverAppearance.defaults);
     expect(resolves, 0);
@@ -134,7 +165,9 @@ void main() {
     expect(await store.ensureLoaded(), isTrue);
     expect(storage.writes, isEmpty);
     expect(
-        await store.update((v) => v.copyWith(fit: CoverImageFit.fit)), isTrue);
+      await store.update((v) => v.copyWith(fit: CoverImageFit.fit)),
+      isTrue,
+    );
     expect(storage.values['unrelated'], 'kept');
   });
 
@@ -157,11 +190,13 @@ void main() {
     expect(await first, isTrue);
     expect(await second, isTrue);
     expect(
-        store.value,
-        const CoverAppearance(
-            corners: CoverCorners.square,
-            fit: CoverImageFit.fit,
-            position: CoverPosition.top));
+      store.value,
+      const CoverAppearance(
+        corners: CoverCorners.square,
+        fit: CoverImageFit.fit,
+        position: CoverPosition.top,
+      ),
+    );
     final reopened = CoverAppearanceStore(resolveStorage: () => storage);
     addTearDown(reopened.dispose);
     await reopened.ensureLoaded();
@@ -174,14 +209,17 @@ void main() {
     final storage = CoverMemoryStorage()..failWrite = true;
     final store = CoverAppearanceStore(resolveStorage: () => storage);
     addTearDown(store.dispose);
-    expect(await store.update((v) => v.copyWith(fit: CoverImageFit.stretch)),
-        isFalse);
+    expect(
+      await store.update((v) => v.copyWith(fit: CoverImageFit.stretch)),
+      isFalse,
+    );
     expect(store.value, CoverAppearance.defaults);
     expect(store.failure, CoverAppearanceFailure.save);
     storage.failWrite = false;
     expect(
-        await store.update((v) => v.copyWith(position: CoverPosition.bottom)),
-        isTrue);
+      await store.update((v) => v.copyWith(position: CoverPosition.bottom)),
+      isTrue,
+    );
     expect(store.value.fit, CoverImageFit.crop);
     expect(store.value.position, CoverPosition.bottom);
   });
@@ -217,11 +255,14 @@ void main() {
     final published = <CoverAppearance>[];
     store.appearances.addListener(() => published.add(store.value));
     expect(
-        await store.update((value) => value.copyWith(
-              corners: CoverCorners.square,
-              fit: CoverImageFit.stretch,
-            )),
-        isFalse);
+      await store.update(
+        (value) => value.copyWith(
+          corners: CoverCorners.square,
+          fit: CoverImageFit.stretch,
+        ),
+      ),
+      isFalse,
+    );
     expect(store.value, CoverAppearance.defaults);
     expect(store.failure, CoverAppearanceFailure.save);
     expect(published, isEmpty);
@@ -231,13 +272,16 @@ void main() {
 
     preferences.acknowledge = true;
     expect(
-        await store.update((value) => value.copyWith(
-              corners: CoverCorners.square,
-              aspectRatio: 3.25,
-              fit: CoverImageFit.fit,
-              position: CoverPosition.bottom,
-            )),
-        isTrue);
+      await store.update(
+        (value) => value.copyWith(
+          corners: CoverCorners.square,
+          aspectRatio: 3.25,
+          fit: CoverImageFit.fit,
+          position: CoverPosition.bottom,
+        ),
+      ),
+      isTrue,
+    );
     expect(published, [store.value]);
     final reopened = CoverAppearanceStore(resolveStorage: () => storage);
     addTearDown(reopened.dispose);
@@ -245,8 +289,10 @@ void main() {
     expect(reopened.value, store.value);
     expect(preferences.writes, 2);
     expect(await store.reset(), isTrue);
-    expect(CoverAppearance.decode(preferences.persisted),
-        CoverAppearance.defaults);
+    expect(
+      CoverAppearance.decode(preferences.persisted),
+      CoverAppearance.defaults,
+    );
     expect(preferences.keys.toSet(), {CoverAppearanceStore.storageKey});
   });
 
@@ -255,13 +301,18 @@ void main() {
     final view = _view();
     final io = CoverMemoryViews(view)..writeGate = Completer<void>();
     final icon = io.save(
-        view: view, size: 88, isCurrent: () => true, isSameTarget: (_) => true);
+      view: view,
+      size: 88,
+      isCurrent: () => true,
+      isSameTarget: (_) => true,
+    );
     await io.writeStarted.future;
     final cover = PageCoverBackendService(views: io).save(
-        view: view,
-        height: 321.75,
-        isCurrent: () => true,
-        isSameTarget: (_) => true);
+      view: view,
+      height: 321.75,
+      isCurrent: () => true,
+      isSameTarget: (_) => true,
+    );
     expect(io.reads, 1);
     io.writeGate!.complete();
     expect((await icon).fold((_) => true, (_) => false), isTrue);
@@ -278,17 +329,18 @@ void main() {
     'removed',
     'wrong-id',
     'malformed',
-    'revoked'
+    'revoked',
   ]) {
     test('fresh $cause state rejects height write', () async {
       final view = _view();
       final io = CoverMemoryViews(view)..readGate = Completer<void>();
       var allowed = true;
       final pending = PageCoverBackendService(views: io).save(
-          view: view,
-          height: 250,
-          isCurrent: () => allowed,
-          isSameTarget: (_) => true);
+        view: view,
+        height: 250,
+        isCurrent: () => allowed,
+        isSameTarget: (_) => true,
+      );
       await io.readStarted.future;
       switch (cause) {
         case 'locked':
@@ -357,8 +409,10 @@ void main() {
     addTearDown(controller.dispose);
     controller.begin(200);
     controller.preview(250);
-    io.emit(ViewPB.fromBuffer(io.view.writeToBuffer())
-      ..extra = '{"cover":{"type":"built_in","value":"n2"}}');
+    io.emit(
+      ViewPB.fromBuffer(io.view.writeToBuffer())
+        ..extra = '{"cover":{"type":"built_in","value":"n2"}}',
+    );
     expect(controller.isResizing, isFalse);
     expect(io.writes, isEmpty);
     controller.begin(200);
@@ -382,11 +436,12 @@ void main() {
 }
 
 ViewPB _view() => ViewPB(
-    id: 'cover-unit',
-    name: 'Kept title',
-    layout: ViewLayoutPB.Document,
-    extra:
-        '{"cover":{"type":"built_in","value":"n1"},"unknown":{"keep":true}}');
+      id: 'cover-unit',
+      name: 'Kept title',
+      layout: ViewLayoutPB.Document,
+      extra:
+          '{"cover":{"type":"built_in","value":"n1"},"unknown":{"keep":true}}',
+    );
 
 PageCoverController _controller(CoverMemoryViews io, List<double?> saves) =>
     PageCoverController(

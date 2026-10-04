@@ -107,42 +107,52 @@ void main() {
       final state = tester.state<EditableTextState>(finder);
       for (final query in [
         'native documentation',
-        'abcdefghijklmnopqrstuvwxyzabcdef'
+        'abcdefghijklmnopqrstuvwxyzabcdef',
       ]) {
-        tester.testTextInput.updateEditingValue(const TextEditingValue(
-            text: '', selection: TextSelection.collapsed(offset: 0)));
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            selection: TextSelection.collapsed(offset: 0),
+          ),
+        );
         for (var i = 1; i <= query.length; i++) {
           expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
           expect(tester.testTextInput.hasAnyClients, isTrue);
-          expect(state.widget.controller.selection,
-              TextSelection.collapsed(offset: i - 1));
-          tester.testTextInput.updateEditingValue(TextEditingValue(
+          expect(
+            state.widget.controller.selection,
+            TextSelection.collapsed(offset: i - 1),
+          );
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
               text: query.substring(0, i),
-              selection: TextSelection.collapsed(offset: i)));
+              selection: TextSelection.collapsed(offset: i),
+            ),
+          );
           if (i == 10) reads.changes.add('native');
           await tester.pump(const Duration(milliseconds: 20));
           await tester.pump();
           expect(tester.element(finder), same(element));
           expect(tester.state(finder), same(state));
           expect(state.widget.controller.text, query.substring(0, i));
-          expect(state.widget.controller.selection,
-              TextSelection.collapsed(offset: i));
+          expect(
+            state.widget.controller.selection,
+            TextSelection.collapsed(offset: i),
+          );
         }
       }
       await tester.pump(const Duration(seconds: 3));
-      expect(find.byKey(const ValueKey('command-palette-title-timeout')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('command-palette-title-timeout')),
+        findsOneWidget,
+      );
       expect(find.byType(NoSearchResultsHint), findsNothing);
       held.complete();
       await tester.pump();
       await tester.pump();
       expect(find.byType(SearchResultCell), findsOneWidget);
       expect(
-          tester
-              .widget<SearchResultCell>(find.byType(SearchResultCell))
-              .item
-              .id,
-          'long');
+        tester.widget<SearchResultCell>(find.byType(SearchResultCell)).item.id,
+        'long',
+      );
       expect(tester.element(finder), same(element));
       expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
       expect(_draft(tester), 'abcdefghijklmnopqrstuvwxyzabcdef');
@@ -157,7 +167,10 @@ void main() {
       (tester) async {
     final filter = ValueNotifier(
       const CommandPaletteFilter(
-          titleOnly: true, createdByMe: true, spaceId: 'space'),
+        titleOnly: true,
+        createdByMe: true,
+        spaceId: 'space',
+      ),
     );
     await _mountSurface(
       tester,
@@ -215,24 +228,31 @@ void main() {
         tester.widget<PageInspectionPanel>(find.byType(PageInspectionPanel));
     expect(panel.view.id, view.id);
     expect(panel.query, 'needle');
-    expect(panel.matchingSnippet,
-        'The NeEdLe appears only in these page contents.');
+    expect(
+      panel.matchingSnippet,
+      'The NeEdLe appears only in these page contents.',
+    );
     final preview = tester.widget<PagePreview>(find.byType(PagePreview));
     expect(preview.query, 'needle');
     expect(preview.matchingSnippet, panel.matchingSnippet);
     expect(preview.contentSearch, isTrue);
     final excerpt = tester.widget<Text>(
-        find.byKey(const ValueKey('command-palette-match-excerpt')));
+      find.byKey(const ValueKey('command-palette-match-excerpt')),
+    );
     expect(excerpt.textSpan!.toPlainText(), panel.matchingSnippet);
     expect(_highlightedText(excerpt.textSpan!), ['NeEdLe']);
     expect(
       find.descendant(
-          of: find.byType(SearchResultCell),
-          matching: find.byType(RawEmojiIconWidget)),
+        of: find.byType(SearchResultCell),
+        matching: find.byType(RawEmojiIconWidget),
+      ),
       findsOneWidget,
     );
-    expect(reads.counts['document:body-hit'], 1,
-        reason: 'Preview must not read the page again');
+    expect(
+      reads.counts['document:body-hit'],
+      1,
+      reason: 'Preview must not read the page again',
+    );
     expect(find.byType(AppFlowyEditor), findsNothing);
     expect(find.byType(DatabaseTabBarView), findsNothing);
     expect(tester.takeException(), isNull);
@@ -251,11 +271,12 @@ void main() {
     await tester.enterText(find.byType(EditableText), 'needle');
     await _results(tester);
     expect(
-        tester
-            .widget<PageInspectionPanel>(find.byType(PageInspectionPanel))
-            .view
-            .id,
-        'first');
+      tester
+          .widget<PageInspectionPanel>(find.byType(PageInspectionPanel))
+          .view
+          .id,
+      'first',
+    );
     await tester.enterText(find.byType(EditableText), '[.*]');
     await tester.pump();
     expect(find.byType(SearchMatchContext), findsNothing);
@@ -266,11 +287,15 @@ void main() {
     expect(panel.view.id, 'second');
     expect(panel.query, '[.*]');
     expect(
-        _highlightedText(tester
+      _highlightedText(
+        tester
             .widget<Text>(
-                find.byKey(const ValueKey('command-palette-match-excerpt')))
-            .textSpan!),
-        ['[.*]']);
+              find.byKey(const ValueKey('command-palette-match-excerpt')),
+            )
+            .textSpan!,
+      ),
+      ['[.*]'],
+    );
     expect(_draft(tester), '[.*]');
     await harness.dispose(tester);
   });
@@ -296,8 +321,10 @@ void main() {
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 1));
     }
-    expect(find.text('No matches in the scanned content. Coverage is partial.'),
-        findsOneWidget);
+    expect(
+      find.text('No matches in the scanned content. Coverage is partial.'),
+      findsOneWidget,
+    );
     expect(reads.counts['document:page'], 1);
     expect(tester.takeException(), isNull);
     await harness.dispose(tester);
@@ -314,13 +341,17 @@ void main() {
     await tester.pump();
     final commands =
         tester.widget<CommandPalettePanel>(find.byType(CommandPalettePanel));
-    expect(commands.commands.map((command) => command.id),
-        contains('toggle_sidebar'));
+    expect(
+      commands.commands.map((command) => command.id),
+      contains('toggle_sidebar'),
+    );
     expect(reads.calls, isEmpty);
     expect(harness.palette.events, isEmpty);
     final before = collapseMenuNotifier.value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter,
-        physicalKey: PhysicalKeyboardKey.enter);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.enter,
+      physicalKey: PhysicalKeyboardKey.enter,
+    );
     await tester.pump();
     expect(collapseMenuNotifier.value, before + 1);
     collapseMenuNotifier.value = before;
@@ -331,8 +362,10 @@ void main() {
     await tester.pump();
     expect(_draft(tester), 'needle');
     expect(harness.palette.contentMode, isFalse);
-    expect(harness.palette.events,
-        contains(const CommandPaletteEvent.searchChanged(search: 'needle')));
+    expect(
+      harness.palette.events,
+      contains(const CommandPaletteEvent.searchChanged(search: 'needle')),
+    );
     expect(find.byType(SearchMatchContext), findsNothing);
     await harness.dispose(tester);
   });
@@ -386,7 +419,8 @@ void main() {
     expect(find.byType(SearchMatchContext), findsNothing);
     reads.page('new', 'New Needle', parent: 'other');
     harness.palette.publish(
-        harness.palette.state.copyWith(cachedViews: Map.of(reads.views)));
+      harness.palette.state.copyWith(cachedViews: Map.of(reads.views)),
+    );
     await _results(tester);
     final panel =
         tester.widget<PageInspectionPanel>(find.byType(PageInspectionPanel));
@@ -400,9 +434,10 @@ void main() {
       'narrow contents results open highlighted in-pane context and return to the list',
       (tester) async {
     final view = ViewPB(
-        id: 'page',
-        name: 'Long ${'name ' * 80}',
-        layout: ViewLayoutPB.Document);
+      id: 'page',
+      name: 'Long ${'name ' * 80}',
+      layout: ViewLayoutPB.Document,
+    );
     await _mountSurface(
       tester,
       Center(
@@ -413,10 +448,11 @@ void main() {
             cachedViews: {view.id: view},
             resultItems: [
               SearchResultItem(
-                  id: view.id,
-                  icon: ResultIconPB(),
-                  content: 'Original Needle context.',
-                  displayName: view.name)
+                id: view.id,
+                icon: ResultIconPB(),
+                content: 'Original Needle context.',
+                displayName: view.name,
+              ),
             ],
             resultSummaries: const [],
             query: 'needle',
@@ -432,13 +468,18 @@ void main() {
     await tester.pump();
     expect(find.byType(SearchMatchContext), findsOneWidget);
     expect(
-        _highlightedText(tester
+      _highlightedText(
+        tester
             .widget<Text>(
-                find.byKey(const ValueKey('command-palette-match-excerpt')))
-            .textSpan!),
-        ['Needle']);
+              find.byKey(const ValueKey('command-palette-match-excerpt')),
+            )
+            .textSpan!,
+      ),
+      ['Needle'],
+    );
     await tester.tap(
-        find.byKey(const ValueKey('command-palette-content-preview-back')));
+      find.byKey(const ValueKey('command-palette-content-preview-back')),
+    );
     await tester.pump();
     expect(find.byType(SearchResultCell), findsOneWidget);
     expect(find.byType(SearchMatchContext), findsNothing);
@@ -476,9 +517,11 @@ void main() {
       );
       expect(paragraph.text.toPlainText(), snippet);
       expect(
-          paragraph.getBoxesForSelection(
-              const TextSelection(baseOffset: 9, extentOffset: 15)),
-          isNotEmpty);
+        paragraph.getBoxesForSelection(
+          const TextSelection(baseOffset: 9, extentOffset: 15),
+        ),
+        isNotEmpty,
+      );
       expect(tester.takeException(), isNull);
       await _unmount(tester);
     });
@@ -488,7 +531,7 @@ void main() {
       () {
     final notifier = ValueNotifier(CommandPaletteNotifierValue());
     final palette =
-        CommandPalette(child: const SizedBox.shrink(), notifier: notifier);
+        CommandPalette(notifier: notifier, child: const SizedBox.shrink());
     palette.show();
     expect(notifier.value.isOpen, isTrue);
     palette.show();
@@ -503,8 +546,13 @@ void main() {
       (tester) async {
     final reads = WorkspaceSearchReads();
     reads.folder('space');
-    reads.page('cached', '',
-        name: 'Quarterly Roadmap', parent: 'space', creator: Int64(7));
+    reads.page(
+      'cached',
+      '',
+      name: 'Quarterly Roadmap',
+      parent: 'space',
+      creator: Int64(7),
+    );
     reads.page('other', '', name: 'Roadmap archive', creator: Int64(9));
     reads.page('denied', '', name: 'Roadmap denied');
     reads.denied.add('denied');
@@ -513,9 +561,11 @@ void main() {
         '{"appflowy_encryption":{"version":1}}';
     reads.page('trashed', '', name: 'Roadmap trash');
     final harness = _ModalHarness(reads);
-    harness.palette.publish(harness.palette.state.copyWith(
-      trash: [TrashPB(id: 'trashed')],
-    ));
+    harness.palette.publish(
+      harness.palette.state.copyWith(
+        trash: [TrashPB(id: 'trashed')],
+      ),
+    );
     await harness.mount(tester);
     await tester.enterText(find.byType(EditableText), '  QUARTERLY   roadmap ');
     await tester.pump();
@@ -523,8 +573,9 @@ void main() {
     expect(harness.palette.state.query, _oldQuery);
     expect(find.byType(SearchResultCell), findsOneWidget);
     expect(
-        tester.widget<SearchResultCell>(find.byType(SearchResultCell)).item.id,
-        'cached');
+      tester.widget<SearchResultCell>(find.byType(SearchResultCell)).item.id,
+      'cached',
+    );
     expect(find.text('Quarterly Roadmap', findRichText: true), findsWidgets);
     expect(reads.calls.where((call) => call.startsWith('document:')), isEmpty);
     final input = tester.widget<EditableText>(find.byType(EditableText));
@@ -537,18 +588,22 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(
-        tester
-            .widgetList<SearchResultCell>(find.byType(SearchResultCell))
-            .map((cell) => cell.item.id),
-        ['other', 'cached']);
+      tester
+          .widgetList<SearchResultCell>(find.byType(SearchResultCell))
+          .map((cell) => cell.item.id),
+      ['other', 'cached'],
+    );
     final bar = tester.widget<SearchFilterBar>(find.byType(SearchFilterBar));
     bar.onChanged(bar.filter.copyWith(createdByMe: true, spaceId: 'space'));
     await tester.pump();
     expect(
-        tester.widget<SearchResultCell>(find.byType(SearchResultCell)).item.id,
-        'cached');
-    expect(tester.widget<EditableText>(find.byType(EditableText)).focusNode,
-        same(focus));
+      tester.widget<SearchResultCell>(find.byType(SearchResultCell)).item.id,
+      'cached',
+    );
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode,
+      same(focus),
+    );
     final stalePanel =
         tester.widget<PageInspectionPanel>(find.byType(PageInspectionPanel));
     reads.allowed = false;
@@ -574,14 +629,19 @@ void main() {
       isWorkspaceCurrent: (id) => id == 'workspace',
     );
     title.updateSource(
-        workspaceId: 'workspace',
-        cachedViews: reads.views,
-        excludedViewIds: const [],
-        ready: true);
+      workspaceId: 'workspace',
+      cachedViews: reads.views,
+      excludedViewIds: const [],
+      ready: true,
+    );
     title.search(
         ' exact   TITLE ', const CommandPaletteFilter(titleOnly: true), [
       SearchResultItem(
-          id: wanted.id, icon: ResultIconPB(), content: '', displayName: ''),
+        id: wanted.id,
+        icon: ResultIconPB(),
+        content: '',
+        displayName: '',
+      ),
     ]);
     await tester.pump();
     expect(title.results.single.id, wanted.id);
@@ -591,8 +651,11 @@ void main() {
         .search('exttl', const CommandPaletteFilter(titleOnly: true), const []);
     await tester.pump();
     expect(title.results.single.id, wanted.id);
-    expect(reads.calls, hasLength(2),
-        reason: 'No repeated I/O on typing/paint');
+    expect(
+      reads.calls,
+      hasLength(2),
+      reason: 'No repeated I/O on typing/paint',
+    );
     title.dispose();
     reads.dispose();
     await tester.pump();
@@ -655,8 +718,10 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byType(SearchResultCell), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter,
-        physicalKey: PhysicalKeyboardKey.enter);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.enter,
+      physicalKey: PhysicalKeyboardKey.enter,
+    );
     await tester.pumpAndSettle();
     expect(find.byType(CommandPaletteModal), findsNothing);
     expect(navigation.ids, ['native-view-id']);
@@ -677,34 +742,41 @@ void main() {
         final palette = CommandPaletteBloc(
           search: (query) => query == 'needle'
               ? pending.future
-              : Future.value(FlowyResult.success(
-                  _MetadataStream(completeOnListen: true),
-                )),
+              : Future.value(
+                  FlowyResult.success(
+                    _MetadataStream(completeOnListen: true),
+                  ),
+                ),
           readCachedViews: () async => reads.views.values.toList(),
           listenToTrash: false,
         );
         palette
             .add(const CommandPaletteEvent.searchChanged(search: '> sidebar'));
         await tester.pump();
-        final workspace = _WorkspaceBloc(UserWorkspaceState(
-          userProfile: UserProfilePB(id: Int64(7)),
-          currentWorkspace:
-              UserWorkspacePB(workspaceId: 'workspace', name: 'Fixture'),
-        ));
+        final workspace = _WorkspaceBloc(
+          UserWorkspaceState(
+            userProfile: UserProfilePB(id: Int64(7)),
+            currentWorkspace:
+                UserWorkspacePB(workspaceId: 'workspace', name: 'Fixture'),
+          ),
+        );
         final notifier = ValueNotifier(
-            CommandPaletteNotifierValue(userWorkspaceBloc: workspace));
+          CommandPaletteNotifierValue(userWorkspaceBloc: workspace),
+        );
         final hostFocus = FocusNode();
         late CommandPalette host;
         host = CommandPalette(
           notifier: notifier,
           readProvider: reads.provider(),
           child: Focus(
-              autofocus: true,
-              focusNode: hostFocus,
-              child: const SizedBox(
-                  key: ValueKey('palette-background'),
-                  width: 200,
-                  height: 100)),
+            autofocus: true,
+            focusNode: hostFocus,
+            child: const SizedBox(
+              key: ValueKey('palette-background'),
+              width: 200,
+              height: 100,
+            ),
+          ),
         );
         await _mountSurface(
           tester,
@@ -761,26 +833,34 @@ void main() {
         host.show();
         await tester.pump();
         expect(ModalRoute.of(tester.element(modal)), same(route));
-        expect(tester.widget<EditableText>(find.byType(EditableText)).focusNode,
-            same(field.focusNode));
+        expect(
+          tester.widget<EditableText>(find.byType(EditableText)).focusNode,
+          same(field.focusNode),
+        );
         expect(_draft(tester), 'needle');
-        expect(tester.getRect(find.byKey(const ValueKey('palette-background'))),
-            background);
+        expect(
+          tester.getRect(find.byKey(const ValueKey('palette-background'))),
+          background,
+        );
         await tester.pump(const Duration(milliseconds: 300));
         pending.complete(FlowyResult.success(stream));
         await tester.pump();
         stream.server([
           SearchResponseItemPB(
-              id: 'cached', displayName: '', workspaceId: 'workspace')
+            id: 'cached',
+            displayName: '',
+            workspaceId: 'workspace',
+          ),
         ]);
         await tester.pump();
         await tester.pump();
         expect(
-            tester
-                .widget<SearchResultCell>(find.byType(SearchResultCell))
-                .item
-                .displayName,
-            'Needle plan');
+          tester
+              .widget<SearchResultCell>(find.byType(SearchResultCell))
+              .item
+              .displayName,
+          'Needle plan',
+        );
         await tester.enterText(find.byType(EditableText), 'absent');
         // Even a callback arriving before the queued input event is handled
         // must not republish the previous generation.
@@ -789,8 +869,10 @@ void main() {
         await tester.pump();
         expect(palette.state.combinedResponseItems, isEmpty);
         expect(find.byType(SearchResultCell), findsNothing);
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-            physicalKey: PhysicalKeyboardKey.escape);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.escape,
+          physicalKey: PhysicalKeyboardKey.escape,
+        );
         await tester.pumpAndSettle();
         expect(modal, findsNothing);
         expect(notifier.value.isOpen, isFalse);
@@ -826,12 +908,18 @@ void main() {
 }
 
 Future<void> _controlP(WidgetTester tester) async {
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
-  await tester.sendKeyEvent(LogicalKeyboardKey.keyP,
-      physicalKey: PhysicalKeyboardKey.keyP);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
+  await tester.sendKeyDownEvent(
+    LogicalKeyboardKey.controlLeft,
+    physicalKey: PhysicalKeyboardKey.controlLeft,
+  );
+  await tester.sendKeyEvent(
+    LogicalKeyboardKey.keyP,
+    physicalKey: PhysicalKeyboardKey.keyP,
+  );
+  await tester.sendKeyUpEvent(
+    LogicalKeyboardKey.controlLeft,
+    physicalKey: PhysicalKeyboardKey.controlLeft,
+  );
 }
 
 class _MetadataStream implements SearchResponseStream {
@@ -877,8 +965,10 @@ const _oldQuery = 'zz_previous_metadata_query';
 class _ModalHarness {
   _ModalHarness(this.reads) {
     provider = reads.provider();
-    palette = _PaletteBloc(CommandPaletteState.initial()
-        .copyWith(query: _oldQuery, cachedViews: Map.of(reads.views)));
+    palette = _PaletteBloc(
+      CommandPaletteState.initial()
+          .copyWith(query: _oldQuery, cachedViews: Map.of(reads.views)),
+    );
     workspace = _WorkspaceBloc(
       UserWorkspaceState(
         userProfile: UserProfilePB(id: Int64(7)),
@@ -899,7 +989,9 @@ class _ModalHarness {
           BlocProvider<UserWorkspaceBloc>.value(value: workspace),
         ],
         child: CommandPaletteModal(
-            shortcutBuilder: (child) => child, contentReadProvider: provider),
+          shortcutBuilder: (child) => child,
+          contentReadProvider: provider,
+        ),
       );
 
   Future<void> mount(WidgetTester tester, {bool routed = false}) async {
@@ -998,9 +1090,10 @@ Future<void> _mountSurface(
           child: Builder(
             builder: (context) => MediaQuery(
               data: MediaQuery.of(context).copyWith(
-                  textScaler: TextScaler.linear(textScale),
-                  disableAnimations: disableAnimations,
-                  accessibleNavigation: accessibleNavigation),
+                textScaler: TextScaler.linear(textScale),
+                disableAnimations: disableAnimations,
+                accessibleNavigation: accessibleNavigation,
+              ),
               child: child,
             ),
           ),
@@ -1016,11 +1109,12 @@ Future<void> _enableContents(WidgetTester tester) async {
       .tap(find.byKey(const ValueKey('command-palette-content-filter')));
   await tester.pump();
   expect(
-      tester
-          .widget<SearchFilterBar>(find.byType(SearchFilterBar))
-          .filter
-          .pageContents,
-      isTrue);
+    tester
+        .widget<SearchFilterBar>(find.byType(SearchFilterBar))
+        .filter
+        .pageContents,
+    isTrue,
+  );
 }
 
 String _draft(WidgetTester tester) =>
@@ -1055,10 +1149,12 @@ Future<void> _unmount(
   reads?.dispose();
   var paletteClosed = palette == null;
   var workspaceClosed = workspace == null;
-  if (palette != null)
+  if (palette != null) {
     unawaited(palette.close().then((_) => paletteClosed = true));
-  if (workspace != null)
+  }
+  if (workspace != null) {
     unawaited(workspace.close().then((_) => workspaceClosed = true));
+  }
   for (var i = 0; i < 10 && (!paletteClosed || !workspaceClosed); i++) {
     await tester.pump();
   }

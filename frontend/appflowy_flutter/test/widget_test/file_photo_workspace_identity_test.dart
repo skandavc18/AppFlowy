@@ -183,20 +183,28 @@ void main() {
             for (final key in [
               _copy,
               _share,
-              const ValueKey('workspace-file-rename')
+              const ValueKey('workspace-file-rename'),
             ]) {
-              expect(find.descendant(of: controls, matching: find.byKey(key)),
-                  findsOneWidget);
+              expect(
+                find.descendant(of: controls, matching: find.byKey(key)),
+                findsOneWidget,
+              );
               expect(
                 tester.getCenter(find.byKey(key)).dy,
                 closeTo(
-                    tester.getCenter(find.byType(PdfPageNumberField)).dy, 1),
+                  tester.getCenter(find.byType(PdfPageNumberField)).dy,
+                  1,
+                ),
               );
             }
-            expect(find.byKey(const ValueKey('pdf-fullscreen-media-actions')),
-                findsNothing);
             expect(
-                find.byKey(const ValueKey('pdf-toolbar-scroll')), findsNothing);
+              find.byKey(const ValueKey('pdf-fullscreen-media-actions')),
+              findsNothing,
+            );
+            expect(
+              find.byKey(const ValueKey('pdf-toolbar-scroll')),
+              findsNothing,
+            );
           }
           final canvasContext = tester.element(find.byType(WorkspaceFileView));
           expect(

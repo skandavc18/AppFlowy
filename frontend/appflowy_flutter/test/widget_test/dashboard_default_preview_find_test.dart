@@ -40,9 +40,11 @@ void main() {
           'has native visible ranges in ${appearance.name}', (tester) async {
         final page = _PreviewHarness(type: kind.$1, layout: kind.$2);
         try {
-          page.loader.value = Future.value(kind.$2 == ViewLayoutPB.Document
-              ? _document('lead bodyneedle bodyneedle')
-              : _table());
+          page.loader.value = Future.value(
+            kind.$2 == ViewLayoutPB.Document
+                ? _document('lead bodyneedle bodyneedle')
+                : _table(),
+          );
           await page.mount(tester, appearance: appearance);
           expect(find.byType(PagePreviewCard), findsOneWidget);
           final originalDocument = page.dashboard.document;
@@ -50,21 +52,31 @@ void main() {
           await page.query(tester, 'bodyneedle');
           expect(page.find.matches, hasLength(2));
           expect(
-              page.find.matches.every((hit) =>
-                  hit.id is DashboardEmbedFindId && !hit.entry.replaceable),
-              isTrue);
+            page.find.matches.every(
+              (hit) => hit.id is DashboardEmbedFindId && !hit.entry.replaceable,
+            ),
+            isTrue,
+          );
           final paint = page.paint(tester);
           final native = <Rect>[];
           for (final run in paint.textRuns) {
             expect(run.render, isA<RenderParagraph>());
             for (final match in RegExp('bodyneedle').allMatches(run.text)) {
-              native.addAll((run.render as RenderParagraph)
-                  .getBoxesForSelection(TextSelection(
-                    baseOffset: run.start + match.start,
-                    extentOffset: run.start + match.end,
-                  ))
-                  .map((box) => MatrixUtils.transformRect(
-                      run.render.getTransformTo(paint), box.toRect())));
+              native.addAll(
+                (run.render as RenderParagraph)
+                    .getBoxesForSelection(
+                      TextSelection(
+                        baseOffset: run.start + match.start,
+                        extentOffset: run.start + match.end,
+                      ),
+                    )
+                    .map(
+                      (box) => MatrixUtils.transformRect(
+                        run.render.getTransformTo(paint),
+                        box.toRect(),
+                      ),
+                    ),
+              );
             }
           }
           expect(native, hasLength(2));
@@ -87,13 +99,17 @@ void main() {
           expect(page.dashboard.document, same(originalDocument));
           expect(page.dashboard.canUndo, isFalse);
           expect(page.reads.snapshot(), originalSource);
-          expect(page.loader.calls, 1,
-              reason: 'Find never rereads or expands the preview target');
+          expect(
+            page.loader.calls,
+            1,
+            reason: 'Find never rereads or expands the preview target',
+          );
           expect(page.reads.forbiddenReads, isEmpty);
           expect(
-              page.reads.calls.where((call) => call.startsWith('preflight:')),
-              hasLength(4),
-              reason: 'Owner and target, before and after');
+            page.reads.calls.where((call) => call.startsWith('preflight:')),
+            hasLength(4),
+            reason: 'Owner and target, before and after',
+          );
 
           page.dashboard.setReadOnly(true);
           await pumpSurfaceFind(tester);
@@ -116,8 +132,11 @@ void main() {
           await page.query(tester, 'bodyneedle');
           page.reads.allowed = false;
           page.reads.access.value++;
-          expect(page.find.matches, isEmpty,
-              reason: 'Revocation clears cached text synchronously');
+          expect(
+            page.find.matches,
+            isEmpty,
+            reason: 'Revocation clears cached text synchronously',
+          );
           expect(paint.matchRects, isEmpty);
           await pumpSurfaceFind(tester);
           expect(page.find.matches, isEmpty);
@@ -154,9 +173,13 @@ void main() {
       await pumpSurfaceFind(tester);
       expect(page.find.matches, hasLength(2));
       expect(
-          page.find.current!.entry.text, 'replacement bodyneedle bodyneedle');
-      expect(page.find.matches.any((hit) => hit.entry.text == 'bodyneedle'),
-          isFalse);
+        page.find.current!.entry.text,
+        'replacement bodyneedle bodyneedle',
+      );
+      expect(
+        page.find.matches.any((hit) => hit.entry.text == 'bodyneedle'),
+        isFalse,
+      );
       expect(page.paint(tester).matchRects, hasLength(2));
       expect(page.dashboard.canUndo, isFalse);
     } finally {
@@ -169,10 +192,12 @@ void main() {
       'real preview excludes ellipsized suffix and clipped lazy blocks '
       'without expanding or changing saved layout', (tester) async {
     final page = _PreviewHarness();
-    page.loader.value = Future.value(_document(
-      'bodyneedle ${List.filled(180, 'filler').join(' ')} invisible-suffix',
-      tail: 'unloaded-tail',
-    ));
+    page.loader.value = Future.value(
+      _document(
+        'bodyneedle ${List.filled(180, 'filler').join(' ')} invisible-suffix',
+        tail: 'unloaded-tail',
+      ),
+    );
     try {
       await page.mount(tester);
       final before = page.dashboard.document;
@@ -188,8 +213,11 @@ void main() {
       }
       page.find.setOptions(const FindOptions(useRegex: true));
       await page.query(tester, 'bodyneedle[\\s\\S]*invisible-suffix');
-      expect(page.find.matches, isEmpty,
-          reason: 'A visible prefix is not an exact hit for a clipped phrase');
+      expect(
+        page.find.matches,
+        isEmpty,
+        reason: 'A visible prefix is not an exact hit for a clipped phrase',
+      );
       expect(page.paint(tester).matchRects, isEmpty);
       expect(page.dashboard.document, same(before));
       expect(page.dashboard.canUndo, isFalse);
@@ -202,22 +230,27 @@ void main() {
       'real rich preview preserves styled spans and newlines in native '
       'range geometry', (tester) async {
     final page = _PreviewHarness();
-    page.loader.value = Future.value(const FolderGalleryPreview(
-      kind: FolderGalleryPreviewKind.document,
-      blocks: [
-        FolderGalleryPreviewBlock(
-          kind: FolderGalleryPreviewBlockKind.paragraph,
-          runs: [
-            FolderGalleryTextRun(text: 'body', bold: true),
-            FolderGalleryTextRun(text: 'needle\nsecond e\u0301', italic: true),
-          ],
-        )
-      ],
-      wordCount: 0,
-      readingMinutes: 0,
-      tags: [],
-      fileTypeLabel: 'PAGE',
-    ));
+    page.loader.value = Future.value(
+      const FolderGalleryPreview(
+        kind: FolderGalleryPreviewKind.document,
+        blocks: [
+          FolderGalleryPreviewBlock(
+            kind: FolderGalleryPreviewBlockKind.paragraph,
+            runs: [
+              FolderGalleryTextRun(text: 'body', bold: true),
+              FolderGalleryTextRun(
+                text: 'needle\nsecond e\u0301',
+                italic: true,
+              ),
+            ],
+          ),
+        ],
+        wordCount: 0,
+        readingMinutes: 0,
+        tags: [],
+        fileTypeLabel: 'PAGE',
+      ),
+    );
     try {
       await page.mount(tester);
       await page.query(tester, 'bodyneedle\nsecond');
@@ -228,8 +261,12 @@ void main() {
       final hit = page.find.current!;
       final native = run
           .boxes(hit.range.start, hit.range.end)
-          .map((box) => MatrixUtils.transformRect(
-              run.render.getTransformTo(paint), box.toRect()))
+          .map(
+            (box) => MatrixUtils.transformRect(
+              run.render.getTransformTo(paint),
+              box.toRect(),
+            ),
+          )
           .toList();
       expect(native.length, greaterThanOrEqualTo(2));
       expect(paint.matchRects, native);
@@ -251,14 +288,19 @@ void main() {
     'wrong-view',
     'stale-view',
     'unavailable',
-    'sealed'
+    'sealed',
   ]) {
     testWidgets('real default preview excludes $excluded body', (tester) async {
       final page = _PreviewHarness(
-          hidden: excluded == 'hidden', collapsed: excluded == 'collapsed');
-      page.loader.value = Future.value(_document(
+        hidden: excluded == 'hidden',
+        collapsed: excluded == 'collapsed',
+      );
+      page.loader.value = Future.value(
+        _document(
           excluded == 'sealed' ? 'af1.nonce.bodyneedle' : 'bodyneedle',
-          unavailable: excluded == 'unavailable'));
+          unavailable: excluded == 'unavailable',
+        ),
+      );
       if (excluded == 'protected') page.reads.allowed = false;
       if (excluded == 'provider') {
         page.view.extra =
@@ -266,9 +308,12 @@ void main() {
       }
       if (excluded == 'cover') {
         page.view.extra = ViewCoverCodec.mergeCover(
-            '',
-            const PageStyleCover(
-                type: PageStyleCoverImageType.pureColor, value: '#D9C7A4'));
+          '',
+          const PageStyleCover(
+            type: PageStyleCoverImageType.pureColor,
+            value: '#D9C7A4',
+          ),
+        );
       }
       if (excluded == 'wrong-view') {
         page.reads.wrongView =
@@ -403,15 +448,23 @@ class _PreviewHarness {
       hidden: hidden,
       collapsed: collapsed,
       source: const DashboardDataSource(
-          kind: DashboardSourceKind.page, viewId: databaseFindViewId),
+        kind: DashboardSourceKind.page,
+        viewId: databaseFindViewId,
+      ),
     );
     dashboard = DashboardController(
-        viewId: ownerId,
-        document: DashboardDocument(sections: [
+      viewId: ownerId,
+      document: DashboardDocument(
+        sections: [
           DashboardSection(id: 'section', widgets: [spec]),
-        ]));
-    find = DashboardFindController(dashboard,
-        title: () => 'dashboard title', readProvider: reads.provider());
+        ],
+      ),
+    );
+    find = DashboardFindController(
+      dashboard,
+      title: () => 'dashboard title',
+      readProvider: reads.provider(),
+    );
     cache = FolderGalleryPreviewCache(loader: loader);
   }
 
@@ -430,12 +483,14 @@ class _PreviewHarness {
     WidgetTester tester, {
     WorkspaceDesignAppearance appearance = WorkspaceDesignAppearance.light,
   }) async {
-    await tester.pumpWidget(surfaceFindTestApp(
+    await tester.pumpWidget(
+      surfaceFindTestApp(
         SurfaceFindHost(
           controller: find,
           child: SingleChildScrollView(
-              controller: scroll,
-              child: Column(children: [
+            controller: scroll,
+            child: Column(
+              children: [
                 const SizedBox(height: 850),
                 SizedBox(
                   width: 480,
@@ -455,9 +510,13 @@ class _PreviewHarness {
                   ),
                 ),
                 const SizedBox(height: 200),
-              ])),
+              ],
+            ),
+          ),
         ),
-        appearance: appearance));
+        appearance: appearance,
+      ),
+    );
     await pumpSurfaceFind(tester);
   }
 

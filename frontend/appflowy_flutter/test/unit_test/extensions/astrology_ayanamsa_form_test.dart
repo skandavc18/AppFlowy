@@ -727,7 +727,9 @@ void _expectInput(AstrologyInput actual, AstrologyInput expected) {
   expect(actual.utc, expected.utc);
   expect(actual.utc!.isUtc, isTrue);
   expect(
-      actual.utc!.microsecondsSinceEpoch, expected.utc!.microsecondsSinceEpoch);
+    actual.utc!.microsecondsSinceEpoch,
+    expected.utc!.microsecondsSinceEpoch,
+  );
   expect(actual.place, same(expected.place));
   expect(actual.ayanamsaOffsetArcseconds, expected.ayanamsaOffsetArcseconds);
 }
@@ -749,8 +751,11 @@ void _formTest(
         FocusManager.instance.primaryFocus?.unfocus();
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
-        expect(form.service.calls, isEmpty,
-            reason: 'These tests require no IO.');
+        expect(
+          form.service.calls,
+          isEmpty,
+          reason: 'These tests require no IO.',
+        );
         expect(tester.takeException(), isNull);
       }
     },

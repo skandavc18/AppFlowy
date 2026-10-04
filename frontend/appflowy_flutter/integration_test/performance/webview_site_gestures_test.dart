@@ -19,339 +19,395 @@ void main() {
   setUp(() => binding.platformDispatcher.semanticsEnabledTestValue = true);
   tearDown(() => binding.platformDispatcher.clearSemanticsEnabledTestValue());
 
-  testWidgets('site owns native pan/pinch; articles retain browser gestures',
-      (tester) async {
-    final baselineHandles = binding.debugOutstandingSemanticsHandles;
-    final semantics = tester.ensureSemantics();
-    WebViewEnvironment? environment;
-    HttpServer? server;
-    CustomPlatformViewController? native;
-    var creatingEnvironment = false;
-    var mountingView = false;
-    final index = ValueNotifier(0);
-    final size = ValueNotifier(const Size(600, 500));
-    final report = <String, dynamic>{
-      'case': 'webview_site_gestures',
-      'mode': kReleaseMode ? 'release' : 'debug',
-      'quiescent': false,
-      'measurement_complete': false,
-      'cleanup_complete': false,
-      'native_dispose_ack': false,
-      'environment_dispose_ack': false,
-      'semantics_handles_before_body': baselineHandles,
-      'cleanup_stage': 'body',
-    };
-    binding.reportData = report;
-    try {
-      expect(Platform.isWindows, isTrue);
-      expect(
-          const bool.fromEnvironment('WEBVIEW_SITE_GESTURES_CONSENT'), isTrue,
-          reason: 'Coordinator must arrange isolated native execution first.');
-      for (final key in [
-        'WEBVIEW2_USER_DATA_FOLDER',
-        'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
-        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'
-      ]) {
-        if ((Platform.environment[key] ?? '').isNotEmpty) {
-          throw StateError(
-              'External WebView overrides prevent an isolated fixture.');
+  testWidgets(
+    'site owns native pan/pinch; articles retain browser gestures',
+    (tester) async {
+      final baselineHandles = binding.debugOutstandingSemanticsHandles;
+      final semantics = tester.ensureSemantics();
+      WebViewEnvironment? environment;
+      HttpServer? server;
+      CustomPlatformViewController? native;
+      var creatingEnvironment = false;
+      var mountingView = false;
+      final index = ValueNotifier(0);
+      final size = ValueNotifier(const Size(600, 500));
+      final report = <String, dynamic>{
+        'case': 'webview_site_gestures',
+        'mode': kReleaseMode ? 'release' : 'debug',
+        'quiescent': false,
+        'measurement_complete': false,
+        'cleanup_complete': false,
+        'native_dispose_ack': false,
+        'environment_dispose_ack': false,
+        'semantics_handles_before_body': baselineHandles,
+        'cleanup_stage': 'body',
+      };
+      binding.reportData = report;
+      try {
+        expect(Platform.isWindows, isTrue);
+        expect(
+          const bool.fromEnvironment('WEBVIEW_SITE_GESTURES_CONSENT'),
+          isTrue,
+          reason: 'Coordinator must arrange isolated native execution first.',
+        );
+        for (final key in [
+          'WEBVIEW2_USER_DATA_FOLDER',
+          'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
+          'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',
+        ]) {
+          if ((Platform.environment[key] ?? '').isNotEmpty) {
+            throw StateError(
+              'External WebView overrides prevent an isolated fixture.',
+            );
+          }
         }
-      }
-      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      server.listen((request) {
-        request.response.headers.contentType = ContentType.html;
-        request.response.write(_html);
-        unawaited(request.response.close());
-      });
-      final root =
-          await Directory.systemTemp.createTemp('webview_site_gestures_');
-      creatingEnvironment = true;
-      final isolatedEnvironment = await WebViewEnvironment.create(
-          settings: WebViewEnvironmentSettings(userDataFolder: root.path));
-      environment = isolatedEnvironment;
-      creatingEnvironment = false;
-      final base = 'http://127.0.0.1:${server.port}';
-      final created = Completer<InAppWebViewController>();
-      var loaded = Completer<void>();
-      final webview = InAppWebView(
-        webViewEnvironment: isolatedEnvironment,
-        initialUrlRequest: URLRequest(url: WebUri('$base/one')),
-        initialSettings: InAppWebViewSettings(
+        server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        server.listen((request) {
+          request.response.headers.contentType = ContentType.html;
+          request.response.write(_html);
+          unawaited(request.response.close());
+        });
+        final root =
+            await Directory.systemTemp.createTemp('webview_site_gestures_');
+        creatingEnvironment = true;
+        final isolatedEnvironment = await WebViewEnvironment.create(
+          settings: WebViewEnvironmentSettings(userDataFolder: root.path),
+        );
+        environment = isolatedEnvironment;
+        creatingEnvironment = false;
+        final base = 'http://127.0.0.1:${server.port}';
+        final created = Completer<InAppWebViewController>();
+        var loaded = Completer<void>();
+        final webview = InAppWebView(
+          webViewEnvironment: isolatedEnvironment,
+          initialUrlRequest: URLRequest(url: WebUri('$base/one')),
+          initialSettings: InAppWebViewSettings(
             disableHorizontalScroll: true,
             // ignore: avoid_redundant_argument_values
-            allowsBackForwardNavigationGestures: true),
-        onWebViewCreated: (controller) => created.complete(controller),
-        onLoadStop: (_, __) {
-          if (!loaded.isCompleted) loaded.complete();
-        },
-        onPermissionRequest: (_, request) async =>
-            PermissionResponse(resources: request.resources),
-      );
-      mountingView = true;
-      await tester.pumpWidget(MaterialApp(
-          home: Scaffold(
+            allowsBackForwardNavigationGestures: true,
+          ),
+          onWebViewCreated: (controller) => created.complete(controller),
+          onLoadStop: (_, __) {
+            if (!loaded.isCompleted) loaded.complete();
+          },
+          onPermissionRequest: (_, request) async =>
+              PermissionResponse(resources: request.resources),
+        );
+        mountingView = true;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
               body: Center(
-        child: ValueListenableBuilder<Size>(
-            valueListenable: size,
-            child: webview,
-            builder: (_, size, child) => SizedBox.fromSize(
-                size: size,
-                child: ValueListenableBuilder<int>(
-                    valueListenable: index,
-                    child: child,
-                    builder: (_, index, child) => IndexedStack(
-                            index: index,
-                            children: [
-                              child!,
-                              const ColoredBox(color: Color(0xfff8f5ef))
-                            ])))),
-      ))));
-      native = tester
-          .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
-          .controller;
-      final controller =
-          await created.future.timeout(const Duration(seconds: 20));
-      await loaded.future.timeout(const Duration(seconds: 20));
-      await tester.pump();
-      final texture = tester.widget<Texture>(find.descendant(
-          of: find.byType(InAppWebView), matching: find.byType(Texture)));
-      final channel = MethodChannel(
-          'com.pichillilorenzo/custom_platform_view_${texture.textureId}');
-      await channel.invokeMethod<void>(
-          '_startTextureLifecycleProbe', 'offline-fixture-v1');
-      final f = _NativeFixture(tester, controller, channel);
-      Future<void> load(String path) async {
-        loaded = Completer<void>();
-        await controller.loadUrl(
-            urlRequest: URLRequest(url: WebUri('$base$path')));
-        await loaded.future.timeout(const Duration(seconds: 10));
-        await f.idle();
+                child: ValueListenableBuilder<Size>(
+                  valueListenable: size,
+                  child: webview,
+                  builder: (_, size, child) => SizedBox.fromSize(
+                    size: size,
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: index,
+                      child: child,
+                      builder: (_, index, child) => IndexedStack(
+                        index: index,
+                        children: [
+                          child!,
+                          const ColoredBox(color: Color(0xfff8f5ef)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        native = tester
+            .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+            .controller;
+        final controller =
+            await created.future.timeout(const Duration(seconds: 20));
+        await loaded.future.timeout(const Duration(seconds: 20));
         await tester.pump();
-      }
+        final texture = tester.widget<Texture>(
+          find.descendant(
+            of: find.byType(InAppWebView),
+            matching: find.byType(Texture),
+          ),
+        );
+        final channel = MethodChannel(
+          'com.pichillilorenzo/custom_platform_view_${texture.textureId}',
+        );
+        await channel.invokeMethod<void>(
+          '_startTextureLifecycleProbe',
+          'offline-fixture-v1',
+        );
+        final f = _NativeFixture(tester, controller, channel);
+        Future<void> load(String path) async {
+          loaded = Completer<void>();
+          await controller.loadUrl(
+            urlRequest: URLRequest(url: WebUri('$base$path')),
+          );
+          await loaded.future.timeout(const Duration(seconds: 10));
+          await f.idle();
+          await tester.pump();
+        }
 
-      await load('/two');
-      expect(await controller.canGoBack(), isTrue);
+        await load('/two');
+        expect(await controller.canGoBack(), isTrue);
 
-      // Exercises the production CDP query, including real listener metadata.
-      for (final region in [
-        (const Offset(300, 110), true), // touch-action:none canvas
-        (const Offset(40, 280), true), // horizontal scroller
-        (const Offset(240, 280), true), // addEventListener pointer handler
-        (const Offset(410, 280), true), // open shadow root
-        (const Offset(300, 430), false), // ordinary article
-      ]) {
-        expect(
+        // Exercises the production CDP query, including real listener metadata.
+        for (final region in [
+          (const Offset(300, 110), true), // touch-action:none canvas
+          (const Offset(40, 280), true), // horizontal scroller
+          (const Offset(240, 280), true), // addEventListener pointer handler
+          (const Offset(410, 280), true), // open shadow root
+          (const Offset(300, 430), false), // ordinary article
+        ]) {
+          expect(
             await channel.invokeMethod<bool>(
-                'querySiteGesturePolicy', [region.$1.dx, region.$1.dy]),
-            region.$2);
-      }
-      final mapPoint = f.point(const Offset(300, 110));
-      final articlePoint = f.point(const Offset(300, 430));
-      await tester.sendEventToBinding(PointerHoverEvent(position: mapPoint));
-      final before = await f.diagnostics();
-      final gesture = await f.start(mapPoint);
-      for (var i = 1; i <= 12; i++) {
-        await gesture.update(pan: Offset(i * 3.0, i * 1.0), scale: 1 + i / 12);
-      }
-      await gesture.end();
-      await f.idle();
-      final map = await f.snapshot();
-      expect(map['zoom'] as num, greaterThan(1.5));
-      expect((map['panX'] as num).abs(), greaterThan(10));
-      expect(map['untrusted'], 0);
-      expect(map['clicks'], 0);
-      expect(map['twoContactMoves'] as num, greaterThan(0));
-      expect((await f.diagnostics())['zoomFactor'], before['zoomFactor']);
-      expect((await controller.getUrl())!.path, '/two');
-      final after = await f.diagnostics();
-      for (final key in ['cursorX', 'cursorY', 'cursorVisible']) {
-        expect(after[key], before[key],
-            reason: 'Trackpad must not warp/hide the mouse');
-      }
-      report['map_zoom'] = map['zoom'];
-      report['browser_zoom_unchanged'] = true;
-
-      // Start as a genuine one-contact pan, then change into a paired pinch.
-      final mixed = await f.start(mapPoint);
-      await mixed.update(pan: const Offset(24, 0));
-      await f.idle();
-      await mixed.update(pan: const Offset(36, 0), scale: 1.5);
-      await mixed.update(pan: const Offset(44, 8), scale: 2);
-      await mixed.end();
-      await f.idle();
-      final mixedState = await f.snapshot();
-      expect(mixedState['cancels'] as num, greaterThan(0));
-      expect(mixedState['clicks'], 0);
-      expect(mixedState['zoom'] as num, greaterThan(map['zoom'] as num));
-      expect((await f.diagnostics())['zoomFactor'], before['zoomFactor']);
-
-      final tiny = await f.start(mapPoint);
-      await tiny.update(pan: const Offset(1, 1), scale: 1.005);
-      await tiny.end();
-      await f.idle();
-      expect((await f.snapshot())['clicks'], 0);
-
-      for (final interruption in ['cancel', 'hidden', 'resize']) {
-        report['interruption_under_test'] = interruption;
-        final starts = (await f.snapshot())['starts'] as num;
-        final interrupted = await f.start(mapPoint);
-        await interrupted.update(scale: 1.5);
-        await f.idle();
-        await f.untilDom(
-            () async => ((await f.snapshot())['starts'] as num) > starts,
-            '$interruption: paired contact must exist before interruption');
-        final cancels = (await f.snapshot())['cancels'] as num;
-        if (interruption == 'cancel') {
-          await interrupted.cancel();
-        } else if (interruption == 'hidden') {
-          index.value = 1;
-          await tester.pump();
-          await interrupted.update(scale: 2);
-          await interrupted.end();
-          index.value = 0;
-          await tester.pump();
-        } else {
-          size.value = const Size(580, 480);
-          await tester.pump();
-          await interrupted.update(scale: 2);
-          await interrupted.end();
-          size.value = const Size(600, 500);
-          await tester.pump();
+              'querySiteGesturePolicy',
+              [region.$1.dx, region.$1.dy],
+            ),
+            region.$2,
+          );
         }
-        await f.idle();
-        await f.untilDom(
-            () async => ((await f.snapshot())['cancels'] as num) > cancels,
-            '$interruption: DOM cancellation acknowledgement');
-        final state = await f.snapshot();
-        expect(state['cancels'] as num, greaterThan(cancels),
-            reason: interruption);
-        expect(state['clicks'], 0);
-      }
-
-      // Navigation fences the old stream even before Dart receives the event.
-      final navigating = await f.start(mapPoint);
-      await navigating.update(scale: 1.5);
-      await load('/three');
-      await navigating.update(scale: 2);
-      await navigating.end();
-      await f.idle();
-      expect((await f.snapshot())['starts'], 0);
-      expect((await f.snapshot())['clicks'], 0);
-
-      // Real history entries, not synthetic pushState availability.
-      for (final step in [(120.0, '/two'), (-120.0, '/three')]) {
-        final history = await f.start(articlePoint);
-        for (var i = 1; i <= 6; i++) {
-          await history.update(pan: Offset(step.$1 * i / 6, 0));
+        final mapPoint = f.point(const Offset(300, 110));
+        final articlePoint = f.point(const Offset(300, 430));
+        await tester.sendEventToBinding(PointerHoverEvent(position: mapPoint));
+        final before = await f.diagnostics();
+        final gesture = await f.start(mapPoint);
+        for (var i = 1; i <= 12; i++) {
+          await gesture.update(
+            pan: Offset(i * 3.0, i * 1.0),
+            scale: 1 + i / 12,
+          );
         }
-        await history.end();
-        await f.settleHistory();
-        expect((await controller.getUrl())!.path, step.$2);
+        await gesture.end();
+        await f.idle();
+        final map = await f.snapshot();
+        expect(map['zoom'] as num, greaterThan(1.5));
+        expect((map['panX'] as num).abs(), greaterThan(10));
+        expect(map['untrusted'], 0);
+        expect(map['clicks'], 0);
+        expect(map['twoContactMoves'] as num, greaterThan(0));
+        expect((await f.diagnostics())['zoomFactor'], before['zoomFactor']);
+        expect((await controller.getUrl())!.path, '/two');
+        final after = await f.diagnostics();
+        for (final key in ['cursorX', 'cursorY', 'cursorVisible']) {
+          expect(
+            after[key],
+            before[key],
+            reason: 'Trackpad must not warp/hide the mouse',
+          );
+        }
+        report['map_zoom'] = map['zoom'];
+        report['browser_zoom_unchanged'] = true;
+
+        // Start as a genuine one-contact pan, then change into a paired pinch.
+        final mixed = await f.start(mapPoint);
+        await mixed.update(pan: const Offset(24, 0));
+        await f.idle();
+        await mixed.update(pan: const Offset(36, 0), scale: 1.5);
+        await mixed.update(pan: const Offset(44, 8), scale: 2);
+        await mixed.end();
+        await f.idle();
+        final mixedState = await f.snapshot();
+        expect(mixedState['cancels'] as num, greaterThan(0));
+        expect(mixedState['clicks'], 0);
+        expect(mixedState['zoom'] as num, greaterThan(map['zoom'] as num));
+        expect((await f.diagnostics())['zoomFactor'], before['zoomFactor']);
+
+        final tiny = await f.start(mapPoint);
+        await tiny.update(pan: const Offset(1, 1), scale: 1.005);
+        await tiny.end();
+        await f.idle();
         expect((await f.snapshot())['clicks'], 0);
-      }
 
-      final normalZoom = (await f.diagnostics())['zoomFactor'] as double;
-      final articlePinch = await f.start(articlePoint);
-      await articlePinch.update(scale: 1.5);
-      final zoomDeadline = DateTime.now().add(const Duration(seconds: 5));
-      while (((await f.diagnostics())['zoomFactor'] as num) <= normalZoom) {
-        if (DateTime.now().isAfter(zoomDeadline)) {
-          throw StateError('Ordinary-page pinch did not change browser zoom');
+        for (final interruption in ['cancel', 'hidden', 'resize']) {
+          report['interruption_under_test'] = interruption;
+          final starts = (await f.snapshot())['starts'] as num;
+          final interrupted = await f.start(mapPoint);
+          await interrupted.update(scale: 1.5);
+          await f.idle();
+          await f.untilDom(
+            () async => ((await f.snapshot())['starts'] as num) > starts,
+            '$interruption: paired contact must exist before interruption',
+          );
+          final cancels = (await f.snapshot())['cancels'] as num;
+          if (interruption == 'cancel') {
+            await interrupted.cancel();
+          } else if (interruption == 'hidden') {
+            index.value = 1;
+            await tester.pump();
+            await interrupted.update(scale: 2);
+            await interrupted.end();
+            index.value = 0;
+            await tester.pump();
+          } else {
+            size.value = const Size(580, 480);
+            await tester.pump();
+            await interrupted.update(scale: 2);
+            await interrupted.end();
+            size.value = const Size(600, 500);
+            await tester.pump();
+          }
+          await f.idle();
+          await f.untilDom(
+            () async => ((await f.snapshot())['cancels'] as num) > cancels,
+            '$interruption: DOM cancellation acknowledgement',
+          );
+          final state = await f.snapshot();
+          expect(
+            state['cancels'] as num,
+            greaterThan(cancels),
+            reason: interruption,
+          );
+          expect(state['clicks'], 0);
         }
-        await tester.pump(const Duration(milliseconds: 10));
-      }
-      await articlePinch.end();
-      await f.idle();
-      final enlarged = (await f.diagnostics())['zoomFactor'] as double;
-      expect(enlarged, greaterThan(normalZoom));
-      await channel.invokeMethod<void>('setZoomScale', normalZoom / enlarged);
 
-      // Wheel and ordinary mouse still use native SendMouseInput. Physical
-      // touchscreen preservation is covered by the unchanged six-value path
-      // and package tests; this fixture does not inject OS touch/move the mouse.
-      await tester
-          .sendEventToBinding(PointerHoverEvent(position: articlePoint));
-      await tester.sendEventToBinding(PointerScrollEvent(
-          position: articlePoint, scrollDelta: const Offset(0, 20)));
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      final wheel = await f.snapshot();
-      expect(wheel['wheels'] as num, greaterThan(0));
-      // Chromium converts Windows wheel detents using platform scroll
-      // settings; DOM deltaY is not the native mouseData value (20 * 6).
-      expect(wheel['lastWheelY'] as num, greaterThan(0));
-      report['dom_wheel_delta_y'] = wheel['lastWheelY'];
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-          physicalKey: PhysicalKeyboardKey.controlLeft);
-      try {
-        await tester.sendEventToBinding(PointerScrollEvent(
-            position: articlePoint, scrollDelta: const Offset(0, 20)));
-      } finally {
-        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-            physicalKey: PhysicalKeyboardKey.controlLeft);
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect((await f.snapshot())['wheels'] as num,
-          greaterThan(wheel['wheels'] as num));
-      // No synthetic pan/pinch has caused a click. A real mouse click still can.
-      expect((await f.snapshot())['clicks'], 0);
-      await tester.tapAt(articlePoint, kind: PointerDeviceKind.mouse);
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect((await f.snapshot())['clicks'], 1);
-      expect(tester.takeException(), isNull);
-      report['dom_history_wheel_mouse_checks'] = true;
-      report['measurement_complete'] = true;
-    } finally {
-      try {
-        report['cleanup_stage'] = 'native_view';
-        if (creatingEnvironment) {
-          throw StateError(
-              'Environment creation has no final reply; cleanup is not proven.');
+        // Navigation fences the old stream even before Dart receives the event.
+        final navigating = await f.start(mapPoint);
+        await navigating.update(scale: 1.5);
+        await load('/three');
+        await navigating.update(scale: 2);
+        await navigating.end();
+        await f.idle();
+        expect((await f.snapshot())['starts'], 0);
+        expect((await f.snapshot())['clicks'], 0);
+
+        // Real history entries, not synthetic pushState availability.
+        for (final step in [(120.0, '/two'), (-120.0, '/three')]) {
+          final history = await f.start(articlePoint);
+          for (var i = 1; i <= 6; i++) {
+            await history.update(pan: Offset(step.$1 * i / 6, 0));
+          }
+          await history.end();
+          await f.settleHistory();
+          expect((await controller.getUrl())!.path, step.$2);
+          expect((await f.snapshot())['clicks'], 0);
         }
-        final views = find.byType(CustomPlatformView, skipOffstage: false);
-        if (native == null && views.evaluate().isNotEmpty) {
-          native = tester.state<CustomPlatformViewState>(views).controller;
+
+        final normalZoom = (await f.diagnostics())['zoomFactor'] as double;
+        final articlePinch = await f.start(articlePoint);
+        await articlePinch.update(scale: 1.5);
+        final zoomDeadline = DateTime.now().add(const Duration(seconds: 5));
+        while (((await f.diagnostics())['zoomFactor'] as num) <= normalZoom) {
+          if (DateTime.now().isAfter(zoomDeadline)) {
+            throw StateError('Ordinary-page pinch did not change browser zoom');
+          }
+          await tester.pump(const Duration(milliseconds: 10));
         }
-        await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pump();
-        if (mountingView && native == null) {
-          throw StateError('Missing native disposal owner; cleanup unproven.');
+        await articlePinch.end();
+        await f.idle();
+        final enlarged = (await f.diagnostics())['zoomFactor'] as double;
+        expect(enlarged, greaterThan(normalZoom));
+        await channel.invokeMethod<void>('setZoomScale', normalZoom / enlarged);
+
+        // Wheel and ordinary mouse still use native SendMouseInput. Physical
+        // touchscreen preservation is covered by the unchanged six-value path
+        // and package tests; this fixture does not inject OS touch/move the mouse.
+        await tester
+            .sendEventToBinding(PointerHoverEvent(position: articlePoint));
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: articlePoint,
+            scrollDelta: const Offset(0, 20),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final wheel = await f.snapshot();
+        expect(wheel['wheels'] as num, greaterThan(0));
+        // Chromium converts Windows wheel detents using platform scroll
+        // settings; DOM deltaY is not the native mouseData value (20 * 6).
+        expect(wheel['lastWheelY'] as num, greaterThan(0));
+        report['dom_wheel_delta_y'] = wheel['lastWheelY'];
+        await tester.sendKeyDownEvent(
+          LogicalKeyboardKey.controlLeft,
+          physicalKey: PhysicalKeyboardKey.controlLeft,
+        );
+        try {
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: articlePoint,
+              scrollDelta: const Offset(0, 20),
+            ),
+          );
+        } finally {
+          await tester.sendKeyUpEvent(
+            LogicalKeyboardKey.controlLeft,
+            physicalKey: PhysicalKeyboardKey.controlLeft,
+          );
         }
-        await native?.dispose();
-        report['texture_lifecycle'] = native?.disposalDiagnostics;
-        report['native_dispose_ack'] = native != null;
-        report['cleanup_stage'] = 'environment';
-        final ownedEnvironment = environment;
-        if (ownedEnvironment != null) {
-          await MethodChannel(
-                  'com.pichillilorenzo/flutter_webview_environment_${ownedEnvironment.id}')
-              .invokeMethod<void>('dispose');
-          report['environment_dispose_ack'] = true;
-        }
-        if (native != null) {
-          expect(native.disposalDiagnostics?['schema'], 1);
-          expect(native.disposalDiagnostics?['stages'], [0, 1, 2, 3, 4, 5]);
-        }
-        report['quiescent'] = native != null && ownedEnvironment != null;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(
+          (await f.snapshot())['wheels'] as num,
+          greaterThan(wheel['wheels'] as num),
+        );
+        // No synthetic pan/pinch has caused a click. A real mouse click still can.
+        expect((await f.snapshot())['clicks'], 0);
+        await tester.tapAt(articlePoint, kind: PointerDeviceKind.mouse);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect((await f.snapshot())['clicks'], 1);
+        expect(tester.takeException(), isNull);
+        report['dom_history_wheel_mouse_checks'] = true;
+        report['measurement_complete'] = true;
       } finally {
         try {
-          await server?.close(force: true);
+          report['cleanup_stage'] = 'native_view';
+          if (creatingEnvironment) {
+            throw StateError(
+              'Environment creation has no final reply; cleanup is not proven.',
+            );
+          }
+          final views = find.byType(CustomPlatformView, skipOffstage: false);
+          if (native == null && views.evaluate().isNotEmpty) {
+            native = tester.state<CustomPlatformViewState>(views).controller;
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+          if (mountingView && native == null) {
+            throw StateError(
+              'Missing native disposal owner; cleanup unproven.',
+            );
+          }
+          await native?.dispose();
+          report['texture_lifecycle'] = native?.disposalDiagnostics;
+          report['native_dispose_ack'] = native != null;
+          report['cleanup_stage'] = 'environment';
+          final ownedEnvironment = environment;
+          if (ownedEnvironment != null) {
+            await MethodChannel(
+              'com.pichillilorenzo/flutter_webview_environment_${ownedEnvironment.id}',
+            ).invokeMethod<void>('dispose');
+            report['environment_dispose_ack'] = true;
+          }
+          if (native != null) {
+            expect(native.disposalDiagnostics?['schema'], 1);
+            expect(native.disposalDiagnostics?['stages'], [0, 1, 2, 3, 4, 5]);
+          }
+          report['quiescent'] = native != null && ownedEnvironment != null;
         } finally {
-          index.dispose();
-          size.dispose();
-          semantics.dispose();
-          report['semantics_handles_after_body'] =
-              binding.debugOutstandingSemanticsHandles;
-          expect(binding.debugOutstandingSemanticsHandles, baselineHandles);
+          try {
+            await server?.close(force: true);
+          } finally {
+            index.dispose();
+            size.dispose();
+            semantics.dispose();
+            report['semantics_handles_after_body'] =
+                binding.debugOutstandingSemanticsHandles;
+            expect(binding.debugOutstandingSemanticsHandles, baselineHandles);
+          }
         }
+        report['remaining_transient_callbacks'] =
+            binding.transientCallbackCount;
+        expect(binding.transientCallbackCount, 0);
+        report['cleanup_stage'] = 'complete';
+        report['cleanup_complete'] = report['quiescent'] == true;
+        // Leave only the isolated temporary profile for OS cleanup; no app data
+        // is reset or deleted, and no native app/window close is requested here.
       }
-      report['remaining_transient_callbacks'] = binding.transientCallbackCount;
-      expect(binding.transientCallbackCount, 0);
-      report['cleanup_stage'] = 'complete';
-      report['cleanup_complete'] = report['quiescent'] == true;
-      // Leave only the isolated temporary profile for OS cleanup; no app data
-      // is reset or deleted, and no native app/window close is requested here.
-    }
-  }, timeout: Timeout.none);
+    },
+    timeout: Timeout.none,
+  );
 }
 
 class _NativeFixture {
@@ -371,8 +427,9 @@ class _NativeFixture {
   Future<void> idle() async {
     final deadline = DateTime.now().add(const Duration(seconds: 5));
     while ((await diagnostics())['idle'] != true) {
-      if (DateTime.now().isAfter(deadline))
+      if (DateTime.now().isAfter(deadline)) {
         throw StateError('Native input slot did not drain');
+      }
       await tester.pump(const Duration(milliseconds: 10));
     }
   }
@@ -392,24 +449,28 @@ class _NativeFixture {
     await tester.pump();
     final target = tester.renderObject(find.byType(CustomPlatformView));
     expect(
-        tester
-            .hitTestOnBinding(point)
-            .path
-            .any((entry) => identical(entry.target, target)),
-        isTrue);
+      tester
+          .hitTestOnBinding(point)
+          .path
+          .any((entry) => identical(entry.target, target)),
+      isTrue,
+    );
     final pointer = nextPointer++;
     final gesture = await tester.createGesture(
-        kind: PointerDeviceKind.trackpad, pointer: pointer);
+      kind: PointerDeviceKind.trackpad,
+      pointer: pointer,
+    );
     await gesture.panZoomStart(point, timeStamp: clock.elapsed);
     // Allow the ONE start-policy query to settle, without per-frame DOM reads.
     await idle();
     return _Gesture(this, gesture, point, pointer);
   }
 
-  Future<Map<dynamic, dynamic>> snapshot() async =>
-      Map<dynamic, dynamic>.from(await controller
-          .evaluateJavascript(source: 'window.fixtureSnapshot()')
-          .timeout(const Duration(seconds: 5)) as Map);
+  Future<Map<dynamic, dynamic>> snapshot() async => Map<dynamic, dynamic>.from(
+        await controller
+            .evaluateJavascript(source: 'window.fixtureSnapshot()')
+            .timeout(const Duration(seconds: 5)) as Map,
+      );
 
   Future<void> settleHistory() async {
     final deadline = DateTime.now().add(const Duration(seconds: 10));
@@ -432,8 +493,12 @@ class _Gesture {
 
   Future<void> update({Offset pan = Offset.zero, double scale = 1}) async {
     await Future<void>.delayed(const Duration(milliseconds: 16));
-    await gesture.panZoomUpdate(point,
-        pan: pan, scale: scale, timeStamp: fixture.clock.elapsed);
+    await gesture.panZoomUpdate(
+      point,
+      pan: pan,
+      scale: scale,
+      timeStamp: fixture.clock.elapsed,
+    );
   }
 
   Future<void> end() async {
@@ -445,7 +510,8 @@ class _Gesture {
   // Live binding classifies its deferred queue as device input and does not
   // deliver it to the test recognizers. Trackpad kind is invalid for cancel.
   Future<void> cancel() => fixture.tester.sendEventToBinding(
-      PointerCancelEvent(pointer: pointer, position: point));
+        PointerCancelEvent(pointer: pointer, position: point),
+      );
 }
 
 const _html = '''<!doctype html><html><head><meta charset="utf-8">

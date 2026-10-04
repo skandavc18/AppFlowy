@@ -60,8 +60,10 @@ void main() {
           for (final part in [0.4, 0.7, 1.0]) {
             await gesture.moveTo(origin + Offset(delta * part, delta * part));
             await tester.pump();
-            expect(tester.getSize(_frame).width,
-                closeTo(start + delta * part, 0.01));
+            expect(
+              tester.getSize(_frame).width,
+              closeTo(start + delta * part, 0.01),
+            );
             expect(fixture.backend.writes, hasLength(writes));
             _expectAspectAndBounds(tester);
           }
@@ -69,10 +71,14 @@ void main() {
           await gesture.removePointer();
           await tester.pumpAndSettle();
           expect(fixture.backend.writes, hasLength(writes + 1));
-          expect(IconSize.decode(fixture.view.extra),
-              closeTo(start + delta, 0.01));
           expect(
-              tester.state(find.byType(_RetainedArtwork)), same(artworkState));
+            IconSize.decode(fixture.view.extra),
+            closeTo(start + delta, 0.01),
+          );
+          expect(
+            tester.state(find.byType(_RetainedArtwork)),
+            same(artworkState),
+          );
           expect(tester.state(find.byType(EditableText)), same(titleState));
           expect(fixture.title.value, draft);
           expect(fixture.view.icon.writeToBuffer(), iconBytes);
@@ -129,15 +135,25 @@ void main() {
       expect(data.customSemanticsActionIds, isNotEmpty);
       expect(_grip.hitTestable(), findsOneWidget);
 
-      await _key(tester, LogicalKeyboardKey.arrowRight,
-          PhysicalKeyboardKey.arrowRight);
-      expect(IconSize.decode(fixture.view.extra), 67);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft,
-          physicalKey: PhysicalKeyboardKey.shiftLeft);
       await _key(
-          tester, LogicalKeyboardKey.arrowUp, PhysicalKeyboardKey.arrowUp);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft,
-          physicalKey: PhysicalKeyboardKey.shiftLeft);
+        tester,
+        LogicalKeyboardKey.arrowRight,
+        PhysicalKeyboardKey.arrowRight,
+      );
+      expect(IconSize.decode(fixture.view.extra), 67);
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.shiftLeft,
+        physicalKey: PhysicalKeyboardKey.shiftLeft,
+      );
+      await _key(
+        tester,
+        LogicalKeyboardKey.arrowUp,
+        PhysicalKeyboardKey.arrowUp,
+      );
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.shiftLeft,
+        physicalKey: PhysicalKeyboardKey.shiftLeft,
+      );
       expect(IconSize.decode(fixture.view.extra), 77);
       await _key(tester, LogicalKeyboardKey.home, PhysicalKeyboardKey.home);
       expect(IconSize.decode(fixture.view.extra), isNull);
@@ -179,8 +195,10 @@ void main() {
         expect(fixture.backend.reads, isEmpty);
         expect(fixture.backend.writes, isEmpty);
       }
-      await tester.tapAt(tester.getCenter(_frame),
-          kind: PointerDeviceKind.mouse);
+      await tester.tapAt(
+        tester.getCenter(_frame),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
       expect(find.byType(FlowyIconEmojiPicker), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -236,21 +254,31 @@ void main() {
       await _key(tester, LogicalKeyboardKey.tab, PhysicalKeyboardKey.tab);
       await _key(tester, LogicalKeyboardKey.tab, PhysicalKeyboardKey.tab);
       fixture.backend.failWrites = true;
-      await _key(tester, LogicalKeyboardKey.arrowRight,
-          PhysicalKeyboardKey.arrowRight);
+      await _key(
+        tester,
+        LogicalKeyboardKey.arrowRight,
+        PhysicalKeyboardKey.arrowRight,
+      );
       final data = tester.getSemantics(_resize).getSemanticsData();
-      expect(data.value,
-          '66.0 pixels, Could not save icon size. Try resizing again.');
+      expect(
+        data.value,
+        '66.0 pixels, Could not save icon size. Try resizing again.',
+      );
       expect(data.hasFlag(ui.SemanticsFlag.isFocused), isTrue);
       expect(data.hasFlag(ui.SemanticsFlag.isLiveRegion), isTrue);
       expect(fixture.saved, isEmpty);
       fixture.backend.failWrites = false;
-      await _key(tester, LogicalKeyboardKey.arrowRight,
-          PhysicalKeyboardKey.arrowRight);
+      await _key(
+        tester,
+        LogicalKeyboardKey.arrowRight,
+        PhysicalKeyboardKey.arrowRight,
+      );
       expect(fixture.saved, [67]);
       expect(fixture.backend.writes, hasLength(2));
       expect(
-          tester.getSemantics(_resize).getSemanticsData().value, '67.0 pixels');
+        tester.getSemantics(_resize).getSemanticsData().value,
+        '67.0 pixels',
+      );
       expect(tester.takeException(), isNull);
     } finally {
       await fixture.dispose(tester);
@@ -262,16 +290,18 @@ void main() {
       (tester) async {
     final semantics = tester.ensureSemantics();
     try {
-      await tester.pumpWidget(MaterialApp(
-        home: Center(
-          child: ResizablePageIcon(
-            view: ViewPB(extra: IconSize.merge('', 97.125)),
-            editable: true,
-            onSizeChanged: (_) => fail('An empty view must not save'),
-            builder: (size, _) => SizedBox.square(dimension: size),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: ResizablePageIcon(
+              view: ViewPB(extra: IconSize.merge('', 97.125)),
+              editable: true,
+              onSizeChanged: (_) => fail('An empty view must not save'),
+              builder: (size, _) => SizedBox.square(dimension: size),
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
       expect(tester.getSize(_frame), const Size.square(97.125));
       expect(find.semantics.byLabel('Page icon size'), findsNothing);
@@ -304,14 +334,18 @@ void main() {
           expect(tester.getSize(_frame), Size.square(expected));
           _expectAspectAndBounds(tester);
           expect(
-              tester.state(find.byType(_RetainedArtwork)), same(artworkState));
+            tester.state(find.byType(_RetainedArtwork)),
+            same(artworkState),
+          );
           expect(tester.state(find.byType(EditableText)), same(titleState));
           expect(fixture.view.writeToBuffer(), bytes);
           expect(fixture.backend.writes, isEmpty);
           final decoration =
               tester.widget<DecoratedBox>(_grip).decoration as BoxDecoration;
-          expect(decoration.color,
-              WorkspacePalette.of(tester.element(_frame)).surface);
+          expect(
+            decoration.color,
+            WorkspacePalette.of(tester.element(_frame)).surface,
+          );
           if (appearance == 'paper') {
             expect(decoration.color, PaperTheme.editorPreviewBackground);
           }
@@ -368,8 +402,10 @@ void main() {
       expect(minimum.hasAction(ui.SemanticsAction.decrease), isFalse);
       // Even when the grip is revealed at the minimum, the center still opens
       // the existing picker rather than being swallowed by the resize target.
-      await tester.tapAt(tester.getCenter(_frame),
-          kind: PointerDeviceKind.mouse);
+      await tester.tapAt(
+        tester.getCenter(_frame),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
       expect(find.byType(FlowyIconEmojiPicker), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -454,15 +490,18 @@ void main() {
     try {
       await fixture.mount(tester);
       expect(find.semantics.byLabel('Page icon size'), findsNothing);
-      await tester.tapAt(tester.getCenter(_frame),
-          kind: PointerDeviceKind.mouse);
+      await tester.tapAt(
+        tester.getCenter(_frame),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pump();
       expect(find.byType(FlowyIconEmojiPicker), findsNothing);
       access.change(access.state.copyWith(isLoadingLockStatus: false));
       await tester.pump();
       expect(find.semantics.byLabel('Page icon size'), findsNothing);
       access.change(
-          access.state.copyWith(accessLevel: ShareAccessLevel.fullAccess));
+        access.state.copyWith(accessLevel: ShareAccessLevel.fullAccess),
+      );
       await tester.pump();
       expect(find.semantics.byLabel('Page icon size'), findsOneWidget);
       final barrier = Completer<void>();
@@ -476,9 +515,11 @@ void main() {
       expect(fixture.backend.reads, hasLength(1));
       // Revoke and grant before another frame; old work must stay cancelled.
       access.change(
-          access.state.copyWith(accessLevel: ShareAccessLevel.readOnly));
+        access.state.copyWith(accessLevel: ShareAccessLevel.readOnly),
+      );
       access.change(
-          access.state.copyWith(accessLevel: ShareAccessLevel.fullAccess));
+        access.state.copyWith(accessLevel: ShareAccessLevel.fullAccess),
+      );
       barrier.complete();
       await tester.pumpAndSettle();
       expect(fixture.backend.writes, isEmpty);
@@ -518,8 +559,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(fixture.backend.maxActiveWrites, 1);
       expect(
-          fixture.backend.writes.map((write) => IconSize.decode(write.extra)),
-          [96, 136]);
+        fixture.backend.writes.map((write) => IconSize.decode(write.extra)),
+        [96, 136],
+      );
       expect(IconSize.decode(fixture.view.extra), 136);
       expect(tester.takeException(), isNull);
     } finally {
@@ -548,9 +590,13 @@ void main() {
       expect(tester.state(find.byType(RawEmojiIconWidget)), same(artworkState));
       expect(tester.state(find.byType(ViewIconPicker)), same(pickerState));
       expect(
-          tester.getSize(find.byType(ViewIconPicker)), tester.getSize(_frame));
-      await tester.tapAt(tester.getCenter(_frame),
-          kind: PointerDeviceKind.mouse);
+        tester.getSize(find.byType(ViewIconPicker)),
+        tester.getSize(_frame),
+      );
+      await tester.tapAt(
+        tester.getCenter(_frame),
+        kind: PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
       final picker = tester.widget<FlowyIconEmojiPicker>(
         find.byType(FlowyIconEmojiPicker),

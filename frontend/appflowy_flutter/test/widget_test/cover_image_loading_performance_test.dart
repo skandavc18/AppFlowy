@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:appflowy/shared/appflowy_network_image.dart';
@@ -78,16 +77,20 @@ void main() {
         textScale: 2,
         child: MediaQuery(
           data: MediaQueryData(
-              devicePixelRatio: dpr, textScaler: const TextScaler.linear(2)),
+            devicePixelRatio: dpr,
+            textScaler: const TextScaler.linear(2),
+          ),
           child: FlowyImageCacheScope(manager: cache, child: child),
         ),
       );
 
-  Widget network(String url,
-          {Key? key,
-          ValueChanged<bool>? callback,
-          Set<int> codes = const {404},
-          UserProfilePB? profile}) =>
+  Widget network(
+    String url, {
+    Key? key,
+    ValueChanged<bool>? callback,
+    Set<int> codes = const {404},
+    UserProfilePB? profile,
+  }) =>
       FlowyNetworkImage(
         key: key ?? _imageKey,
         url: url,
@@ -124,11 +127,17 @@ void main() {
       (tester) async {
     final eviction = Completer<void>();
     cache.eviction = eviction.future;
-    await tester.pumpWidget(app(Column(children: [
-      network(_a, key: const ValueKey('a1')),
-      network(_a, key: const ValueKey('a2')),
-      network(_b, key: const ValueKey('b')),
-    ])));
+    await tester.pumpWidget(
+      app(
+        Column(
+          children: [
+            network(_a, key: const ValueKey('a1')),
+            network(_a, key: const ValueKey('a2')),
+            network(_b, key: const ValueKey('b')),
+          ],
+        ),
+      ),
+    );
     await tester.pump();
     final images = tester
         .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
@@ -214,7 +223,7 @@ void main() {
     for (final error in [
       HttpExceptionWithStatus(404, 'missing'),
       HttpExceptionWithStatus(401, 'auth'),
-      StateError('decode')
+      StateError('decode'),
     ]) {
       tester
           .widget<CachedNetworkImage>(find.byType(CachedNetworkImage))
@@ -253,11 +262,15 @@ void main() {
   testWidgets(
       'generic callers retain public memCache dimensions and fullscreen defaults',
       (tester) async {
-    await tester.pumpWidget(app(const FlowyNetworkImage(
-      url: _a,
-      memCacheWidth: 128,
-      memCacheHeight: 96,
-    )));
+    await tester.pumpWidget(
+      app(
+        const FlowyNetworkImage(
+          url: _a,
+          memCacheWidth: 128,
+          memCacheHeight: 96,
+        ),
+      ),
+    );
     await tester.pump();
     final sized =
         tester.widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
@@ -294,7 +307,8 @@ void main() {
     expect(firstRequest.headers, {'Authorization': 'Bearer fixture-old'});
     expect(cache.requests.length, 2);
     cache.probes[0].result.complete(
-        FileInfo(photo.file, FileSource.Cache, DateTime.utc(2100), url));
+      FileInfo(photo.file, FileSource.Cache, DateTime.utc(2100), url),
+    );
     await tester.pump();
     expect(results, isEmpty);
     cache.probes[1].result.complete(null);
@@ -309,28 +323,39 @@ void main() {
   testWidgets(
       'custom cloud URL retains explicitly supplied profile authentication',
       (tester) async {
-    await tester.pumpWidget(app(network(
-      _a,
-      profile: UserProfilePB(token: '{"access_token":"fixture-private"}'),
-    )));
+    await tester.pumpWidget(
+      app(
+        network(
+          _a,
+          profile: UserProfilePB(token: '{"access_token":"fixture-private"}'),
+        ),
+      ),
+    );
     await tester.pump();
-    expect(cache.requests.single.headers,
-        {'Authorization': 'Bearer fixture-private'});
+    expect(
+      cache.requests.single.headers,
+      {'Authorization': 'Bearer fixture-private'},
+    );
     await unmount(tester);
   });
 
   testWidgets(
       'cloud cover without a token remains guarded and makes no request',
       (tester) async {
-    await tester.pumpWidget(app(const SizedBox(
-      width: 600,
-      height: 200,
-      child: ViewCoverImage(
-          cover: PageStyleCover(
-        type: PageStyleCoverImageType.customImage,
-        value: 'https://test.appflowy.cloud/guarded.png',
-      )),
-    )));
+    await tester.pumpWidget(
+      app(
+        const SizedBox(
+          width: 600,
+          height: 200,
+          child: ViewCoverImage(
+            cover: PageStyleCover(
+              type: PageStyleCoverImageType.customImage,
+              value: 'https://test.appflowy.cloud/guarded.png',
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     expect(find.byType(FlowyNetworkImage), findsNothing);
     expect(cache.requests, isEmpty);
@@ -340,14 +365,18 @@ void main() {
   testWidgets(
       'actual failed cover stream retries transient HTTP, never permanent 404',
       (tester) async {
-    await tester.pumpWidget(app(const FlowyNetworkImage(
-      url: _a,
-      width: 44,
-      height: 32,
-      coverDecodeSize: CoverImageDecodeSize(96, 64),
-      retryErrorCodes: {503},
-      retryDuration: Duration(milliseconds: 20),
-    )));
+    await tester.pumpWidget(
+      app(
+        const FlowyNetworkImage(
+          url: _a,
+          width: 44,
+          height: 32,
+          coverDecodeSize: CoverImageDecodeSize(96, 64),
+          retryErrorCodes: {503},
+          retryDuration: Duration(milliseconds: 20),
+        ),
+      ),
+    );
     await tester.pump();
     cache.requests.single.stream
         .addError(HttpExceptionWithStatus(503, 'fixture'));
@@ -359,15 +388,20 @@ void main() {
     await _expectRedFrame(tester);
     expect(FlowyNetworkRetryCounter().getRetryCount(_a), 1);
     await unmount(tester);
-    await tester.pumpWidget(app(const SizedBox(
-      width: 44,
-      height: 32,
-      child: ViewCoverImage(
-          cover: PageStyleCover(
-        type: PageStyleCoverImageType.customImage,
-        value: _b,
-      )),
-    )));
+    await tester.pumpWidget(
+      app(
+        const SizedBox(
+          width: 44,
+          height: 32,
+          child: ViewCoverImage(
+            cover: PageStyleCover(
+              type: PageStyleCoverImageType.customImage,
+              value: _b,
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     cache.requests.last.stream
         .addError(HttpExceptionWithStatus(404, 'fixture'));
@@ -387,40 +421,46 @@ void main() {
           (tester) async {
         final appearance =
             CoverAppearance(fit: fit, position: CoverPosition.top);
-        await tester.pumpWidget(app(
-          PageCoverPresentation(
-            appearance: appearance,
-            alignment: appearance.alignment,
-            child: const SizedBox(
-              width: 44,
-              height: 32,
-              child: ViewCoverImage(
+        await tester.pumpWidget(
+          app(
+            PageCoverPresentation(
+              appearance: appearance,
+              alignment: appearance.alignment,
+              child: const SizedBox(
+                width: 44,
+                height: 32,
+                child: ViewCoverImage(
                   cover: PageStyleCover(
-                type: PageStyleCoverImageType.customImage,
-                value: _a,
-              )),
+                    type: PageStyleCoverImageType.customImage,
+                    value: _a,
+                  ),
+                ),
+              ),
             ),
+            theme: theme,
           ),
-          theme: theme,
-        ));
+        );
         await tester.pump();
         final flowy =
             tester.widget<FlowyNetworkImage>(find.byType(FlowyNetworkImage));
         expect(flowy.progressIndicatorBuilder, isNull);
         expect(flowy.retryErrorCodes, isNot(contains(404)));
         expect(flowy.coverDecodeSize, const CoverImageDecodeSize(96, 64));
-        expect((flowy.fadeInDuration, flowy.fadeOutDuration),
-            (Duration.zero, Duration.zero));
+        expect(
+          (flowy.fadeInDuration, flowy.fadeOutDuration),
+          (Duration.zero, Duration.zero),
+        );
         final context = tester.element(find.byType(ViewCoverImage));
         expect(PaperTheme.isEnabled(context), theme == 'paper');
         expect(MediaQuery.textScalerOf(context).scale(10), 20);
         cache.requests.single.stream.add(DownloadProgress(_a, 100, 20));
         await tester.pump();
         expect(
-            tester
-                .widgetList<RawImage>(find.byType(RawImage))
-                .every((image) => image.image == null),
-            isTrue);
+          tester
+              .widgetList<RawImage>(find.byType(RawImage))
+              .every((image) => image.image == null),
+          isTrue,
+        );
         cache.requests.single.stream.add(photo);
         await _expectRedFrame(tester);
         final raw = tester.widget<RawImage>(find.byType(RawImage));
@@ -428,12 +468,16 @@ void main() {
         expect(raw.alignment, Alignment.topCenter);
         expect(raw.image!.width / raw.image!.height, closeTo(2, .05));
         expect(
-            find.descendant(
-                of: find.byType(FlowyNetworkImage),
-                matching: find.byType(FadeTransition)),
-            findsNothing);
-        expect((raw.image!.width, raw.image!.height),
-            fit == CoverImageFit.fit ? (96, 48) : (120, 60));
+          find.descendant(
+            of: find.byType(FlowyNetworkImage),
+            matching: find.byType(FadeTransition),
+          ),
+          findsNothing,
+        );
+        expect(
+          (raw.image!.width, raw.image!.height),
+          fit == CoverImageFit.fit ? (96, 48) : (120, 60),
+        );
         expect(cache.probes, isEmpty);
         expect(tester.takeException(), isNull);
         await unmount(tester);
@@ -445,16 +489,20 @@ void main() {
       'static placeholder ignores chunks, then reveals the actual decoded frame',
       (tester) async {
     var placeholders = 0;
-    await tester.pumpWidget(app(FlowyNetworkImage(
-      url: _a,
-      width: 44,
-      height: 32,
-      coverDecodeSize: const CoverImageDecodeSize(96, 64),
-      placeholderBuilder: (_, __) {
-        placeholders++;
-        return const SizedBox(width: 44, height: 32);
-      },
-    )));
+    await tester.pumpWidget(
+      app(
+        FlowyNetworkImage(
+          url: _a,
+          width: 44,
+          height: 32,
+          coverDecodeSize: const CoverImageDecodeSize(96, 64),
+          placeholderBuilder: (_, __) {
+            placeholders++;
+            return const SizedBox(width: 44, height: 32);
+          },
+        ),
+      ),
+    );
     await tester.pump();
     final before = placeholders;
     for (var i = 1; i <= 5; i++) {
@@ -470,15 +518,18 @@ void main() {
   testWidgets(
       'local cover decodes real bytes and keeps its key within a resize bucket',
       (tester) async {
-    Widget cover(double width) => app(SizedBox(
-          width: width,
-          height: 32,
-          child: ViewCoverImage(
+    Widget cover(double width) => app(
+          SizedBox(
+            width: width,
+            height: 32,
+            child: ViewCoverImage(
               cover: PageStyleCover(
-            type: PageStyleCoverImageType.localImage,
-            value: photo.file.path,
-          )),
-        ));
+                type: PageStyleCoverImageType.localImage,
+                value: photo.file.path,
+              ),
+            ),
+          ),
+        );
     await tester.pumpWidget(cover(44));
     await _expectRedFrame(tester);
     final before = tester.widget<Image>(find.byType(Image)).image;
@@ -494,15 +545,20 @@ void main() {
 
   testWidgets('tiny thumbnail does not inherit hero fit or position',
       (tester) async {
-    await tester.pumpWidget(app(PageCoverPresentation(
-      appearance: const CoverAppearance(fit: CoverImageFit.fit),
-      alignment: Alignment.bottomCenter,
-      child: ViewCoverThumbnail(
-          cover: PageStyleCover(
-        type: PageStyleCoverImageType.localImage,
-        value: photo.file.path,
-      )),
-    )));
+    await tester.pumpWidget(
+      app(
+        PageCoverPresentation(
+          appearance: const CoverAppearance(fit: CoverImageFit.fit),
+          alignment: Alignment.bottomCenter,
+          child: ViewCoverThumbnail(
+            cover: PageStyleCover(
+              type: PageStyleCoverImageType.localImage,
+              value: photo.file.path,
+            ),
+          ),
+        ),
+      ),
+    );
     await _expectRedFrame(tester);
     final raw = tester.widget<RawImage>(find.byType(RawImage));
     expect(raw.fit, BoxFit.cover);
@@ -551,24 +607,31 @@ void main() {
 
   testWidgets('asset cover uses real PNG bytes through the bounded decoder',
       (tester) async {
-    await tester.pumpWidget(app(DefaultAssetBundle(
-      bundle: _CoverAssetBundle(png),
-      child: const SizedBox(
-        width: 44,
-        height: 32,
-        child: ViewCoverImage(
-            fit: BoxFit.contain,
-            cover: PageStyleCover(
-              type: PageStyleCoverImageType.builtInImage,
-              value: 'n1',
-            )),
+    await tester.pumpWidget(
+      app(
+        DefaultAssetBundle(
+          bundle: _CoverAssetBundle(png),
+          child: const SizedBox(
+            width: 44,
+            height: 32,
+            child: ViewCoverImage(
+              fit: BoxFit.contain,
+              cover: PageStyleCover(
+                type: PageStyleCoverImageType.builtInImage,
+                value: 'n1',
+              ),
+            ),
+          ),
+        ),
       ),
-    )));
+    );
     await _expectRedFrame(tester);
     final provider =
         tester.widget<Image>(find.byType(Image)).image as CoverImageProvider;
-    expect(provider.imageProvider,
-        AssetImage(PageStyleCoverImageType.builtInImagePath('n1')));
+    expect(
+      provider.imageProvider,
+      AssetImage(PageStyleCoverImageType.builtInImagePath('n1')),
+    );
     final raw = tester.widget<RawImage>(find.byType(RawImage));
     expect((raw.image!.width, raw.image!.height), (96, 48));
     expect(cache.requests, isEmpty);
@@ -607,16 +670,22 @@ class _ControlledCache extends Fake implements BaseCacheManager {
   Future<void>? eviction;
 
   @override
-  Future<FileInfo?> getFileFromCache(String key,
-      {bool ignoreMemCache = false}) {
+  Future<FileInfo?> getFileFromCache(
+    String key, {
+    bool ignoreMemCache = false,
+  }) {
     final probe = _Probe(key);
     probes.add(probe);
     return probe.result.future;
   }
 
   @override
-  Stream<FileResponse> getFileStream(String url,
-      {String? key, Map<String, String>? headers, bool withProgress = false}) {
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) {
     final request = _Request(url, key, headers);
     requests.add(request);
     return request.stream.stream;
@@ -654,8 +723,11 @@ Future<void> _expectRedFrame(WidgetTester tester) async {
       break;
     }
   }
-  expect(frame, isNotNull,
-      reason: 'A backdrop/URL is not a decoded cover frame');
+  expect(
+    frame,
+    isNotNull,
+    reason: 'A backdrop/URL is not a decoded cover frame',
+  );
   final image = frame!.image!.clone();
   try {
     final pixels = await tester.runAsync(() => image.toByteData());

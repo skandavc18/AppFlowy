@@ -135,12 +135,14 @@ class _Fixture {
   String installedDocument() {
     expect(controller.sources, hasLength(1));
     final source = controller.sources.single;
-    expect(source,
-        contains("const key = '${NativeFilePageScrollBridge.runtime}';"));
+    expect(
+      source,
+      contains("const key = '${NativeFilePageScrollBridge.runtime}';"),
+    );
     expect(source, contains('globalThis[key] = {'));
     expect(controller.worlds.last, ContentWorld.PAGE);
     // Inspect the actual evaluateJavascript payload, never production source.
-    final token = RegExp(r'const documentId = ("[^"]+");').firstMatch(source);
+    final token = RegExp('const documentId = ("[^"]+");').firstMatch(source);
     expect(token, isNotNull);
     return jsonDecode(token!.group(1)!) as String;
   }
@@ -174,8 +176,7 @@ class _WebViewPlatform extends InAppWebViewPlatform {
 }
 
 class _WebViewSurface extends PlatformInAppWebViewWidget {
-  _WebViewSurface(PlatformInAppWebViewWidgetCreationParams params)
-      : super.implementation(params);
+  _WebViewSurface(super.params) : super.implementation();
 
   @override
   Widget build(BuildContext context) => const SizedBox.expand();

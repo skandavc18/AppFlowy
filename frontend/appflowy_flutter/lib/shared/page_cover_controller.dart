@@ -62,12 +62,12 @@ bool samePageCoverSource(ViewPB before, ViewPB after) {
           [
             a['cover'],
             a['appflowy_collection_source'],
-            a['appflowy_workspace_item']
+            a['appflowy_workspace_item'],
           ],
           [
             b['cover'],
             b['appflowy_collection_source'],
-            b['appflowy_workspace_item']
+            b['appflowy_workspace_item'],
           ],
         );
   } on FormatException {
@@ -144,8 +144,11 @@ class PageCoverController extends ChangeNotifier {
     );
   }
 
-  void rebind(
-      {required ViewPB view, required Object binding, required bool editable}) {
+  void rebind({
+    required ViewPB view,
+    required Object binding,
+    required bool editable,
+  }) {
     if (_disposed) return;
     if (_view.id != view.id || _binding != binding) {
       _stop?.call();

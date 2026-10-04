@@ -100,10 +100,12 @@ void main() {
           expect(tools, findsNWidgets(8));
           expect(
             tester
-                .widgetList<BookmarkAction>(find.descendant(
-                  of: _key('tools'),
-                  matching: find.byType(BookmarkAction),
-                ))
+                .widgetList<BookmarkAction>(
+                  find.descendant(
+                    of: _key('tools'),
+                    matching: find.byType(BookmarkAction),
+                  ),
+                )
                 .map((action) => action.icon),
             [
               Icons.star_outline_rounded,

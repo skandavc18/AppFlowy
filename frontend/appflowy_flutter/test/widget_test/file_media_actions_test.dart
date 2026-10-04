@@ -1301,14 +1301,18 @@ void main() {
         findsOneWidget,
       );
       expect(
-          find.descendant(of: row, matching: find.byType(Wrap)), findsNothing);
+        find.descendant(of: row, matching: find.byType(Wrap)),
+        findsNothing,
+      );
       final controlsState = tester.state(find.byType(MediaActionButtons));
       final controls = _buttons(tester);
       expect(controls.actions, same(fixture.actions));
       expect(controls.decorated, isFalse);
       expect(controls.source.source, loader.source);
       expect(
-          controls.source.source, fixture.file.attributes[FileBlockKeys.url]);
+        controls.source.source,
+        fixture.file.attributes[FileBlockKeys.url],
+      );
       expect(controls.source.source, isNot(materialized.path));
       expect(controls.source.name, 'original.pdf');
       expect(controls.source.requireAuthentication, isTrue);
@@ -1324,8 +1328,10 @@ void main() {
       );
       final pageCenter = tester.getCenter(find.byType(PdfPageNumberField)).dy;
       for (final key in [_copyKey, _shareKey]) {
-        expect(find.descendant(of: row, matching: find.byKey(key)),
-            findsOneWidget);
+        expect(
+          find.descendant(of: row, matching: find.byKey(key)),
+          findsOneWidget,
+        );
         expect(tester.getCenter(find.byKey(key)).dy, closeTo(pageCenter, 1));
         expect(
           find.ancestor(of: find.byKey(key), matching: projectedRegion),
@@ -1378,7 +1384,9 @@ void main() {
           expect(_button(tester, _copyKey).tooltip, 'Copy');
         }
         expect(
-            tester.state(find.byType(MediaActionButtons)), same(controlsState));
+          tester.state(find.byType(MediaActionButtons)),
+          same(controlsState),
+        );
       }
 
       await mouse.moveTo(Offset.zero);
@@ -1390,7 +1398,7 @@ void main() {
         MaterializedFileBuilder,
         FilePreview,
         PdfPreview,
-        PdfViewer
+        PdfViewer,
       ]) {
         expect(find.byType(type, skipOffstage: false), findsNothing);
       }

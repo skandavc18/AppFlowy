@@ -15,9 +15,11 @@ class BookmarkReaderTestLocalizations extends AssetLoader {
   static Future<void> initialize() async {
     SharedPreferences.setMockInitialValues({});
     await EasyLocalization.ensureInitialized();
-    translations = jsonDecode(await File(
-      '../resources/translations/en-US.json',
-    ).readAsString()) as Map<String, dynamic>;
+    translations = jsonDecode(
+      await File(
+        '../resources/translations/en-US.json',
+      ).readAsString(),
+    ) as Map<String, dynamic>;
   }
 
   @override

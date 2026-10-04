@@ -88,10 +88,12 @@ void main() {
     session.navigationStarted(_url);
     BookmarkReaderCapture? result;
     var completed = false;
-    unawaited(session.capture().then((value) {
-      result = value;
-      completed = true;
-    }));
+    unawaited(
+      session.capture().then((value) {
+        result = value;
+        completed = true;
+      }),
+    );
     await tester.pump();
     expect(calls, 1);
     for (var i = 0; i < 4; i++) {
@@ -141,10 +143,12 @@ void main() {
     session.navigationStarted(_url);
     var completed = false;
     BookmarkReaderCapture? result;
-    unawaited(session.capture().then((value) {
-      result = value;
-      completed = true;
-    }));
+    unawaited(
+      session.capture().then((value) {
+        result = value;
+        completed = true;
+      }),
+    );
     for (var i = 0; i < 4; i++) {
       await tester.pump(bookmarkReaderRetryInterval);
     }
@@ -168,10 +172,12 @@ void main() {
       session.navigationStarted(_url);
       var completed = false;
       BookmarkReaderCapture? result;
-      unawaited(session.capture().then((value) {
-        result = value;
-        completed = true;
-      }));
+      unawaited(
+        session.capture().then((value) {
+          result = value;
+          completed = true;
+        }),
+      );
       await tester.pump();
       expect(calls, 1);
       switch (change) {
@@ -194,7 +200,9 @@ void main() {
   test('a visible access gate is reported as one', () async {
     final session = BookmarkReadingSession();
     session.attach(
-        Object(), (_) async => jsonEncode({'url': _url, 'gate': true}));
+      Object(),
+      (_) async => jsonEncode({'url': _url, 'gate': true}),
+    );
     session.navigationStarted(_url);
     expect(await session.capture(), isNull);
     expect(session.lastFailure, BookmarkReaderFailure.gated);
@@ -218,9 +226,10 @@ void main() {
 
   test('a long article is parsed in the background', () async {
     final paragraphs = List.generate(
-        800,
-        (i) => '<p>Paragraph $i of a long article, with enough ordinary words '
-            'in it to be read as prose rather than navigation.</p>').join();
+      800,
+      (i) => '<p>Paragraph $i of a long article, with enough ordinary words '
+          'in it to be read as prose rather than navigation.</p>',
+    ).join();
     final html = '<html><body><article>$paragraphs</article></body></html>';
     expect(html.length, greaterThan(64 * 1024));
     final session = BookmarkReadingSession();
@@ -266,7 +275,7 @@ void main() {
     'not JSON',
     '{}',
     _payload(url: 'https://news.example/wrong'),
-    _payload(html: '<article>${'界' * bookmarkReaderCaptureLimit}</article>')
+    _payload(html: '<article>${'界' * bookmarkReaderCaptureLimit}</article>'),
   ]) {
     test(
         'rejects missing, malformed, mismatched or oversized capture ${payload?.length}',
@@ -291,10 +300,12 @@ void main() {
     session.navigationFinished(_url);
     BookmarkReaderCapture? result;
     var completed = false;
-    unawaited(session.capture().then((value) {
-      result = value;
-      completed = true;
-    }));
+    unawaited(
+      session.capture().then((value) {
+        result = value;
+        completed = true;
+      }),
+    );
     await tester.pump(bookmarkReaderDeadline + const Duration(milliseconds: 1));
     expect(completed, isTrue);
     expect(result, isNull);
@@ -307,18 +318,21 @@ void main() {
   test('a list of citations is not mistaken for the article', () {
     // Commas everywhere: a references list outscores the prose it cites.
     final citations = List.generate(
-        60,
-        (i) => '<li>"Source $i". Publisher, City, 2021. Archived, '
-            'retrieved 2021-02-07, page $i.</li>').join();
+      60,
+      (i) => '<li>"Source $i". Publisher, City, 2021. Archived, '
+          'retrieved 2021-02-07, page $i.</li>',
+    ).join();
     final paragraphs = List.generate(
-        12,
-        (i) => '<p>Paragraph $i of the article itself, long enough to '
-            'read as prose.</p>').join();
+      12,
+      (i) => '<p>Paragraph $i of the article itself, long enough to '
+          'read as prose.</p>',
+    ).join();
     final article = parseReadableArticle(
-        '<html><body><div class="content"><h1>Reading</h1>$paragraphs'
-        '<div class="reflist"><ol class="references">$citations</ol></div>'
-        '</div></body></html>',
-        baseUrl: Uri.parse(_url));
+      '<html><body><div class="content"><h1>Reading</h1>$paragraphs'
+      '<div class="reflist"><ol class="references">$citations</ol></div>'
+      '</div></body></html>',
+      baseUrl: Uri.parse(_url),
+    );
     expect(article.plainText, contains('Paragraph 0 of the article'));
     expect(article.plainText, contains('Paragraph 11 of the article'));
   });
@@ -334,10 +348,11 @@ void main() {
           'and yet more, outscores every other paragraph on its own.'),
     ].join();
     final article = parseReadableArticle(
-        '<html><body><main><article><h1>Story</h1>$blocks</article></main>'
-        '<ul><li><a href="/next">A related story with a long headline</a></li>'
-        '</ul></body></html>',
-        baseUrl: Uri.parse(_url));
+      '<html><body><main><article><h1>Story</h1>$blocks</article></main>'
+      '<ul><li><a href="/next">A related story with a long headline</a></li>'
+      '</ul></body></html>',
+      baseUrl: Uri.parse(_url),
+    );
     expect(article.plainText, contains('Paragraph 0 of the story'));
     expect(article.plainText, contains('Paragraph 19 of the story'));
     expect(article.plainText, contains('outscores every other paragraph'));
@@ -346,28 +361,32 @@ void main() {
 
   test('comments beside an article are not gathered into it', () {
     final story = List.generate(
-        6,
-        (i) => '<p>Paragraph $i, with a clause, another clause, and a third, '
-            'of the story itself.</p>').join();
+      6,
+      (i) => '<p>Paragraph $i, with a clause, another clause, and a third, '
+          'of the story itself.</p>',
+    ).join();
     final comments = List.generate(
-        30,
-        (i) => '<div class="comment"><p>Comment $i says something long '
-            'enough to be read as prose here and there.</p></div>').join();
+      30,
+      (i) => '<div class="comment"><p>Comment $i says something long '
+          'enough to be read as prose here and there.</p></div>',
+    ).join();
     final article = parseReadableArticle(
-        '<html><body><article>$story</article>'
-        '<section class="comments">$comments</section></body></html>',
-        baseUrl: Uri.parse(_url));
+      '<html><body><article>$story</article>'
+      '<section class="comments">$comments</section></body></html>',
+      baseUrl: Uri.parse(_url),
+    );
     expect(article.plainText, contains('Paragraph 5'));
     expect(article.plainText, isNot(contains('Comment 0 says')));
   });
 
   test('parser rejects hidden prose and unsafe links', () {
     final article = parseReadableArticle(
-        '<article><p>Visible ordinary content long enough to select.</p>'
-        '<p hidden>Hidden subscriber text</p><p style="display: none">Hidden CSS</p>'
-        '<p><a href="javascript:alert(1)">Readable label</a>'
-        '<a href="file:///C:/secret">File label</a></p></article>',
-        baseUrl: Uri.parse(_url));
+      '<article><p>Visible ordinary content long enough to select.</p>'
+      '<p hidden>Hidden subscriber text</p><p style="display: none">Hidden CSS</p>'
+      '<p><a href="javascript:alert(1)">Readable label</a>'
+      '<a href="file:///C:/secret">File label</a></p></article>',
+      baseUrl: Uri.parse(_url),
+    );
     expect(article.plainText, isNot(contains('Hidden')));
     expect(article.markdown, isNot(contains('javascript:')));
     expect(article.markdown, isNot(contains('file:')));
@@ -390,21 +409,27 @@ void main() {
       'src=',
       'href=',
       'javascript:',
-      'iframe'
+      'iframe',
     ]) {
       expect(passive, isNot(contains(forbidden)));
     }
     expect(passive, contains('Keep this paragraph.'));
     expect(
-        bookmarkArticleText(
-            '![remote](https://tracker.example/x)\n\n# Heading\n\nText'),
-        contains('Heading'));
+      bookmarkArticleText(
+        '![remote](https://tracker.example/x)\n\n# Heading\n\nText',
+      ),
+      contains('Heading'),
+    );
     expect(
-        bookmarkArticleText('![remote](https://tracker.example/x)'), isEmpty);
+      bookmarkArticleText('![remote](https://tracker.example/x)'),
+      isEmpty,
+    );
     expect(
-        bookmarkPublicSource(
-            'https://user:secret@news.example/a?token=secret#token'),
-        'https://news.example/a');
+      bookmarkPublicSource(
+        'https://user:secret@news.example/a?token=secret#token',
+      ),
+      'https://news.example/a',
+    );
   });
 
   test(
@@ -422,28 +447,34 @@ void main() {
       expect(Uri.parse(public).hasFragment, isFalse);
       expect(Uri.parse(public).userInfo, isEmpty);
     }
-    expect(bookmarkPublicSource('http://user:secret@[::1]:8080/a%20b?q=x#y'),
-        'http://[::1]:8080/a%20b');
+    expect(
+      bookmarkPublicSource('http://user:secret@[::1]:8080/a%20b?q=x#y'),
+      'http://[::1]:8080/a%20b',
+    );
     expect(bookmarkPublicSource('file:///C:/private'), isEmpty);
   });
 
   for (final body in [
     '<title>Access denied</title>',
     '<style>.hidden{display:none}</style>$_html',
-    '<div class="paywall">Subscribe</div>$_html'
+    '<div class="paywall">Subscribe</div>$_html',
   ]) {
     test(
         'HTTP Reader declines gate/style/challenge without browser fallback ${body.length}',
         () async {
       var browserReads = 0;
       final fetcher = BookmarkFetcher(
-          client: MockClient((_) async => http.Response(body, 200)),
-          browserFallback: (_) async {
-            browserReads++;
-            return _html;
-          });
-      final result = await fetcher.fetch(_url,
-          readerOnly: true, allowBrowserFallback: false);
+        client: MockClient((_) async => http.Response(body, 200)),
+        browserFallback: (_) async {
+          browserReads++;
+          return _html;
+        },
+      );
+      final result = await fetcher.fetch(
+        _url,
+        readerOnly: true,
+        allowBrowserFallback: false,
+      );
       expect(result.succeeded, isFalse);
       expect(browserReads, 0);
       fetcher.close();
@@ -454,10 +485,17 @@ void main() {
       () async {
     var oversized = false;
     final fetcher = BookmarkFetcher(
-        client: MockClient((_) async => http.Response(
-            oversized ? 'x' * (maxBookmarkPageBytes + 1) : _html, 200)));
-    expect((await fetcher.fetch(_url, readerOnly: true)).article?.isEmpty,
-        isFalse);
+      client: MockClient(
+        (_) async => http.Response(
+          oversized ? 'x' * (maxBookmarkPageBytes + 1) : _html,
+          200,
+        ),
+      ),
+    );
+    expect(
+      (await fetcher.fetch(_url, readerOnly: true)).article?.isEmpty,
+      isFalse,
+    );
     oversized = true;
     expect((await fetcher.fetch(_url, readerOnly: true)).succeeded, isFalse);
     fetcher.close();

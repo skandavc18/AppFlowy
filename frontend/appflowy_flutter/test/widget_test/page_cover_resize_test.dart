@@ -33,22 +33,31 @@ void main() {
       final original = io.view.writeToBuffer();
       final draft = TextEditingController(text: 'Unsaved title');
       final focus = FocusNode();
-      await _mount(tester, store, io,
-          appearance: appearance,
-          title: TextField(controller: draft, focusNode: focus));
+      await _mount(
+        tester,
+        store,
+        io,
+        appearance: appearance,
+        title: TextField(controller: draft, focusNode: focus),
+      );
       final titleState = tester.state(find.byType(EditableText));
       focus.requestFocus();
       draft.selection = const TextSelection(baseOffset: 1, extentOffset: 5);
       await tester.pump();
-      await store.update((v) => v.copyWith(
+      await store.update(
+        (v) => v.copyWith(
           corners: CoverCorners.square,
           aspectRatio: 4,
           fit: CoverImageFit.fit,
-          position: CoverPosition.bottom));
+          position: CoverPosition.bottom,
+        ),
+      );
       await tester.pump();
       final width = tester.getSize(find.byType(WorkspacePageCover)).width;
-      expect(tester.getSize(find.byType(WorkspacePageCover)).height,
-          closeTo(width / 4, .001));
+      expect(
+        tester.getSize(find.byType(WorkspacePageCover)).height,
+        closeTo(width / 4, .001),
+      );
       final image = tester.widget<Image>(find.byType(Image));
       expect(image.fit, BoxFit.contain);
       expect(image.alignment, Alignment.bottomCenter);
@@ -56,14 +65,17 @@ void main() {
       expect(focus.hasFocus, isTrue);
       expect(draft.text, 'Unsaved title');
       expect(
-          draft.selection, const TextSelection(baseOffset: 1, extentOffset: 5));
+        draft.selection,
+        const TextSelection(baseOffset: 1, extentOffset: 5),
+      );
       expect(io.view.writeToBuffer(), original);
       expect(io.writes, isEmpty);
 
       io.emit(PageCoverHeight.applyTo(io.view, 230.125));
       await tester.pump();
       await store.update(
-          (v) => v.copyWith(aspectRatio: 6, fit: CoverImageFit.stretch));
+        (v) => v.copyWith(aspectRatio: 6, fit: CoverImageFit.stretch),
+      );
       await tester.pump();
       expect(tester.getSize(find.byType(WorkspacePageCover)).height, 230.125);
       expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.fill);
@@ -86,8 +98,10 @@ void main() {
         final original = tester.getSize(frame).height;
         final grip = find.byKey(const ValueKey('page-cover-resize'));
         expect(grip.hitTestable(), findsOneWidget);
-        final pointer = await tester.startGesture(tester.getCenter(grip),
-            kind: PointerDeviceKind.mouse);
+        final pointer = await tester.startGesture(
+          tester.getCenter(grip),
+          kind: PointerDeviceKind.mouse,
+        );
         await pointer.moveBy(const Offset(0, 4));
         await tester.pump();
         await pointer.moveBy(const Offset(0, 37.25));
@@ -98,8 +112,10 @@ void main() {
         if (terminal == 'cancel') {
           await pointer.cancel();
         } else if (terminal == 'escape') {
-          await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-              physicalKey: PhysicalKeyboardKey.escape);
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.escape,
+            physicalKey: PhysicalKeyboardKey.escape,
+          );
           await pointer.up();
         } else {
           await pointer.up();
@@ -107,16 +123,22 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(io.writes.length, terminal == 'release' ? 1 : 0);
-        expect(tester.getSize(frame).height,
-            terminal == 'release' ? preview : original);
+        expect(
+          tester.getSize(frame).height,
+          terminal == 'release' ? preview : original,
+        );
         if (terminal == 'release') {
           expect(PageCoverHeight.decode(io.view.extra), preview);
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown,
-              physicalKey: PhysicalKeyboardKey.arrowDown);
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.arrowDown,
+            physicalKey: PhysicalKeyboardKey.arrowDown,
+          );
           await tester.pump();
           expect(PageCoverHeight.decode(io.view.extra), preview + 1);
-          await tester.sendKeyEvent(LogicalKeyboardKey.home,
-              physicalKey: PhysicalKeyboardKey.home);
+          await tester.sendKeyEvent(
+            LogicalKeyboardKey.home,
+            physicalKey: PhysicalKeyboardKey.home,
+          );
           await tester.pump();
           expect(PageCoverHeight.decode(io.view.extra), isNull);
           expect(tester.getSize(frame).height, original);
@@ -134,12 +156,18 @@ void main() {
       await store.ensureLoaded();
       final io = CoverMemoryViews(_view());
       final editable = ValueNotifier(true);
-      await _mount(tester, store, io,
-          appearance: appearance, editable: editable);
+      await _mount(
+        tester,
+        store,
+        io,
+        appearance: appearance,
+        editable: editable,
+      );
       final original = tester.getSize(find.byType(WorkspacePageCover)).height;
       final pointer = await tester.startGesture(
-          tester.getCenter(find.byKey(const ValueKey('page-cover-resize'))),
-          kind: PointerDeviceKind.mouse);
+        tester.getCenter(find.byKey(const ValueKey('page-cover-resize'))),
+        kind: PointerDeviceKind.mouse,
+      );
       await pointer.moveBy(const Offset(0, 5));
       await tester.pump();
       await pointer.moveBy(const Offset(0, 40));
@@ -165,16 +193,21 @@ void main() {
       final storage = CoverMemoryStorage();
       final store = CoverAppearanceStore(resolveStorage: () => storage);
       await store.ensureLoaded();
-      await tester.pumpWidget(workspaceOverlayTestApp(
-        appearance: appearance,
-        disableAnimations: true,
-        textScale: 2,
-        child: Center(
+      await tester.pumpWidget(
+        workspaceOverlayTestApp(
+          appearance: appearance,
+          disableAnimations: true,
+          textScale: 2,
+          child: Center(
             child: SizedBox(
-                width: 360,
-                child: SingleChildScrollView(
-                    child: CoverAppearanceSetting(store: store)))),
-      ));
+              width: 360,
+              child: SingleChildScrollView(
+                child: CoverAppearanceSetting(store: store),
+              ),
+            ),
+          ),
+        ),
+      );
       await tester.pump();
       await tester.pump();
       final square =
@@ -199,9 +232,10 @@ void main() {
       await tester.pump();
       expect(store.value, CoverAppearance.defaults);
       expect(
-          storage.writes
-              .every((write) => write.$1 == CoverAppearanceStore.storageKey),
-          isTrue);
+        storage.writes
+            .every((write) => write.$1 == CoverAppearanceStore.storageKey),
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       store.dispose();
@@ -214,31 +248,42 @@ void main() {
     final store =
         CoverAppearanceStore(resolveStorage: () => CoverMemoryStorage());
     await store.ensureLoaded();
-    await tester.pumpWidget(workspaceOverlayTestApp(
-      disableAnimations: true,
-      child: CoverAppearanceScope(
+    await tester.pumpWidget(
+      workspaceOverlayTestApp(
+        disableAnimations: true,
+        child: CoverAppearanceScope(
           store: store,
           child: SingleChildScrollView(
-              child: Column(children: [
-            for (var i = 0; i < 2; i++)
-              WorkspacePageHeader(
-                  key: ValueKey('default-$i'),
-                  cover: const ViewCoverImage(cover: _art),
-                  identity: Text('Page $i')),
-            const ViewCoverThumbnail(cover: _art),
-          ]))),
-    ));
+            child: Column(
+              children: [
+                for (var i = 0; i < 2; i++)
+                  WorkspacePageHeader(
+                    key: ValueKey('default-$i'),
+                    cover: const ViewCoverImage(cover: _art),
+                    identity: Text('Page $i'),
+                  ),
+                const ViewCoverThumbnail(cover: _art),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     await store
         .update((v) => v.copyWith(fit: CoverImageFit.fit, aspectRatio: 6));
     await tester.pump();
     for (var i = 0; i < 2; i++) {
       final image = find.descendant(
-          of: find.byKey(ValueKey('default-$i')), matching: find.byType(Image));
+        of: find.byKey(ValueKey('default-$i')),
+        matching: find.byType(Image),
+      );
       expect(tester.widget<Image>(image).fit, BoxFit.contain);
     }
     final thumbnail = find.descendant(
-        of: find.byType(ViewCoverThumbnail), matching: find.byType(Image));
+      of: find.byType(ViewCoverThumbnail),
+      matching: find.byType(Image),
+    );
     expect(tester.widget<Image>(thumbnail).fit, BoxFit.cover);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -250,11 +295,14 @@ void main() {
     final store =
         CoverAppearanceStore(resolveStorage: () => CoverMemoryStorage());
     await store.ensureLoaded();
-    await tester.pumpWidget(workspaceOverlayTestApp(
+    await tester.pumpWidget(
+      workspaceOverlayTestApp(
         child: CoverAppearanceScope(
-      store: store,
-      child: const WorkspacePageHeader(identity: Text('No cover')),
-    )));
+          store: store,
+          child: const WorkspacePageHeader(identity: Text('No cover')),
+        ),
+      ),
+    );
     await tester.pump();
     await store.update((v) => v.copyWith(aspectRatio: 1));
     await tester.pump();
@@ -272,29 +320,36 @@ void main() {
     await store.ensureLoaded();
     final io = CoverMemoryViews(_view())..readGate = Completer<void>();
     final gate = ValueNotifier(true);
-    await tester.pumpWidget(workspaceOverlayTestApp(
+    await tester.pumpWidget(
+      workspaceOverlayTestApp(
         child: CoverAppearanceScope(
-      store: store,
-      child: PageCoverBackendScope(
-          backend: PageCoverBackendService(views: io),
-          child: PageCoverInteractionGate(
-            allowed: gate,
-            child: SingleChildScrollView(
+          store: store,
+          child: PageCoverBackendScope(
+            backend: PageCoverBackendService(views: io),
+            child: PageCoverInteractionGate(
+              allowed: gate,
+              child: SingleChildScrollView(
                 child: WorkspacePageHeader(
-              coverView: io.view,
-              coverEditable: true,
-              cover: const ViewCoverImage(cover: _art),
-              identity: const Text('Title'),
-            )),
-          )),
-    )));
+                  coverView: io.view,
+                  coverEditable: true,
+                  cover: const ViewCoverImage(cover: _art),
+                  identity: const Text('Title'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump();
     final grip = find.byKey(const ValueKey('page-cover-resize'));
     await tester.tap(grip);
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown,
-        physicalKey: PhysicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.arrowDown,
+      physicalKey: PhysicalKeyboardKey.arrowDown,
+    );
     await tester.pump();
     expect(io.reads, 1);
     gate.value = false;
@@ -321,11 +376,12 @@ void main() {
     final data = node.getSemanticsData();
     expect(data.hasAction(SemanticsAction.increase), isTrue);
     expect(data.hasAction(SemanticsAction.decrease), isTrue);
-    tester.binding.pipelineOwner.semanticsOwner!
-        .performAction(node.id, SemanticsAction.increase);
+    node.owner!.performAction(node.id, SemanticsAction.increase);
     await tester.pump();
-    expect(tester.getSemantics(grip).getSemanticsData().hint,
-        contains('Could not save'));
+    expect(
+      tester.getSemantics(grip).getSemanticsData().hint,
+      contains('Could not save'),
+    );
     expect(PageCoverHeight.decode(io.view.extra), isNull);
     await tester.pumpWidget(const SizedBox());
     semantics.dispose();
@@ -334,9 +390,10 @@ void main() {
 }
 
 ViewPB _view() => ViewPB(
-    id: 'resize-widget',
-    layout: ViewLayoutPB.Document,
-    extra: '{"cover":{"type":"built_in","value":"n1"}}');
+      id: 'resize-widget',
+      layout: ViewLayoutPB.Document,
+      extra: '{"cover":{"type":"built_in","value":"n1"}}',
+    );
 
 Future<void> _mount(
   WidgetTester tester,
@@ -352,28 +409,37 @@ Future<void> _mount(
         coverEditable: enabled,
         coverBinding: io,
         cover: const ViewCoverImage(
-            cover: _art, width: double.infinity, height: double.infinity),
+          cover: _art,
+          width: double.infinity,
+          height: double.infinity,
+        ),
         identity: title,
       );
-  await tester.pumpWidget(workspaceOverlayTestApp(
-    appearance: appearance,
-    disableAnimations: true,
-    child: CoverAppearanceScope(
+  await tester.pumpWidget(
+    workspaceOverlayTestApp(
+      appearance: appearance,
+      disableAnimations: true,
+      child: CoverAppearanceScope(
         store: store,
         child: PageCoverBackendScope(
           backend: PageCoverBackendService(views: io),
           child: SingleChildScrollView(
-              child: Column(children: [
-            editable == null
-                ? header(true)
-                : ValueListenableBuilder<bool>(
-                    valueListenable: editable,
-                    builder: (_, enabled, __) => header(enabled),
-                  ),
-            const SizedBox(height: 1000),
-          ])),
-        )),
-  ));
+            child: Column(
+              children: [
+                editable == null
+                    ? header(true)
+                    : ValueListenableBuilder<bool>(
+                        valueListenable: editable,
+                        builder: (_, enabled, __) => header(enabled),
+                      ),
+                const SizedBox(height: 1000),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
   await tester.pump();
   await tester.pump();
 }

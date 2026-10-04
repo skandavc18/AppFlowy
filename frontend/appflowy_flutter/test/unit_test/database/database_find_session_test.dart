@@ -45,14 +45,22 @@ void main() {
       await tester.pump(DatabaseFindSession.debounce);
       await databaseFindUntil(tester, () => !session.loading);
       expect(session.status, DatabaseFindStatus.ready);
-      expect(session.matches.map((match) => match.part.text),
-          ['second needle', 'A needle task']);
+      expect(
+        session.matches.map((match) => match.part.text),
+        ['second needle', 'A needle task'],
+      );
       expect(
           session.matches.map((match) => match.targetIn(databaseFindViewId)), [
         const DatabaseFindTarget.cell(
-            databaseFindViewId, 'second-row', databaseFindFieldId),
+          databaseFindViewId,
+          'second-row',
+          databaseFindFieldId,
+        ),
         const DatabaseFindTarget.cell(
-            databaseFindViewId, databaseFindRowId, databaseFindFieldId),
+          databaseFindViewId,
+          databaseFindRowId,
+          databaseFindFieldId,
+        ),
       ]);
       expect(reads.calls.where((call) => call.startsWith('cell:')), [
         'cell:$databaseFindViewId:second-row:$databaseFindFieldId',
@@ -109,10 +117,13 @@ void main() {
       await tester.pump(DatabaseFindSession.debounce);
       await databaseFindUntil(tester, () => !session.loading);
       expect(
-          session.matches.every((match) => !match.part.id.startsWith('row:')),
-          isTrue);
+        session.matches.every((match) => !match.part.id.startsWith('row:')),
+        isTrue,
+      );
       expect(
-          reads.calls.where((call) => call.startsWith('cell:')), hasLength(1));
+        reads.calls.where((call) => call.startsWith('cell:')),
+        hasLength(1),
+      );
     } finally {
       session.dispose();
       reads.dispose();
@@ -128,7 +139,10 @@ void main() {
       isOwnerActive: () => true,
       provider: reads.provider(),
       viewSnapshot: () => DatabaseFindViewSnapshot(
-          viewId: 'other', rowIds: const [], fieldIds: const []),
+        viewId: 'other',
+        rowIds: const [],
+        fieldIds: const [],
+      ),
     );
     try {
       session.search('needle', const FindOptions());

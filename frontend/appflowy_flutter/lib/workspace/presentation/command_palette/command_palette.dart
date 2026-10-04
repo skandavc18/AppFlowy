@@ -69,8 +69,8 @@ class CommandPalette extends InheritedWidget {
   }) : super(
           child: _CommandPaletteController(
             notifier: notifier,
-            child: child,
             readProvider: readProvider,
+            child: child,
           ),
         );
 
@@ -269,8 +269,12 @@ class _CommandPaletteRoute extends DialogRoute<void>
   }) : super(traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop);
 
   @override
-  Widget buildTransitions(BuildContext context, Animation<double> animation,
-      Animation<double> secondaryAnimation, Widget child) {
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
     final media = MediaQuery.maybeOf(context);
     final reduced = reduceMotion() ||
         media?.disableAnimations == true ||
@@ -292,7 +296,7 @@ class _CommandPaletteRoute extends DialogRoute<void>
       reduceMotion() ? Duration.zero : FloatingModal.exitDuration;
 
   @override
-  bool didPop(dynamic result) {
+  bool didPop(void result) {
     // Accessibility can change while this route is open. The controller was
     // created on entry, so refresh its reverse timing before Flutter pops it.
     controller?.reverseDuration = reverseTransitionDuration;
@@ -476,7 +480,9 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
         _closing ||
         generation != _titleRefreshGeneration ||
         views == null ||
-        !_workspaceIsCurrent(id)) return;
+        !_workspaceIsCurrent(id)) {
+      return;
+    }
     _titleSourceInvalidated = false;
     _titleSearch.updateSource(
       workspaceId: id,
@@ -920,7 +926,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
               ? null
               : [
                   ...appSettings,
-                  ...extensionSettings
+                  ...extensionSettings,
                 ].firstWhereOrNull((setting) => setting.id == _pickerSettingId);
           final pickerControl = pickerSetting?.control;
           final picker = pickerSetting != null && pickerControl is PaletteChoice
@@ -1362,9 +1368,12 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                               child: Text(
                                 'Title search timed out. Coverage is incomplete.',
                                 key: const ValueKey(
-                                    'command-palette-title-timeout'),
+                                  'command-palette-title-timeout',
+                                ),
                                 style: WorkspaceTypography.style(
-                                    context, WorkspaceTextRole.metadata),
+                                  context,
+                                  WorkspaceTextRole.metadata,
+                                ),
                               ),
                             ),
                         ],

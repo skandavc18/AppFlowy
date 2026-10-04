@@ -325,8 +325,10 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
                                 ? null
                                 : () {
                                     if (!_alive || !widget.active) return;
-                                    setState(() => _preferWebsiteGestures =
-                                        !_preferWebsiteGestures);
+                                    setState(
+                                      () => _preferWebsiteGestures =
+                                          !_preferWebsiteGestures,
+                                    );
                                   },
                           ),
                         ),
@@ -527,8 +529,9 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
           }
         },
         onUpdateVisitedHistory: (controller, url, _) {
-          if (!_alive || !sameWebViewController(controller, _controller))
+          if (!_alive || !sameWebViewController(controller, _controller)) {
             return;
+          }
           // A page that routes itself while it loads finishes at its new
           // address: that is the load to wait for, not the one it left.
           final visited = url?.toString();
@@ -629,14 +632,17 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
 
   void _attachReader(InAppWebViewController controller) {
     widget.readingSession?.attach(this, (source) async {
-      if (!_alive || !sameWebViewController(controller, _controller))
+      if (!_alive || !sameWebViewController(controller, _controller)) {
         return null;
+      }
       return controller.evaluateJavascript(source: source);
     });
   }
 
-  Future<void> _loadWithPolicy(InAppWebViewController controller,
-      {bool reloadPage = false}) async {
+  Future<void> _loadWithPolicy(
+    InAppWebViewController controller, {
+    bool reloadPage = false,
+  }) async {
     final request = ++_policyRequest;
     final source = widget.url;
     final revision = _navigationRevision;
@@ -676,7 +682,9 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
     );
     if (!_alive ||
         request != _policyRequest ||
-        !sameWebViewController(controller, _controller)) return;
+        !sameWebViewController(controller, _controller)) {
+      return;
+    }
     setState(() {
       _blockingBusy = false;
       // Successful load starts change the navigation revision themselves.
@@ -832,7 +840,9 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
           !_active ||
           !widget.active ||
           !_findVisible ||
-          result == null) return;
+          result == null) {
+        return;
+      }
       setState(() => _findResult = result);
     } on PlatformException catch (error, stackTrace) {
       Log.error('Bookmark find failed', error, stackTrace);

@@ -327,28 +327,31 @@ void main() {
           '$presentation ${layout.name}: delayed all-page totals and last-page navigation',
           (tester) async {
         final pdf = await _Fixture.prepare(
-            factory,
-            'totals-${layout.name}-$presentation',
-            ['needle needle', 'other needle', 'last needle needle']);
+          factory,
+          'totals-${layout.name}-$presentation',
+          ['needle needle', 'other needle', 'last needle needle'],
+        );
         final host = _Host();
         final lastPage = Completer<void>();
         pdf.document.pages.last.textGate = lastPage.future;
         try {
           await _mount(
-              tester,
-              pdf.preview(
-                bare: presentation == 'bare',
-                fullscreen: presentation == 'fullscreen',
-                metadata: {'layoutMode': layout.name, 'pageTransition': 'none'},
-              ),
-              host,
-              mode: 'paper',
-              reduced: true);
+            tester,
+            pdf.preview(
+              bare: presentation == 'bare',
+              fullscreen: presentation == 'fullscreen',
+              metadata: {'layoutMode': layout.name, 'pageTransition': 'none'},
+            ),
+            host,
+            mode: 'paper',
+            reduced: true,
+          );
           await _ready(tester);
           final viewer = tester.state(find.byType(PdfViewer));
           final controller = _viewer(tester);
           unawaited(
-              controller.goToPage(pageNumber: 3, duration: Duration.zero));
+            controller.goToPage(pageNumber: 3, duration: Duration.zero),
+          );
           await _until(tester, () => controller.pageNumber == 3);
           // Real key routing, also for the chrome-less book reading.
           Focus.of(tester.element(find.byType(PdfViewer))).requestFocus();
@@ -358,13 +361,17 @@ void main() {
           await _until(tester, () => _bar(tester).matchCount == 3);
           expect(_bar(tester).isSearching, isTrue);
           expect(_bar(tester).searchProgress, closeTo(2 / 3, 0.001));
-          expect(_bar(tester).statusOverride,
-              '3 matches so far · Searching all 3 pages (2/3)');
+          expect(
+            _bar(tester).statusOverride,
+            '3 matches so far · Searching all 3 pages (2/3)',
+          );
           expect(find.text(_bar(tester).statusOverride!), findsOneWidget);
           expect(_bar(tester).currentMatch, 0);
-          expect(controller.pageNumber, 3,
-              reason:
-                  'Partial earlier results must not steal the starting page');
+          expect(
+            controller.pageNumber,
+            3,
+            reason: 'Partial earlier results must not steal the starting page',
+          );
           lastPage.complete();
           await _settledSearch(tester, 5);
           expect(_bar(tester).statusOverride, isNull);
@@ -375,7 +382,7 @@ void main() {
             (1, 1),
             (2, 1),
             (3, 2),
-            (4, 3)
+            (4, 3),
           ]) {
             await tester.tap(find.byKey(const ValueKey('findNextMatch')));
             await _motion(tester);
@@ -568,7 +575,9 @@ void main() {
       await tester.enterText(find.byKey(_query), '^');
       await _settledSearch(tester, 0);
       expect(
-          find.text(LocaleKeys.findAndReplace_noResult.tr()), findsOneWidget);
+        find.text(LocaleKeys.findAndReplace_noResult.tr()),
+        findsOneWidget,
+      );
       await tester.enterText(find.byKey(_query), '');
       await tester.pump();
       expect(find.text('Type to search'), findsOneWidget);
@@ -586,7 +595,10 @@ void main() {
   _test('reduced-motion PDF resize retains its viewer and open Find draft',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'reduced-find-resize', ['Needle needle']);
+      factory,
+      'reduced-find-resize',
+      ['Needle needle'],
+    );
     final host = _Host();
     final width = ValueNotifier(980.0);
     final child = ValueListenableBuilder<double>(
@@ -634,8 +646,10 @@ void main() {
         expect(tester.state(find.byType(PdfViewer)), same(viewer));
         expect(_viewer(tester), same(controller));
         expect(tester.state<EditableTextState>(editable), same(editor));
-        expect(tester.widget<TextField>(_queryInput).controller,
-            same(field.controller));
+        expect(
+          tester.widget<TextField>(_queryInput).controller,
+          same(field.controller),
+        );
         expect(field.controller!.value, draft);
         expect(field.focusNode!.hasPrimaryFocus, isTrue);
         expect(_bar(tester).matchCount, 2);
@@ -645,8 +659,10 @@ void main() {
         );
         expect(tester.takeException(), isNull);
       }
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-          physicalKey: PhysicalKeyboardKey.escape);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.escape,
+        physicalKey: PhysicalKeyboardKey.escape,
+      );
       await _motion(tester);
       expect(find.byType(PdfSearchToolbar), findsNothing);
       expect(tester.getRect(find.byType(PdfViewer)), closedBounds);
@@ -928,7 +944,9 @@ void main() {
       await tester.enterText(find.byKey(_query), 'genuine-empty');
       await _settledSearch(tester, 0);
       expect(
-          find.text(LocaleKeys.findAndReplace_noResult.tr()), findsOneWidget);
+        find.text(LocaleKeys.findAndReplace_noResult.tr()),
+        findsOneWidget,
+      );
       expect(pdf.scanCalls, [3, 2]);
       expect(pdf.indexCreations, 1);
       expect(
@@ -1193,7 +1211,10 @@ void main() {
   _test('presets retain PDF/controller/page-field state and write one snapshot',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'presets', ['One', 'Two', 'Three', 'Four']);
+      factory,
+      'presets',
+      ['One', 'Two', 'Three', 'Four'],
+    );
     final host = _Host();
     try {
       await _mount(tester, pdf.preview(), host);
@@ -1219,23 +1240,32 @@ void main() {
         expect(pdf.metadataWrites, hasLength(++writes));
         expect(pdf.metadataWrites.last['layoutMode'], preset.layoutMode.name);
         expect(
-            pdf.metadataWrites.last['pageTransition'], preset.transition.name);
+          pdf.metadataWrites.last['pageTransition'],
+          preset.transition.name,
+        );
         await _motion(tester);
         await tester.pump();
         expect(tester.state(find.byType(PdfPreview)), same(preview));
         expect(tester.state(find.byType(PdfViewer)), same(viewer));
         expect(_viewer(tester), same(controller));
-        expect(tester.widget<PdfViewer>(find.byType(PdfViewer)).documentRef,
-            same(ref));
-        expect(tester.widget<TextField>(find.byKey(_pageInput)).controller,
-            same(field.controller));
+        expect(
+          tester.widget<PdfViewer>(find.byType(PdfViewer)).documentRef,
+          same(ref),
+        );
+        expect(
+          tester.widget<TextField>(find.byKey(_pageInput)).controller,
+          same(field.controller),
+        );
         expect(field.controller!.value, draft);
         expect(field.focusNode!.hasPrimaryFocus, isTrue);
         tester
             .widget<PdfViewOptionsMenu>(find.byType(PdfViewOptionsMenu))
             .onPresetChanged(preset);
-        expect(pdf.metadataWrites, hasLength(writes),
-            reason: 'Reselecting is a no-op');
+        expect(
+          pdf.metadataWrites,
+          hasLength(writes),
+          reason: 'Reselecting is a no-op',
+        );
       }
       expect(factory.opened, [pdf.file.path]);
       expect(pdf.file.reads, 0);
@@ -1251,15 +1281,20 @@ void main() {
   _test('high-DPI inner PDF keyboard navigation paints a real bounded curl',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'high-dpi-curl', ['One', 'Two', 'Three']);
+      factory,
+      'high-dpi-curl',
+      ['One', 'Two', 'Three'],
+    );
     final host = _Host();
     try {
       await _mount(
         tester,
-        pdf.preview(metadata: const {
-          'layoutMode': 'pageBreak',
-          'pageTransition': 'flip'
-        }),
+        pdf.preview(
+          metadata: const {
+            'layoutMode': 'pageBreak',
+            'pageTransition': 'flip',
+          },
+        ),
         host,
         dpr: 6,
       );
@@ -1268,26 +1303,34 @@ void main() {
       final controller = _viewer(tester);
       final selection = tester.widget<SelectableRegion>(
         find.descendant(
-            of: find.byType(PdfViewer),
-            matching: find.byType(SelectableRegion)),
+          of: find.byType(PdfViewer),
+          matching: find.byType(SelectableRegion),
+        ),
       );
       selection.focusNode.requestFocus();
       await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.pageDown,
-          physicalKey: PhysicalKeyboardKey.pageDown);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.pageDown,
+        physicalKey: PhysicalKeyboardKey.pageDown,
+      );
       await _until(tester, () => _curl.evaluate().isNotEmpty);
       final painter =
           tester.widget<CustomPaint>(_curl).painter! as PageTurnPainter;
       expect(painter.scene.leafRect.width * 6, greaterThan(1600 / 0.78));
-      expect(pdf.document.pages.expand((page) => page.curlWidths),
-          everyElement(lessThanOrEqualTo(1600)));
+      expect(
+        pdf.document.pages.expand((page) => page.curlWidths),
+        everyElement(lessThanOrEqualTo(1600)),
+      );
       await tester.pump(const Duration(milliseconds: 100));
       expect(
-          (tester.widget<CustomPaint>(_curl).painter! as PageTurnPainter)
-              .progress,
-          greaterThan(0));
-      await _until(tester,
-          () => _toolbar(tester).currentPage == 2 && _curl.evaluate().isEmpty);
+        (tester.widget<CustomPaint>(_curl).painter! as PageTurnPainter)
+            .progress,
+        greaterThan(0),
+      );
+      await _until(
+        tester,
+        () => _toolbar(tester).currentPage == 2 && _curl.evaluate().isEmpty,
+      );
       expect(tester.state(find.byType(PdfViewer)), same(viewer));
       expect(_viewer(tester), same(controller));
       expect(factory.opened, [pdf.file.path]);
@@ -1304,15 +1347,20 @@ void main() {
       'changing mode during a live curl cancels its commit, not the next turn',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'cancel-live-curl', ['One', 'Two', 'Three']);
+      factory,
+      'cancel-live-curl',
+      ['One', 'Two', 'Three'],
+    );
     final host = _Host();
     try {
       await _mount(
         tester,
-        pdf.preview(metadata: const {
-          'layoutMode': 'pageBreak',
-          'pageTransition': 'flip'
-        }),
+        pdf.preview(
+          metadata: const {
+            'layoutMode': 'pageBreak',
+            'pageTransition': 'flip',
+          },
+        ),
         host,
       );
       await _ready(tester);
@@ -1346,7 +1394,10 @@ void main() {
       'mode change rejects a pending raster turn without unlocking a newer fade',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'cancel-raster', ['One', 'Two', 'Three', 'Four']);
+      factory,
+      'cancel-raster',
+      ['One', 'Two', 'Three', 'Four'],
+    );
     final host = _Host();
     final gate = Completer<void>();
     for (final page in pdf.document.pages) {
@@ -1355,10 +1406,12 @@ void main() {
     try {
       await _mount(
         tester,
-        pdf.preview(metadata: const {
-          'layoutMode': 'pageBreak',
-          'pageTransition': 'flip'
-        }),
+        pdf.preview(
+          metadata: const {
+            'layoutMode': 'pageBreak',
+            'pageTransition': 'flip',
+          },
+        ),
         host,
       );
       await _ready(tester);
@@ -1392,7 +1445,10 @@ void main() {
   _test('same-reference document replacement rejects the old curl commit',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'curl-replacement', ['One', 'Two', 'Three']);
+      factory,
+      'curl-replacement',
+      ['One', 'Two', 'Three'],
+    );
     final host = _Host();
     final gate = Completer<void>();
     for (final page in pdf.document.pages) {
@@ -1401,10 +1457,12 @@ void main() {
     try {
       await _mount(
         tester,
-        pdf.preview(metadata: const {
-          'layoutMode': 'pageBreak',
-          'pageTransition': 'flip'
-        }),
+        pdf.preview(
+          metadata: const {
+            'layoutMode': 'pageBreak',
+            'pageTransition': 'flip',
+          },
+        ),
         host,
       );
       await _ready(tester);
@@ -1443,15 +1501,20 @@ void main() {
     _test('reduced motion skips $transition without rewriting the chosen mode',
         (tester) async {
       final pdf = await _Fixture.prepare(
-          factory, 'reduced-$transition', ['One', 'Two']);
+        factory,
+        'reduced-$transition',
+        ['One', 'Two'],
+      );
       final host = _Host();
       try {
         await _mount(
           tester,
-          pdf.preview(metadata: {
-            'layoutMode': 'pageBreak',
-            'pageTransition': transition
-          }),
+          pdf.preview(
+            metadata: {
+              'layoutMode': 'pageBreak',
+              'pageTransition': transition,
+            },
+          ),
           host,
           reduced: true,
         );
@@ -1464,7 +1527,9 @@ void main() {
         final opacity = tester.widget<Opacity>(
           find
               .ancestor(
-                  of: find.byType(PdfViewer), matching: find.byType(Opacity))
+                of: find.byType(PdfViewer),
+                matching: find.byType(Opacity),
+              )
               .first,
         );
         expect(opacity.opacity, 1);
@@ -1484,7 +1549,10 @@ void main() {
         '$mode bare reader Find beats collection fallback and reveals native matches',
         (tester) async {
       final pdf = await _Fixture.prepare(
-          factory, 'bare-find-$mode', ['Chapter one', 'Needle needle', 'End']);
+        factory,
+        'bare-find-$mode',
+        ['Chapter one', 'Needle needle', 'End'],
+      );
       final host = _Host();
       try {
         await _mount(tester, pdf.preview(bare: true), host, mode: mode);
@@ -1497,7 +1565,8 @@ void main() {
         host.outerFocus.requestFocus();
         await tester.pump();
         await _controlF(
-            tester); // No hover/autofocus required for the active chapter.
+          tester,
+        ); // No hover/autofocus required for the active chapter.
         expect(host.finds, 0);
         expect(find.byType(FindReplaceBar), findsOneWidget);
         expect(find.byType(PdfPreviewToolbar), findsNothing);
@@ -1527,8 +1596,10 @@ void main() {
         await tester.testTextInput.receiveAction(TextInputAction.search);
         await _motion(tester);
         expect(_bar(tester).currentMatch, 2);
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-            physicalKey: PhysicalKeyboardKey.escape);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.escape,
+          physicalKey: PhysicalKeyboardKey.escape,
+        );
         await _motion(tester);
         expect(find.byType(FindReplaceBar), findsNothing);
         expect(find.byType(PdfPreviewToolbar), findsNothing);
@@ -1548,10 +1619,14 @@ void main() {
   _test('BookChapterStage settings update the retained bare PDF immediately',
       (tester) async {
     final pdf = await _Fixture.prepare(
-        factory, 'book-settings', ['One', 'Two', 'Three']);
+      factory,
+      'book-settings',
+      ['One', 'Two', 'Three'],
+    );
     final host = _Host();
     final settings = ValueNotifier(
-        const BookReaderSettings(transition: BookPageTransition.none));
+      const BookReaderSettings(transition: BookPageTransition.none),
+    );
     final chapter = BookChapter(
       view: fileControlView('book-chapter', 'Chapter.pdf', pdf.file.path),
       kind: BookChapterKind.pdf,
@@ -1589,7 +1664,9 @@ void main() {
       );
       await _motion(tester);
       expect(
-          controller.layout.pageLayouts[1].top, greaterThan(original[1].top));
+        controller.layout.pageLayouts[1].top,
+        greaterThan(original[1].top),
+      );
       expect(tester.state(find.byType(PdfPreview)), same(preview));
       expect(tester.state(find.byType(PdfViewer)), same(viewer));
       expect(_viewer(tester), same(controller));
@@ -1800,8 +1877,9 @@ Future<void> _ready(WidgetTester tester, {PdfDocument? expectedDocument}) =>
       final viewer = _viewer(tester);
       final region = tester.widget<ContextualFindRegion>(
         find.descendant(
-            of: find.byType(PdfPreview),
-            matching: find.byType(ContextualFindRegion)),
+          of: find.byType(PdfPreview),
+          matching: find.byType(ContextualFindRegion),
+        ),
       );
       if (!region.enabled || !viewer.isReady) return false;
       if (expectedDocument == null) return true;
@@ -1846,12 +1924,18 @@ Future<void> _open(WidgetTester tester) async {
 }
 
 Future<void> _controlF(WidgetTester tester) async {
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
-  await tester.sendKeyEvent(LogicalKeyboardKey.keyF,
-      physicalKey: PhysicalKeyboardKey.keyF);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
+  await tester.sendKeyDownEvent(
+    LogicalKeyboardKey.controlLeft,
+    physicalKey: PhysicalKeyboardKey.controlLeft,
+  );
+  await tester.sendKeyEvent(
+    LogicalKeyboardKey.keyF,
+    physicalKey: PhysicalKeyboardKey.keyF,
+  );
+  await tester.sendKeyUpEvent(
+    LogicalKeyboardKey.controlLeft,
+    physicalKey: PhysicalKeyboardKey.controlLeft,
+  );
   await _motion(tester);
 }
 

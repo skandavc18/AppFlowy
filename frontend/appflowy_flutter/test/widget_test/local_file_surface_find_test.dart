@@ -34,10 +34,12 @@ void main() {
           return '$row:$column';
         }).join(',');
       }).join('\n');
-      await tester.pumpWidget(_app(
-        CsvPreview(text: text, separator: ','),
-        appearance: appearance,
-      ));
+      await tester.pumpWidget(
+        _app(
+          CsvPreview(text: text, separator: ','),
+          appearance: appearance,
+        ),
+      );
       await pumpSurfaceFind(tester);
       final list = _list(tester);
       final controller = list.controller!;
@@ -55,8 +57,10 @@ void main() {
       expect(session.matches, hasLength(3));
       expect(session.current!.id, (row: 0, column: 0));
       expect(session.supportsReplace, isFalse);
-      await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-          physicalKey: PhysicalKeyboardKey.f3);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.f3,
+        physicalKey: PhysicalKeyboardKey.f3,
+      );
       await _settleLazyFind(tester);
       expect(session.current!.id, (row: 975, column: 9));
       expect(controller.offset, greaterThan(10000));
@@ -74,15 +78,19 @@ void main() {
       expect(paint.currentRect, isNot(firstWord));
       _expectWordVisible(tester, session, find.byType(CsvPreview));
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-          physicalKey: PhysicalKeyboardKey.f3);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.f3,
+        physicalKey: PhysicalKeyboardKey.f3,
+      );
       await _settleLazyFind(tester);
       expect(session.current!.id, (row: 0, column: 0));
       _expectWordVisible(tester, session, find.byType(CsvPreview));
-      for (final field in tester.widgetList<EditableText>(find.descendant(
-        of: find.byType(SelectableText),
-        matching: find.byType(EditableText),
-      ))) {
+      for (final field in tester.widgetList<EditableText>(
+        find.descendant(
+          of: find.byType(SelectableText),
+          matching: find.byType(EditableText),
+        ),
+      )) {
         expect(field.readOnly, isTrue);
       }
       await _query(tester, 'outside-preview');
@@ -99,24 +107,28 @@ void main() {
         if (line == 151) return 'needle below the fold';
         return 'printed line $line';
       }).join('\n');
-      final document = NotebookDocument(cells: [
-        for (var index = 0; index < 160; index++)
-          NotebookCell(
-            id: 'cell-$index',
-            type: NotebookCellType.code,
-            source: index == 0
-                ? '# needle first'
-                : List.filled(index % 5 + 1, 'value_$index = $index')
-                    .join('\n'),
-            outputs: index == 145
-                ? [NotebookOutput.stream(name: 'stdout', text: output)]
-                : const [],
-          ),
-      ]);
-      await tester.pumpWidget(_app(
-        probe.view(document.encode()),
-        appearance: appearance,
-      ));
+      final document = NotebookDocument(
+        cells: [
+          for (var index = 0; index < 160; index++)
+            NotebookCell(
+              id: 'cell-$index',
+              type: NotebookCellType.code,
+              source: index == 0
+                  ? '# needle first'
+                  : List.filled(index % 5 + 1, 'value_$index = $index')
+                      .join('\n'),
+              outputs: index == 145
+                  ? [NotebookOutput.stream(name: 'stdout', text: output)]
+                  : const [],
+            ),
+        ],
+      );
+      await tester.pumpWidget(
+        _app(
+          probe.view(document.encode()),
+          appearance: appearance,
+        ),
+      );
       await pumpSurfaceFind(tester);
       final controller = _list(tester).controller!;
       expect(_source('cell-145'), findsNothing);
@@ -127,8 +139,10 @@ void main() {
       final session = _find(tester);
       expect(session.matches, hasLength(3));
       expect(session.current!.id, notebookSourceFindId('cell-0'));
-      await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-          physicalKey: PhysicalKeyboardKey.f3);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.f3,
+        physicalKey: PhysicalKeyboardKey.f3,
+      );
       await _settleLazyFind(tester);
       final outputId = notebookOutputFindId('cell-145', 0, 'text');
       expect(session.current!.id, outputId);
@@ -151,8 +165,10 @@ void main() {
       probe.expectNoActivity();
 
       // Closing Find restores the user's folded setting, not a model mutation.
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-          physicalKey: PhysicalKeyboardKey.escape);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.escape,
+        physicalKey: PhysicalKeyboardKey.escape,
+      );
       await _settleLazyFind(tester);
       // Find itself must return to the now-shorter cell; no manual scrolling.
       await openSurfaceFind(tester);
@@ -185,15 +201,21 @@ void main() {
     await openSurfaceFind(tester);
     await _query(tester, 'needle');
     for (final appearance in WorkspaceDesignAppearance.values) {
-      await tester.pumpWidget(_app(preview,
+      await tester.pumpWidget(
+        _app(
+          preview,
           appearance: appearance,
           size: appearance == WorkspaceDesignAppearance.dark
               ? const Size(440, 380)
-              : const Size(620, 460)));
+              : const Size(620, 460),
+        ),
+      );
       await _settleLazyFind(tester);
       expect(tester.state<EditableTextState>(native), same(nativeState));
-      expect(tester.widget<EditableText>(native).controller,
-          same(field.controller));
+      expect(
+        tester.widget<EditableText>(native).controller,
+        same(field.controller),
+      );
       expect(field.controller.value, value);
       expect(_list(tester).controller, same(vertical));
     }
@@ -201,8 +223,10 @@ void main() {
     expect(_find(tester).matches, hasLength(1));
     await _query(tester, 'one,two');
     expect(_find(tester).matches, isEmpty); // Still the original simple parser.
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-        physicalKey: PhysicalKeyboardKey.escape);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.escape,
+      physicalKey: PhysicalKeyboardKey.escape,
+    );
     await pumpSurfaceFind(tester);
     expect(field.controller.value, value);
     expect(field.focusNode.hasFocus, isTrue);
@@ -214,12 +238,14 @@ void main() {
       (tester) async {
     final chrome = StandaloneFileChromeController();
     var readable = true;
-    Widget view(String text, {bool available = true}) => _app(_access(
-          chrome,
-          CsvPreview(text: text, separator: ','),
-          canRead: () => readable,
-          available: available,
-        ));
+    Widget view(String text, {bool available = true}) => _app(
+          _access(
+            chrome,
+            CsvPreview(text: text, separator: ','),
+            canRead: () => readable,
+            available: available,
+          ),
+        );
     try {
       await tester.pumpWidget(view(''));
       await openSurfaceFind(tester);
@@ -260,21 +286,29 @@ void main() {
   testWidgets('notebook Find uses live drafts and retains native editor state',
       (tester) async {
     final probe = _NotebookProbe();
-    final document = NotebookDocument(cells: const [
-      NotebookCell(
-          id: 'draft', type: NotebookCellType.code, source: 'stored_text'),
-    ]);
+    final document = NotebookDocument(
+      cells: const [
+        NotebookCell(
+          id: 'draft',
+          type: NotebookCellType.code,
+          source: 'stored_text',
+        ),
+      ],
+    );
     Widget view(WorkspaceDesignAppearance appearance, Size size) => _app(
           probe.view(document.encode(), editable: true),
           appearance: appearance,
           size: size,
         );
     await tester.pumpWidget(
-        view(WorkspaceDesignAppearance.light, const Size(620, 460)));
+      view(WorkspaceDesignAppearance.light, const Size(620, 460)),
+    );
     await pumpSurfaceFind(tester);
     final field = tester.widget<TextField>(_source('draft'));
     final native = find.descendant(
-        of: _source('draft'), matching: find.byType(EditableText));
+      of: _source('draft'),
+      matching: find.byType(EditableText),
+    );
     final state = tester.state<EditableTextState>(native);
     final controller = field.controller!;
     // A live controller draft is newer than the per-cell saved model.
@@ -294,15 +328,20 @@ void main() {
     expect(session.current!.entry.text, draft.text);
     expect(session.matches, hasLength(1));
     for (final appearance in WorkspaceDesignAppearance.values) {
-      await tester.pumpWidget(view(
+      await tester.pumpWidget(
+        view(
           appearance,
           appearance == WorkspaceDesignAppearance.paper
               ? const Size(440, 380)
-              : const Size(620, 460)));
+              : const Size(620, 460),
+        ),
+      );
       await _settleLazyFind(tester);
       expect(tester.state<EditableTextState>(native), same(state));
-      expect(tester.widget<TextField>(_source('draft')).controller,
-          same(controller));
+      expect(
+        tester.widget<TextField>(_source('draft')).controller,
+        same(controller),
+      );
       expect(controller.value, draft);
       expect(probe.kernels, hasLength(1));
     }
@@ -311,8 +350,10 @@ void main() {
     session.replaceAll();
     expect(controller.value, draft);
     expect(session.supportsReplace, isFalse);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape,
-        physicalKey: PhysicalKeyboardKey.escape);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.escape,
+      physicalKey: PhysicalKeyboardKey.escape,
+    );
     await pumpSurfaceFind(tester);
     expect(field.focusNode!.hasFocus, isTrue);
     expect(controller.value, draft);
@@ -324,20 +365,23 @@ void main() {
       'notebook Find reveals distant words inside a real lazy source cell',
       (tester) async {
     final probe = _NotebookProbe();
-    final source = NotebookDocument(cells: [
-      for (var index = 0; index < 120; index++)
-        NotebookCell(
-          id: 'source-$index',
-          type: NotebookCellType.code,
-          source: index == 113
-              ? List.generate(
-                  220,
-                  (line) => line == 3 || line == 205
-                      ? '# source needle'
-                      : 'line_$line = $line').join('\n')
-              : 'value = $index',
-        ),
-    ]).encode();
+    final source = NotebookDocument(
+      cells: [
+        for (var index = 0; index < 120; index++)
+          NotebookCell(
+            id: 'source-$index',
+            type: NotebookCellType.code,
+            source: index == 113
+                ? List.generate(
+                    220,
+                    (line) => line == 3 || line == 205
+                        ? '# source needle'
+                        : 'line_$line = $line',
+                  ).join('\n')
+                : 'value = $index',
+          ),
+      ],
+    ).encode();
     await tester.pumpWidget(_app(probe.view(source)));
     await pumpSurfaceFind(tester);
     expect(_source('source-113'), findsNothing);
@@ -354,8 +398,10 @@ void main() {
     );
     final state = tester.state<EditableTextState>(native);
     final value = field.controller!.value;
-    await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-        physicalKey: PhysicalKeyboardKey.f3);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.f3,
+      physicalKey: PhysicalKeyboardKey.f3,
+    );
     await _settleLazyFind(tester);
     expect(session.currentIndex, 1);
     _expectWordVisible(tester, session, find.byType(ListView));
@@ -369,17 +415,19 @@ void main() {
   testWidgets('read-only notebook source Find preserves the markdown renderer',
       (tester) async {
     final probe = _NotebookProbe();
-    final source = NotebookDocument(cells: const [
-      NotebookCell(
-        id: 'prose',
-        type: NotebookCellType.markdown,
-        source: '# Reading\n\n[Visible label](raw_source_token)',
-        metadata: {'private': 'metadata-secret'},
-        attachments: {
-          'image': {'image/png': 'attachment-secret'}
-        },
-      ),
-    ]).encode();
+    final source = NotebookDocument(
+      cells: const [
+        NotebookCell(
+          id: 'prose',
+          type: NotebookCellType.markdown,
+          source: '# Reading\n\n[Visible label](raw_source_token)',
+          metadata: {'private': 'metadata-secret'},
+          attachments: {
+            'image': {'image/png': 'attachment-secret'},
+          },
+        ),
+      ],
+    ).encode();
     await tester.pumpWidget(_app(probe.view(source)));
     await pumpSurfaceFind(tester);
     final renderer = find.byType(NotebookMarkup, skipOffstage: false);
@@ -412,25 +460,27 @@ void main() {
       'notebook rich output Find uses rendered words and live disclosure text',
       (tester) async {
     final probe = _NotebookProbe();
-    final source = NotebookDocument(cells: const [
-      NotebookCell(
-        id: 'rich',
-        type: NotebookCellType.code,
-        source: 'display(value)',
-        outputs: [
-          NotebookOutput(
-            kind: NotebookOutputKind.display,
-            data: {
-              'text/html': '<p>first <b>needle</b></p><p>second needle</p>'
-                  '<script>script-secret</script>'
-                  '<details><summary>More details</summary><p>opened text</p></details>',
-              'text/plain': 'fallback-secret',
-              'application/json': '{"token":"serialized-secret"}',
-            },
-          ),
-        ],
-      ),
-    ]).encode();
+    final source = NotebookDocument(
+      cells: const [
+        NotebookCell(
+          id: 'rich',
+          type: NotebookCellType.code,
+          source: 'display(value)',
+          outputs: [
+            NotebookOutput(
+              kind: NotebookOutputKind.display,
+              data: {
+                'text/html': '<p>first <b>needle</b></p><p>second needle</p>'
+                    '<script>script-secret</script>'
+                    '<details><summary>More details</summary><p>opened text</p></details>',
+                'text/plain': 'fallback-secret',
+                'application/json': '{"token":"serialized-secret"}',
+              },
+            ),
+          ],
+        ),
+      ],
+    ).encode();
     await tester.pumpWidget(_app(probe.view(source)));
     await pumpSurfaceFind(tester);
     final renderer = tester.state(find.byType(NotebookMarkup));
@@ -441,8 +491,10 @@ void main() {
     final id = notebookOutputFindId('rich', 0, 'markup');
     final paint = surfaceFindPaint(tester, id);
     final firstWord = paint.currentRect!;
-    await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-        physicalKey: PhysicalKeyboardKey.f3);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.f3,
+      physicalKey: PhysicalKeyboardKey.f3,
+    );
     await _settleLazyFind(tester);
     expect(session.currentIndex, 1);
     expect(paint.currentRect!.top, greaterThan(firstWord.top));
@@ -450,7 +502,7 @@ void main() {
     for (final secret in [
       'script-secret',
       'fallback-secret',
-      'serialized-secret'
+      'serialized-secret',
     ]) {
       await _query(tester, secret);
       expect(session.matches, isEmpty);
@@ -474,18 +526,25 @@ void main() {
     final chrome = StandaloneFileChromeController();
     var readable = true;
     var writable = true;
-    String source(String text) => NotebookDocument(cells: [
-          NotebookCell(
-              id: 'same-id', type: NotebookCellType.code, source: text),
-        ]).encode();
+    String source(String text) => NotebookDocument(
+          cells: [
+            NotebookCell(
+              id: 'same-id',
+              type: NotebookCellType.code,
+              source: text,
+            ),
+          ],
+        ).encode();
     Widget view(_NotebookProbe probe, String text, {bool available = true}) =>
-        _app(_access(
-          chrome,
-          probe.view(source(text), editable: true),
-          canRead: () => readable,
-          canEdit: () => writable,
-          available: available,
-        ));
+        _app(
+          _access(
+            chrome,
+            probe.view(source(text), editable: true),
+            canRead: () => readable,
+            canEdit: () => writable,
+            available: available,
+          ),
+        );
     try {
       await tester.pumpWidget(view(oldProbe, 'old-secret'));
       await pumpSurfaceFind(tester);
@@ -495,8 +554,10 @@ void main() {
       await tester.pumpWidget(view(nextProbe, 'new needle'));
       oldField.onChanged!('late callback from the old file');
       await pumpSurfaceFind(tester);
-      expect(tester.widget<TextField>(_source('same-id')).controller!.text,
-          'new needle');
+      expect(
+        tester.widget<TextField>(_source('same-id')).controller!.text,
+        'new needle',
+      );
       await openSurfaceFind(tester);
       await _query(tester, 'old-secret');
       final session = _find(tester);
@@ -511,7 +572,9 @@ void main() {
       expect(tester.widget<TextField>(_source('same-id')).readOnly, isTrue);
       await _query(tester, 'needle');
       expect(
-          session.matches, hasLength(1)); // Read permission still permits Find.
+        session.matches,
+        hasLength(1),
+      ); // Read permission still permits Find.
 
       readable = false; // Also exercise a live lease without a rebuild.
       session.step(1);
@@ -539,7 +602,7 @@ void main() {
     for (final source in [
       'not JSON',
       '{"cells":[]}',
-      '{"cells":[{"outputs":[{"name":42}]}]}'
+      '{"cells":[{"outputs":[{"name":42}]}]}',
     ]) {
       final probe = _NotebookProbe();
       await tester.pumpWidget(_app(probe.view(source)));
@@ -548,8 +611,10 @@ void main() {
       expect(find.byType(FindReplaceBar), findsOneWidget);
       expect(_find(tester).matches, isEmpty);
       expect(_find(tester).supportsReplace, isFalse);
-      await tester.sendKeyEvent(LogicalKeyboardKey.f3,
-          physicalKey: PhysicalKeyboardKey.f3);
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.f3,
+        physicalKey: PhysicalKeyboardKey.f3,
+      );
       await pumpSurfaceFind(tester);
       await tester.pumpWidget(const SizedBox.shrink());
       probe.expectNoActivity();
@@ -560,17 +625,22 @@ void main() {
       'disposing a pending lazy Find invalidates its scroll and focus work',
       (tester) async {
     final probe = _NotebookProbe();
-    final source = NotebookDocument(cells: [
-      for (var index = 0; index < 500; index++)
-        NotebookCell(
+    final source = NotebookDocument(
+      cells: [
+        for (var index = 0; index < 500; index++)
+          NotebookCell(
             id: '$index',
             type: NotebookCellType.code,
-            source: index == 499 ? 'far needle' : 'value = $index'),
-    ]).encode();
+            source: index == 499 ? 'far needle' : 'value = $index',
+          ),
+      ],
+    ).encode();
     await tester.pumpWidget(_app(probe.view(source)));
     await openSurfaceFind(tester);
     await tester.enterText(
-        find.byKey(const ValueKey('findTextField')), 'needle');
+      find.byKey(const ValueKey('findTextField')),
+      'needle',
+    );
     await tester.pump(); // Start the asynchronous index reveal, then detach.
     await tester.pumpWidget(const SizedBox.shrink());
     await _settleLazyFind(tester);
@@ -585,9 +655,9 @@ Widget _app(
 }) =>
     surfaceFindTestApp(
       Align(
-          alignment: Alignment.topLeft,
-          child:
-              SizedBox(width: size.width, height: size.height, child: child)),
+        alignment: Alignment.topLeft,
+        child: SizedBox(width: size.width, height: size.height, child: child),
+      ),
       appearance: appearance,
     );
 
@@ -599,17 +669,18 @@ Widget _access(
   bool available = true,
 }) =>
     Builder(
-        builder: (context) => StandaloneFileScope(
-              canvas: Theme.of(context).scaffoldBackgroundColor,
-              rendererName: 'fixture.ipynb',
-              displayName: 'fixture.ipynb',
-              chrome: chrome,
-              canRead: canRead,
-              canEdit: canEdit ?? () => false,
-              editable: canEdit?.call() ?? false,
-              available: available,
-              child: child,
-            ));
+      builder: (context) => StandaloneFileScope(
+        canvas: Theme.of(context).scaffoldBackgroundColor,
+        rendererName: 'fixture.ipynb',
+        displayName: 'fixture.ipynb',
+        chrome: chrome,
+        canRead: canRead,
+        canEdit: canEdit ?? () => false,
+        editable: canEdit?.call() ?? false,
+        available: available,
+        child: child,
+      ),
+    );
 
 SurfaceFindController _find(WidgetTester tester) =>
     tester.widget<SurfaceFindHost>(find.byType(SurfaceFindHost)).controller;
@@ -618,7 +689,8 @@ ListView _list(WidgetTester tester) =>
     tester.widget<ListView>(find.byType(ListView));
 
 Finder _target(Object id) => find.byWidgetPredicate(
-    (widget) => widget is SurfaceFindTarget && widget.id == id);
+      (widget) => widget is SurfaceFindTarget && widget.id == id,
+    );
 
 Finder _source(String id, {bool skipOffstage = true}) =>
     find.byKey(ValueKey(('notebook-source', id)), skipOffstage: skipOffstage);
@@ -647,7 +719,10 @@ Future<void> _settleLazyFind(WidgetTester tester) async {
 }
 
 void _expectWordVisible(
-    WidgetTester tester, SurfaceFindController session, Finder viewport) {
+  WidgetTester tester,
+  SurfaceFindController session,
+  Finder viewport,
+) {
   final word = session.currentTargetRect;
   expect(word, isNotNull, reason: 'The selected native word must be laid out.');
   final visible = tester.getRect(viewport);
@@ -657,8 +732,11 @@ void _expectWordVisible(
   expect(word.right, lessThanOrEqualTo(visible.right + 1));
   expect(word.top, greaterThanOrEqualTo(visible.top - 1));
   expect(word.bottom, lessThanOrEqualTo(visible.bottom + 1));
-  expect(word.overlaps(tester.getRect(find.byType(FindReplaceBar))), isFalse,
-      reason: 'The shared Find bar must not cover the selected word.');
+  expect(
+    word.overlaps(tester.getRect(find.byType(FindReplaceBar))),
+    isFalse,
+    reason: 'The shared Find bar must not cover the selected word.',
+  );
 }
 
 class _NotebookProbe {

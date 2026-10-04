@@ -228,7 +228,7 @@ void main() {
 
     test('every new cell gets an id of its own', () {
       final ids = {
-        for (var index = 0; index < 50; index++) newNotebookCellId()
+        for (var index = 0; index < 50; index++) newNotebookCellId(),
       };
 
       expect(ids.length, 50);
@@ -257,8 +257,8 @@ void main() {
     test('takes inline and display maths, leaving a placeholder', () {
       final extracted = extractNotebookMath(r'Let $x^2$ and $$\int_0^1 f$$.');
 
-      expect(extracted.expressions, [r'x^2', r'\int_0^1 f']);
-      expect(extracted.text.contains(r'x^2'), isFalse);
+      expect(extracted.expressions, ['x^2', r'\int_0^1 f']);
+      expect(extracted.text.contains('x^2'), isFalse);
       expect(notebookMathPattern.allMatches(extracted.text).length, 2);
     });
 

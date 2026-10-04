@@ -20,15 +20,18 @@ final _article = parseReadableArticle('<article><h1>Reader heading</h1>'
 BookmarkReaderCapture get _capture =>
     BookmarkReaderCapture(url: _url, generation: 1, article: _article);
 ViewPB _view({String url = _url, String notes = 'Original notes'}) => ViewPB(
-    id: 'bookmark',
-    extra: BookmarkMetadata(
-            url: url, notes: notes, readState: BookmarkReadState.reading)
-        .mergeIntoExtra(''));
+      id: 'bookmark',
+      extra: BookmarkMetadata(
+        url: url,
+        notes: notes,
+        readState: BookmarkReadState.reading,
+      ).mergeIntoExtra(''),
+    );
 
 void main() {
   for (final denial in [
     'different captured source',
-    'permission already revoked'
+    'permission already revoked',
   ]) {
     test('$denial cannot start snapshot IO or publish metadata', () async {
       final store = _Store();
@@ -40,13 +43,17 @@ void main() {
             ? BookmarkReaderCapture(
                 url: 'https://news.example/followed',
                 generation: 1,
-                article: _article)
+                article: _article,
+              )
             : _capture;
         expect(
-            await controller.saveReaderCapture(
-                controller.entries.single, capture,
-                isCurrent: () => denial != 'permission already revoked'),
-            isFalse);
+          await controller.saveReaderCapture(
+            controller.entries.single,
+            capture,
+            isCurrent: () => denial != 'permission already revoked',
+          ),
+          isFalse,
+        );
         expect(store.entered.isCompleted, isFalse);
         expect(service.writes, isEmpty);
         expect(controller.entries.single.metadata.snapshotPath, isNull);
@@ -67,8 +74,10 @@ void main() {
         ..setViews([_view()]);
       var allowed = true;
       final pending = controller.saveReaderCapture(
-          controller.entries.single, _capture,
-          isCurrent: () => allowed);
+        controller.entries.single,
+        _capture,
+        isCurrent: () => allowed,
+      );
       await store.entered.future;
       expect(store.isolated, isTrue);
       switch (invalidation) {
@@ -96,8 +105,10 @@ void main() {
     final controller = BookmarkController(service: service, snapshots: store)
       ..setViews([_view()]);
     final pending = controller.saveReaderCapture(
-        controller.entries.single, _capture,
-        isCurrent: () => true);
+      controller.entries.single,
+      _capture,
+      isCurrent: () => true,
+    );
     await store.entered.future;
     controller.setViews([_view(notes: 'A newer draft')]);
     store.gate.complete(store.saved);
@@ -115,8 +126,10 @@ void main() {
     final controller = BookmarkController(service: service, snapshots: store)
       ..setViews([_view()]);
     final pending = controller.saveReaderCapture(
-        controller.entries.single, _capture,
-        isCurrent: () => true);
+      controller.entries.single,
+      _capture,
+      isCurrent: () => true,
+    );
     await store.entered.future;
     store.gate.complete(store.saved);
     expect(await pending, isFalse);
@@ -133,11 +146,12 @@ void main() {
     final store = BookmarkSnapshotStore(rootOverride: root.path);
     try {
       final saved = await store.save(
-          url: '$_url?token=private',
-          article: _article,
-          html: '<article onclick="bad()"><p>Article</p><script>secret</script>'
-              '<form><input value="password"></form><img src="https://tracking.example/pixel"></article>',
-          isolated: true);
+        url: '$_url?token=private',
+        article: _article,
+        html: '<article onclick="bad()"><p>Article</p><script>secret</script>'
+            '<form><input value="password"></form><img src="https://tracking.example/pixel"></article>',
+        isolated: true,
+      );
       expect(saved?.articlePath, isNotNull);
       final markdown = await File(saved!.articlePath!).readAsString();
       expect(markdown, contains('Reader heading'));
@@ -150,17 +164,23 @@ void main() {
         '<form',
         '<img',
         'password',
-        'secret'
+        'secret',
       ]) {
         expect(html, isNot(contains(value)));
       }
       final read = await store.read(saved.directory);
-      expect(await store.readArticleText(read!),
-          contains('Ordinary visible content'));
       expect(
-          await store.save(
-              url: _url, article: _article, heroExtension: '../secret'),
-          isNull);
+        await store.readArticleText(read!),
+        contains('Ordinary visible content'),
+      );
+      expect(
+        await store.save(
+          url: _url,
+          article: _article,
+          heroExtension: '../secret',
+        ),
+        isNull,
+      );
       await File('${saved.directory}/snapshot.json')
           .writeAsString('invalid json');
       expect(await store.read(saved.directory), isNull);
@@ -176,19 +196,21 @@ class _Store extends BookmarkSnapshotStore {
   final deleted = <String?>[];
   bool isolated = false;
   final saved = BookmarkSnapshot(
-      directory: 'isolated-copy',
-      savedAt: DateTime(2026),
-      bytes: 128,
-      articlePath: 'isolated-copy/article.md');
+    directory: 'isolated-copy',
+    savedAt: DateTime(2026),
+    bytes: 128,
+    articlePath: 'isolated-copy/article.md',
+  );
 
   @override
-  Future<BookmarkSnapshot?> save(
-      {required String url,
-      ReadableArticle? article,
-      String? html,
-      Uint8List? heroBytes,
-      String heroExtension = 'jpg',
-      bool isolated = false}) {
+  Future<BookmarkSnapshot?> save({
+    required String url,
+    ReadableArticle? article,
+    String? html,
+    Uint8List? heroBytes,
+    String heroExtension = 'jpg',
+    bool isolated = false,
+  }) {
     this.isolated = isolated;
     entered.complete();
     return gate.future;
@@ -205,8 +227,10 @@ class _Service extends BookmarkService {
   bool fail = false;
 
   @override
-  Future<FlowyResult<ViewPB, FlowyError>> updateMetadata(
-      {required ViewPB view, required BookmarkMetadata metadata}) async {
+  Future<FlowyResult<ViewPB, FlowyError>> updateMetadata({
+    required ViewPB view,
+    required BookmarkMetadata metadata,
+  }) async {
     writes.add(metadata);
     return fail
         ? FlowyResult.failure(FlowyError(msg: 'test failure'))

@@ -184,12 +184,14 @@ final _typeRules = <String, List<_OutlineRule>>{
     _OutlineRule(
       SymbolKind.traitType,
       RegExp(
-          r'^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?trait\s+([A-Za-z_][\w]*)'),
+        r'^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?trait\s+([A-Za-z_][\w]*)',
+      ),
     ),
     _OutlineRule(
       SymbolKind.extensionType,
       RegExp(
-          r'^\s*impl(?:<[^>]*>)?\s+(?:[\w:<>, ]+\s+for\s+)?([A-Za-z_][\w]*)'),
+        r'^\s*impl(?:<[^>]*>)?\s+(?:[\w:<>, ]+\s+for\s+)?([A-Za-z_][\w]*)',
+      ),
     ),
     _OutlineRule(
       SymbolKind.module,
@@ -208,7 +210,8 @@ final _typeRules = <String, List<_OutlineRule>>{
     _OutlineRule(
       SymbolKind.constant,
       RegExp(
-          r'^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+([A-Za-z_][\w]*)\s*:'),
+        r'^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+([A-Za-z_][\w]*)\s*:',
+      ),
     ),
   ],
   'go': [
@@ -273,7 +276,8 @@ final _typeRules = <String, List<_OutlineRule>>{
     _OutlineRule(
       SymbolKind.function,
       RegExp(
-          r'^\s*(?:\w+\s+)*fun\s+(?:<[^>]*>\s*)?(?:[\w.<>]+\.)?([A-Za-z_][\w]*)\s*\('),
+        r'^\s*(?:\w+\s+)*fun\s+(?:<[^>]*>\s*)?(?:[\w.<>]+\.)?([A-Za-z_][\w]*)\s*\(',
+      ),
     ),
     _OutlineRule(
       SymbolKind.constant,
@@ -479,7 +483,9 @@ List<SourceSymbol> parseSourceOutline(RepoLanguage? language, String source) {
 }
 
 List<SourceSymbol> _parseCodeOutline(
-    RepoLanguage language, List<String> lines) {
+  RepoLanguage language,
+  List<String> lines,
+) {
   final rules = _typeRules[language.id] ?? const <_OutlineRule>[];
   final findsCallables = _braceCallableLanguages.contains(language.id);
   if (rules.isEmpty && !findsCallables) {

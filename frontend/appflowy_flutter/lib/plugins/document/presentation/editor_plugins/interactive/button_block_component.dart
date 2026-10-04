@@ -193,7 +193,8 @@ class ButtonBlockComponentState extends State<ButtonBlockComponent>
       );
 
   InteractiveButtonAction get _action => InteractiveButtonAction.fromValue(
-      node.attributes[ButtonBlockKeys.action]);
+        node.attributes[ButtonBlockKeys.action],
+      );
 
   IconData? get _icon =>
       interactiveButtonIcons[stringAttribute(ButtonBlockKeys.icon)];

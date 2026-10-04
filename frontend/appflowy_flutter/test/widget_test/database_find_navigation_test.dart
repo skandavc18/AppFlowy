@@ -7,7 +7,6 @@ import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/find_replace/find_highlight.dart';
 import 'package:appflowy/shared/find_replace/find_replace_bar.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -19,36 +18,48 @@ void main() {
 
   test('typed targets never infer a row/field from a label or a foreign ID',
       () {
-    expect(DatabaseFindTarget.parse('view', 'row:r:f'),
-        const DatabaseFindTarget.cell('view', 'r', 'f'));
-    expect(DatabaseFindTarget.parse('view', 'field:f'),
-        const DatabaseFindTarget.field('view', 'f'));
-    expect(DatabaseFindTarget.parse('view', 'title'),
-        const DatabaseFindTarget.title('view'));
+    expect(
+      DatabaseFindTarget.parse('view', 'row:r:f'),
+      const DatabaseFindTarget.cell('view', 'r', 'f'),
+    );
+    expect(
+      DatabaseFindTarget.parse('view', 'field:f'),
+      const DatabaseFindTarget.field('view', 'f'),
+    );
+    expect(
+      DatabaseFindTarget.parse('view', 'title'),
+      const DatabaseFindTarget.title('view'),
+    );
     for (final id in [
       'Row 2 · Name',
       'row:r',
       'row::f',
       'row:r:f:other',
-      'field:'
+      'field:',
     ]) {
       expect(DatabaseFindTarget.parse('view', id), isNull);
     }
     expect(DatabaseFindTarget.parse('', 'title'), isNull);
-    expect(const DatabaseFindTarget.cell('a', 'r', 'f'),
-        isNot(const DatabaseFindTarget.cell('b', 'r', 'f')));
+    expect(
+      const DatabaseFindTarget.cell('a', 'r', 'f'),
+      isNot(const DatabaseFindTarget.cell('b', 'r', 'f')),
+    );
     final ids = ['r'];
     final snapshot =
         DatabaseFindViewSnapshot(viewId: 'view', rowIds: ids, fieldIds: ['f']);
     ids.clear();
-    expect(snapshot.contains(const DatabaseFindTarget.cell('view', 'r', 'f')),
-        isTrue);
     expect(
-        snapshot.contains(const DatabaseFindTarget.cell('view', 'hidden', 'f')),
-        isFalse);
+      snapshot.contains(const DatabaseFindTarget.cell('view', 'r', 'f')),
+      isTrue,
+    );
     expect(
-        snapshot.contains(const DatabaseFindTarget.cell('view', 'r', 'hidden')),
-        isFalse);
+      snapshot.contains(const DatabaseFindTarget.cell('view', 'hidden', 'f')),
+      isFalse,
+    );
+    expect(
+      snapshot.contains(const DatabaseFindTarget.cell('view', 'r', 'hidden')),
+      isFalse,
+    );
   });
 
   _gridTest(
@@ -63,13 +74,16 @@ void main() {
       expect(row.hasSize, isTrue);
       expect(row.isMaterialized, isTrue);
       expect(row.isOnstage, isFalse);
-      expect(grid().navigation.rows, isEmpty,
-          reason:
-              'The cache is laid out, but there are no painted row samples');
+      expect(
+        grid().navigation.rows,
+        isEmpty,
+        reason: 'The cache is laid out, but there are no painted row samples',
+      );
       expect(grid().navigation.anchors(target), isEmpty);
       expect(
-          findGridCell(findGridNearRow, findGridNearField, skipOffstage: false),
-          findsOneWidget);
+        findGridCell(findGridNearRow, findGridNearField, skipOffstage: false),
+        findsOneWidget,
+      );
       final before = model.reads.snapshot();
 
       await page.open(tester, hover: false);
@@ -112,18 +126,28 @@ void main() {
             (sample) => sample.request.target.rowId == findGridFarRow,
           )
           .toList();
-      expect(samples.length, greaterThan(1),
-          reason: 'Relayout must reacquire the evicted row, not just wait');
+      expect(
+        samples.length,
+        greaterThan(1),
+        reason: 'Relayout must reacquire the evicted row, not just wait',
+      );
       final first = samples.first;
       expect(first.row, isNotNull);
-      expect(first.rowHeight, 36,
-          reason: 'The real RowBloc initially exposes only the placeholder');
-      expect(first.cellReady, isFalse);
-      expect(first.row!.isMaterialized, isFalse,
-          reason: 'Wrapped siblings evicted the first materialized boundary');
       expect(
-          samples.every((sample) => identical(sample.request, first.request)),
-          isTrue);
+        first.rowHeight,
+        36,
+        reason: 'The real RowBloc initially exposes only the placeholder',
+      );
+      expect(first.cellReady, isFalse);
+      expect(
+        first.row!.isMaterialized,
+        isFalse,
+        reason: 'Wrapped siblings evicted the first materialized boundary',
+      );
+      expect(
+        samples.every((sample) => identical(sample.request, first.request)),
+        isTrue,
+      );
       expect(first.request.isCurrent, isTrue);
       _expectExact(tester, grid(), findGridFarRow, findGridFarField);
       expect(grid().scroll, same(scroll));
@@ -150,7 +174,9 @@ void main() {
         PhysicalKeyboardKey.f3,
       );
       await databaseFindUntil(
-          tester, () => grid().materializationSamples.length > beforeSamples);
+        tester,
+        () => grid().materializationSamples.length > beforeSamples,
+      );
       final sample = grid().materializationSamples.last;
       expect(sample.request.target.rowId, findGridFarRow);
       expect(sample.rowHeight, 36);
@@ -203,23 +229,34 @@ void main() {
       expect(reads.any((call) => call.contains('filtered-row')), isFalse);
 
       await databaseFindKey(
-          tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+        tester,
+        LogicalKeyboardKey.f3,
+        PhysicalKeyboardKey.f3,
+      );
       await settleDatabaseFindNavigation(tester, grid().navigation);
       expect(databaseFindBar(tester).currentMatch, 2);
       _expectExact(tester, grid(), findGridFarRow, findGridFarField);
       expect(grid().scroll.verticalController.offset, greaterThan(2000));
       expect(grid().scroll.horizontalController.offset, greaterThan(900));
-      expect(grid().headerScroll.offset,
-          closeTo(grid().scroll.horizontalController.offset, 0.1));
+      expect(
+        grid().headerScroll.offset,
+        closeTo(grid().scroll.horizontalController.offset, 0.1),
+      );
       final editor = _editable(tester, findGridFarRow, findGridFarField);
-      expect(editor.renderEditable.offset.pixels, greaterThan(1000),
-          reason: 'The word, not merely the cell, must be brought into view');
+      expect(
+        editor.renderEditable.offset.pixels,
+        greaterThan(1000),
+        reason: 'The word, not merely the cell, must be brought into view',
+      );
       expect(editor.widget.focusNode.hasFocus, isFalse);
       expect(focus.hasPrimaryFocus, isTrue);
 
       await databaseFindKey(
-          tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3,
-          shift: true);
+        tester,
+        LogicalKeyboardKey.f3,
+        PhysicalKeyboardKey.f3,
+        shift: true,
+      );
       await settleDatabaseFindNavigation(tester, grid().navigation);
       expect(databaseFindBar(tester).currentMatch, 1);
       _expectExact(tester, grid(), findGridNearRow, findGridNearField);
@@ -227,7 +264,10 @@ void main() {
       await settleDatabaseFindNavigation(tester, grid().navigation);
       _expectExact(tester, grid(), findGridFarRow, findGridFarField);
       await databaseFindKey(
-          tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+        tester,
+        LogicalKeyboardKey.f3,
+        PhysicalKeyboardKey.f3,
+      );
       await settleDatabaseFindNavigation(tester, grid().navigation);
       expect(databaseFindBar(tester).currentMatch, 1, reason: 'Next wraps');
       _expectExact(tester, grid(), findGridNearRow, findGridNearField);
@@ -239,8 +279,11 @@ void main() {
       expect(model.reads.snapshot(), before);
       expect(model.writes, isEmpty);
       expect(model.openedRows, isEmpty);
-      expect(page.reads.calls, reads,
-          reason: 'Navigation adds no search reads');
+      expect(
+        page.reads.calls,
+        reads,
+        reason: 'Navigation adds no search reads',
+      );
     });
   }
 
@@ -256,13 +299,16 @@ void main() {
     await settleDatabaseFindNavigation(tester, grid().navigation);
     _expectExact(tester, grid(), findGridNearRow, findGridNearField);
     await databaseFindKey(
-        tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+      tester,
+      LogicalKeyboardKey.f3,
+      PhysicalKeyboardKey.f3,
+    );
     await settleDatabaseFindNavigation(tester, grid().navigation);
     _expectExact(tester, grid(), findGridFarRow, findGridFarField);
     expect(
-        page.reads.calls
-            .any((call) => call.contains('unrelated-database-guid')),
-        isFalse);
+      page.reads.calls.any((call) => call.contains('unrelated-database-guid')),
+      isFalse,
+    );
     expect(model.openedRows, isEmpty);
     expect(model.writes, isEmpty);
     final oldNavigation = grid().navigation;
@@ -287,7 +333,10 @@ void main() {
     await tester.pump();
     final selection = editor.widget.controller.selection;
     await databaseFindKey(
-        tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+      tester,
+      LogicalKeyboardKey.f3,
+      PhysicalKeyboardKey.f3,
+    );
     await settleDatabaseFindNavigation(tester, grid().navigation);
     _expectExact(tester, grid(), findGridFarRow, findGridFarField);
     expect(editor.widget.focusNode.hasPrimaryFocus, isTrue);
@@ -299,7 +348,9 @@ void main() {
       (tester, page, model, grid) async {
     await page.mount(tester);
     await tester.enterText(
-        findGridTextField(findGridNearRow, findGridNearField), 'unsaved work');
+      findGridTextField(findGridNearRow, findGridNearField),
+      'unsaved work',
+    );
     final editor = _editable(tester, findGridNearRow, findGridNearField);
     final controller = editor.widget.controller;
     controller.selection = const TextSelection(baseOffset: 2, extentOffset: 7);
@@ -314,8 +365,10 @@ void main() {
     await tester.pump();
     expect(databaseFindBar(tester).findFocusNode.hasPrimaryFocus, isTrue);
     expect(controller.text, 'unsaved work');
-    expect(controller.selection,
-        const TextSelection(baseOffset: 2, extentOffset: 7));
+    expect(
+      controller.selection,
+      const TextSelection(baseOffset: 2, extentOffset: 7),
+    );
     expect(model.writes, isEmpty);
     await page.query(tester, 'needle tail');
     await settleDatabaseFindNavigation(tester, grid().navigation);
@@ -349,29 +402,45 @@ void main() {
     controller.value = draft;
     await tester.pump();
     await databaseFindKey(
-        tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+      tester,
+      LogicalKeyboardKey.f3,
+      PhysicalKeyboardKey.f3,
+    );
     await settleDatabaseFindNavigation(tester, grid().navigation);
     _expectExact(tester, grid(), findGridFarRow, findGridFarField);
     expect(originalEditor.mounted, isTrue);
     expect(controller.value, draft);
     expect(
-      grid().navigation.materializedAnchors(const DatabaseFindTarget.cell(
-          databaseFindViewId, findGridNearRow, 'find-field-2')),
+      grid().navigation.materializedAnchors(
+            const DatabaseFindTarget.cell(
+              databaseFindViewId,
+              findGridNearRow,
+              'find-field-2',
+            ),
+          ),
       isEmpty,
       reason:
           'A retained draft in the keep-alive bucket is not a laid-out seek sample',
     );
-    await databaseFindKey(tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3,
-        shift: true);
+    await databaseFindKey(
+      tester,
+      LogicalKeyboardKey.f3,
+      PhysicalKeyboardKey.f3,
+      shift: true,
+    );
     await settleDatabaseFindNavigation(tester, grid().navigation);
-    expect(_editable(tester, findGridNearRow, 'find-field-2'),
-        same(originalEditor));
     expect(
-        tester
-            .widget<TextField>(
-                findGridTextField(findGridNearRow, 'find-field-2'))
-            .controller,
-        same(controller));
+      _editable(tester, findGridNearRow, 'find-field-2'),
+      same(originalEditor),
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            findGridTextField(findGridNearRow, 'find-field-2'),
+          )
+          .controller,
+      same(controller),
+    );
     expect(controller.value, draft);
     expect(field.focusNode!.hasFocus, isFalse);
     expect(model.writes, isEmpty);
@@ -420,36 +489,55 @@ void main() {
         final gate = Completer<void>();
         model.gate.value = gate;
         await databaseFindKey(
-            tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+          tester,
+          LogicalKeyboardKey.f3,
+          PhysicalKeyboardKey.f3,
+        );
         await tester.pump();
         final request = grid().requests.last;
         expect(
-            request.target,
-            const DatabaseFindTarget.cell(
-                databaseFindViewId, findGridFarRow, findGridFarField));
+          request.target,
+          const DatabaseFindTarget.cell(
+            databaseFindViewId,
+            findGridFarRow,
+            findGridFarField,
+          ),
+        );
         expect(request.isCurrent, isTrue);
 
         page.width = 540;
         page.mode = 'paper';
         await page.mount(tester);
         expect(grid().navigation.snapshot(), snapshot);
-        expect(request.isCurrent, isTrue,
-            reason:
-                'Equal snapshots are not a new view or a reordered row set');
+        expect(
+          request.isCurrent,
+          isTrue,
+          reason: 'Equal snapshots are not a new view or a reordered row set',
+        );
         expect(grid().scroll, same(scroll));
         if (stableScrollBehavior) {
           expect(scroll.verticalController.position, same(verticalPosition));
           expect(
-              scroll.horizontalController.position, same(horizontalPosition));
+            scroll.horizontalController.position,
+            same(horizontalPosition),
+          );
         } else {
-          expect(scroll.verticalController.position,
-              isNot(same(verticalPosition)));
-          expect(scroll.horizontalController.position,
-              isNot(same(horizontalPosition)));
-          expect(scroll.verticalController.position.context,
-              same(verticalPosition.context));
-          expect(scroll.horizontalController.position.context,
-              same(horizontalPosition.context));
+          expect(
+            scroll.verticalController.position,
+            isNot(same(verticalPosition)),
+          );
+          expect(
+            scroll.horizontalController.position,
+            isNot(same(horizontalPosition)),
+          );
+          expect(
+            scroll.verticalController.position.context,
+            same(verticalPosition.context),
+          );
+          expect(
+            scroll.horizontalController.position.context,
+            same(horizontalPosition.context),
+          );
         }
         expect(scroll.horizontalController.offset, beforeX);
         expect(scroll.verticalController.offset, beforeY);
@@ -469,7 +557,7 @@ void main() {
     'access',
     'reorder',
     'rebind',
-    'offstage'
+    'offstage',
   ]) {
     _gridTest(
         '$action cancels a pending materialization before either axis moves',
@@ -483,14 +571,21 @@ void main() {
       final gate = Completer<void>();
       model.gate.value = gate;
       await databaseFindKey(
-          tester, LogicalKeyboardKey.f3, PhysicalKeyboardKey.f3);
+        tester,
+        LogicalKeyboardKey.f3,
+        PhysicalKeyboardKey.f3,
+      );
       await tester.pump();
       await tester.pump();
       final request = grid().requests.last;
       expect(
-          request.target,
-          const DatabaseFindTarget.cell(
-              databaseFindViewId, findGridFarRow, findGridFarField));
+        request.target,
+        const DatabaseFindTarget.cell(
+          databaseFindViewId,
+          findGridFarRow,
+          findGridFarField,
+        ),
+      );
       expect(request.isCurrent, isTrue);
       switch (action) {
         case 'query':
@@ -519,8 +614,9 @@ void main() {
       expect(grid().scroll.verticalController.offset, beforeY);
       expect(grid().navigation.visibleMatchRects, isEmpty);
       expect(model.writes, isEmpty);
-      if (find.byType(FindReplaceBar).evaluate().isNotEmpty)
+      if (find.byType(FindReplaceBar).evaluate().isNotEmpty) {
         databaseFindBar(tester).onClose();
+      }
     });
   }
 
@@ -538,12 +634,17 @@ void main() {
     final beforeY = grid().scroll.verticalController.offset;
     await page.query(tester, 'Destination');
     await settleDatabaseFindNavigation(tester, grid().navigation);
-    expect(databaseFindSession(tester).current!.part.id,
-        'field:$findGridFarField');
+    expect(
+      databaseFindSession(tester).current!.part.id,
+      'field:$findGridFarField',
+    );
     expect(grid().navigation.reveal, DatabaseFindReveal.exact);
     expect(grid().navigation.visibleMatchRects, isNotEmpty);
-    expect(grid().scroll.verticalController.offset, beforeY,
-        reason: 'Heading navigation must not reset the row');
+    expect(
+      grid().scroll.verticalController.offset,
+      beforeY,
+      reason: 'Heading navigation must not reset the row',
+    );
     expect(model.writes, isEmpty);
   });
 
@@ -562,7 +663,9 @@ void main() {
     ]);
     _expectExact(tester, grid(), findGridFarRow, findGridFarField);
     expect(
-        page.reads.calls.any((call) => call.contains('find-row-42:')), isFalse);
+      page.reads.calls.any((call) => call.contains('find-row-42:')),
+      isFalse,
+    );
     expect(model.order, [findGridFarRow, findGridNearRow]);
     expect(model.writes, isEmpty);
   });
@@ -572,7 +675,10 @@ void main() {
       (tester) async {
     final page = DatabaseFindHarness();
     final target = const DatabaseFindTarget.cell(
-        databaseFindViewId, databaseFindRowId, databaseFindFieldId);
+      databaseFindViewId,
+      databaseFindRowId,
+      databaseFindFieldId,
+    );
     const value = 'needle with a very long clipped ending';
     page.reads.setText(databaseFindViewId, value);
     page.content = Align(
@@ -580,9 +686,13 @@ void main() {
       child: SizedBox(
         width: 60,
         child: DatabaseFindAnchor(
-            target: target,
-            child: const Text(value,
-                maxLines: 1, overflow: TextOverflow.ellipsis)),
+          target: target,
+          child: const Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ),
     );
     try {
@@ -597,12 +707,13 @@ void main() {
       expect(navigation.reveal, DatabaseFindReveal.cell);
       expect(navigation.visibleMatchRects, isEmpty);
       expect(
-          navigation
-              .anchors(target)
-              .single
-              .measure(databaseFindSession(tester).current!)
-              .complete,
-          isFalse);
+        navigation
+            .anchors(target)
+            .single
+            .measure(databaseFindSession(tester).current!)
+            .complete,
+        isFalse,
+      );
     } finally {
       await page.dispose(tester);
     }
@@ -611,58 +722,87 @@ void main() {
 
 void _gridTest(
   String name,
-  Future<void> Function(WidgetTester, DatabaseFindHarness,
-          DatabaseFindGridModel, DatabaseFindGridFixtureState Function())
-      test, {
+  Future<void> Function(
+    WidgetTester,
+    DatabaseFindHarness,
+    DatabaseFindGridModel,
+    DatabaseFindGridFixtureState Function(),
+  ) test, {
   double leadingPadding = 0,
   bool stableScrollBehavior = true,
 }) {
-  testWidgets(name, (tester) async {
-    final page = DatabaseFindHarness();
-    final model = DatabaseFindGridModel(page.reads);
-    final key = GlobalKey<DatabaseFindGridFixtureState>();
-    page.content = DatabaseFindGridFixture(
-      key: key,
-      model: model,
-      leadingPadding: leadingPadding,
-      stableScrollBehavior: stableScrollBehavior,
-    );
-    try {
-      await test(tester, page, model, () => key.currentState!);
-      expect(tester.takeException(), isNull);
-    } finally {
-      await page.dispose(tester);
-      model.dispose();
-      await tester.pump();
-    }
-  }, timeout: const Timeout(Duration(seconds: 30)));
+  testWidgets(
+    name,
+    (tester) async {
+      final page = DatabaseFindHarness();
+      final model = DatabaseFindGridModel(page.reads);
+      final key = GlobalKey<DatabaseFindGridFixtureState>();
+      page.content = DatabaseFindGridFixture(
+        key: key,
+        model: model,
+        leadingPadding: leadingPadding,
+        stableScrollBehavior: stableScrollBehavior,
+      );
+      try {
+        await test(tester, page, model, () => key.currentState!);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await page.dispose(tester);
+        model.dispose();
+        await tester.pump();
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 }
 
 EditableTextState _editable(
-        WidgetTester tester, String rowId, String fieldId) =>
+  WidgetTester tester,
+  String rowId,
+  String fieldId,
+) =>
     tester.state<EditableTextState>(
       find.descendant(
-          of: findGridCell(rowId, fieldId),
-          matching: find.byType(EditableText)),
+        of: findGridCell(rowId, fieldId),
+        matching: find.byType(EditableText),
+      ),
     );
 
-void _expectExact(WidgetTester tester, DatabaseFindGridFixtureState grid,
-    String rowId, String fieldId) {
+void _expectExact(
+  WidgetTester tester,
+  DatabaseFindGridFixtureState grid,
+  String rowId,
+  String fieldId,
+) {
   final current = databaseFindSession(tester).current!;
   expect(current.part.id, 'row:$rowId:$fieldId');
   final diagnostics = grid.navigationDiagnostics;
   expect(grid.requests, isNotEmpty, reason: diagnostics);
   expect(grid.requests.last.isCurrent, isTrue, reason: diagnostics);
-  expect(grid.navigation.snapshot(), grid.widget.model.snapshot(),
-      reason: diagnostics);
-  expect(grid.navigation.reveal, DatabaseFindReveal.exact,
-      reason: '${grid.navigation.message}\n$diagnostics');
+  expect(
+    grid.navigation.snapshot(),
+    grid.widget.model.snapshot(),
+    reason: diagnostics,
+  );
+  expect(
+    grid.navigation.reveal,
+    DatabaseFindReveal.exact,
+    reason: '${grid.navigation.message}\n$diagnostics',
+  );
   final native = _editable(tester, rowId, fieldId).renderEditable;
-  final boxes = native.getBoxesForSelection(TextSelection(
-      baseOffset: current.range.start, extentOffset: current.range.end));
+  final boxes = native.getBoxesForSelection(
+    TextSelection(
+      baseOffset: current.range.start,
+      extentOffset: current.range.end,
+    ),
+  );
   final expected = boxes
-      .map((box) =>
-          MatrixUtils.transformRect(native.getTransformTo(null), box.toRect()))
+      .map(
+        (box) => MatrixUtils.transformRect(
+          native.getTransformTo(null),
+          box.toRect(),
+        ),
+      )
       .toList();
   expect(grid.navigation.visibleMatchRects, expected);
   expect(expected, isNotEmpty);
@@ -675,7 +815,8 @@ void _expectExact(WidgetTester tester, DatabaseFindGridFixtureState grid,
       .anchors(DatabaseFindTarget.cell(databaseFindViewId, rowId, fieldId))
       .single;
   final color = FindHighlightColors.current(
-      Theme.of(tester.element(findGridCell(rowId, fieldId))).brightness);
+    Theme.of(tester.element(findGridCell(rowId, fieldId))).brightness,
+  );
   expect(anchor, paints..rect(color: color.withValues(alpha: color.a * 0.38)));
   expect(anchor.measure(current).complete, isTrue);
   expect(current.range.group(0), isNotEmpty);

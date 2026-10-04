@@ -277,7 +277,9 @@ class _ExternalContentViewState extends State<ExternalContentView> {
           slivers: [
             if (nodes.isEmpty)
               SliverFillRemaining(
-                  hasScrollBody: false, child: _empty(palette, controller))
+                hasScrollBody: false,
+                child: _empty(palette, controller),
+              )
             else if (widget.layout.isGrid)
               _grid(nodes, palette)
             else

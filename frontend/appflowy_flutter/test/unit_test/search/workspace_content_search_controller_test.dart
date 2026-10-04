@@ -39,10 +39,14 @@ void main() {
     final controller = controllerFor(reads)..search('needle', enabled: true);
 
     await finishContentSearch(tester, controller);
-    expect(controller.state.results.map((hit) => hit.view.id),
-        ['body-hit', 'last-page']);
     expect(
-        controller.state.results.first.snippet, 'Before the NeEdLe and after.');
+      controller.state.results.map((hit) => hit.view.id),
+      ['body-hit', 'last-page'],
+    );
+    expect(
+      controller.state.results.first.snippet,
+      'Before the NeEdLe and after.',
+    );
     expect(controller.state.scannedPages, 3);
     expect(reads.counts['document:title-only'], 1);
     expect(reads.calls.take(5), [
@@ -127,9 +131,10 @@ void main() {
         ViewLayoutPB.Grid;
     final controller = controllerFor(reads)
       ..updateSource(
-          workspaceId: 'workspace',
-          cachedViews: reads.views,
-          currentUserId: Int64(7))
+        workspaceId: 'workspace',
+        cachedViews: reads.views,
+        currentUserId: Int64(7),
+      )
       ..search(
         'needle',
         enabled: true,
@@ -142,8 +147,10 @@ void main() {
       );
     await finishContentSearch(tester, controller);
     expect(controller.state.results.single.view.id, 'mine');
-    expect(reads.calls.where((call) => call.startsWith('document:')),
-        ['document:mine']);
+    expect(
+      reads.calls.where((call) => call.startsWith('document:')),
+      ['document:mine'],
+    );
     expect(reads.calls.any((call) => call.contains('table')), isFalse);
     await disposeContentSearch(tester, controller, reads);
   });
@@ -358,8 +365,10 @@ void main() {
     expect(controller.state.results.single.view.id, 'good');
     expect(controller.state.results.single.view.childViews, isEmpty);
     expect(good.childViews.single, same(good));
-    expect(reads.calls.where((call) => call.startsWith('document:')),
-        ['document:good']);
+    expect(
+      reads.calls.where((call) => call.startsWith('document:')),
+      ['document:good'],
+    );
     reads.folder('workspace', parent: '').extra =
         '{"appflowy_encryption":{"version":999}}';
     controller.updateSource(workspaceId: 'workspace', cachedViews: reads.views);
@@ -396,9 +405,10 @@ void main() {
     final reads = WorkspaceSearchReads()
       ..page('first', 'éé')
       ..page('second', 'éé');
-    final controller = controllerFor(reads,
-        limits: const WorkspaceContentSearchLimits(maxBytes: 5))
-      ..search('é', enabled: true);
+    final controller = controllerFor(
+      reads,
+      limits: const WorkspaceContentSearchLimits(maxBytes: 5),
+    )..search('é', enabled: true);
     await finishContentSearch(tester, controller);
     expect(controller.state.scannedBytes, 4);
     expect(controller.state.results, hasLength(1));
@@ -413,7 +423,8 @@ void main() {
     final controller = controllerFor(
       reads,
       limits: const WorkspaceContentSearchLimits(
-          page: DocumentFindLimits(maxBytes: 16)),
+        page: DocumentFindLimits(maxBytes: 16),
+      ),
     )..search('needle', enabled: true);
     await finishContentSearch(tester, controller);
     expect(controller.state.results, isEmpty);
@@ -435,10 +446,18 @@ void main() {
       ..file('office', 'notes.docx', utf8.encode('Needle'))
       ..file('binary', 'binary.txt', [0, 1, 2])
       ..file('invalid', 'invalid.txt', [0xC3, 0x28])
-      ..file('outside', 'outside.txt', utf8.encode('Needle'),
-          source: '/arbitrary/notes.txt')
-      ..file('remote', 'remote.txt', utf8.encode('Needle'),
-          source: 'https://invalid.example/notes.txt');
+      ..file(
+        'outside',
+        'outside.txt',
+        utf8.encode('Needle'),
+        source: '/arbitrary/notes.txt',
+      )
+      ..file(
+        'remote',
+        'remote.txt',
+        utf8.encode('Needle'),
+        source: 'https://invalid.example/notes.txt',
+      );
     final controller = controllerFor(reads)..search('needle', enabled: true);
     await finishContentSearch(tester, controller);
     expect(controller.state.results.single.view.id, 'safe');
@@ -458,12 +477,17 @@ void main() {
         '{"appflowy_dashboard":{"text":"Needle"}}';
     reads.page('canvas', 'Needle').extra =
         '{"appflowy_canvas":{"text":"Needle"}}';
-    reads.page('referencing', 'Needle', blocks: [
-      Node(type: 'page_preview', attributes: {'view_id': 'not-supplied'}),
-      Node(
+    reads.page(
+      'referencing',
+      'Needle',
+      blocks: [
+        Node(type: 'page_preview', attributes: {'view_id': 'not-supplied'}),
+        Node(
           type: 'file',
-          attributes: {'name': 'private.txt', 'url': '/arbitrary/private.txt'}),
-    ]);
+          attributes: {'name': 'private.txt', 'url': '/arbitrary/private.txt'},
+        ),
+      ],
+    );
     final controller = controllerFor(reads)..search('needle', enabled: true);
     await finishContentSearch(tester, controller);
     expect(controller.state.results.single.view.id, 'referencing');
@@ -478,17 +502,21 @@ void main() {
   testWidgets('uses the real spreadsheet displayed-value reader',
       (tester) async {
     final reads = WorkspaceSearchReads();
-    reads.page('sheet', '', blocks: [
-      Node(
-        type: 'spreadsheet',
-        attributes: {
-          'data': SpreadsheetData.fromRows([
-            ['Status'],
-            ['Needle ready']
-          ]).toJson()
-        },
-      ),
-    ]);
+    reads.page(
+      'sheet',
+      '',
+      blocks: [
+        Node(
+          type: 'spreadsheet',
+          attributes: {
+            'data': SpreadsheetData.fromRows([
+              ['Status'],
+              ['Needle ready'],
+            ]).toJson(),
+          },
+        ),
+      ],
+    );
     final controller = controllerFor(reads)..search('needle', enabled: true);
     await finishContentSearch(tester, controller);
     expect(controller.state.results.single.snippet, 'Needle ready');
@@ -527,8 +555,10 @@ void main() {
       'an oversized exclusion list fails closed even with duplicate IDs',
       (tester) async {
     final reads = WorkspaceSearchReads()..page('page', 'Needle');
-    final controller = controllerFor(reads,
-        limits: const WorkspaceContentSearchLimits(maxCachedViews: 2))
+    final controller = controllerFor(
+      reads,
+      limits: const WorkspaceContentSearchLimits(maxCachedViews: 2),
+    )
       ..updateSource(
         workspaceId: 'workspace',
         cachedViews: reads.views,
@@ -537,7 +567,9 @@ void main() {
       ..search('needle', enabled: true);
     await tester.pump(const Duration(seconds: 1));
     expect(
-        controller.state.status, WorkspaceContentSearchStatus.waitingForSource);
+      controller.state.status,
+      WorkspaceContentSearchStatus.waitingForSource,
+    );
     expect(controller.state.results, isEmpty);
     expect(reads.calls, isEmpty);
     await disposeContentSearch(tester, controller, reads);
@@ -548,11 +580,16 @@ void main() {
     final reads = WorkspaceSearchReads()..page('page', 'Needle');
     final controller = controllerFor(reads)
       ..updateSource(
-          workspaceId: 'workspace', cachedViews: reads.views, ready: false)
+        workspaceId: 'workspace',
+        cachedViews: reads.views,
+        ready: false,
+      )
       ..search('needle', enabled: true);
     await tester.pump(const Duration(seconds: 1));
     expect(
-        controller.state.status, WorkspaceContentSearchStatus.waitingForSource);
+      controller.state.status,
+      WorkspaceContentSearchStatus.waitingForSource,
+    );
     expect(reads.calls, isEmpty);
     controller.updateSource(workspaceId: 'workspace', cachedViews: reads.views);
     await finishContentSearch(tester, controller);
@@ -589,7 +626,7 @@ void main() {
     final reads = WorkspaceSearchReads();
     reads.page('table', '', name: 'Planning').layout = ViewLayoutPB.Grid;
     reads.fields['table'] = [
-      FieldPB(id: 'text', name: 'Notes', fieldType: FieldType.RichText)
+      FieldPB(id: 'text', name: 'Notes', fieldType: FieldType.RichText),
     ];
     reads.rows['table'] = [RowMetaPB(id: 'visible')];
     reads.cells[('table', 'visible', 'text')] = CellPB(
@@ -648,9 +685,10 @@ void main() {
       expect(titles.pageContents, isFalse);
       expect(titles.titleOnly, isTrue);
       expect(
-          const CommandPaletteFilter(titleOnly: true, pageContents: true)
-              .titleOnly,
-          isFalse);
+        const CommandPaletteFilter(titleOnly: true, pageContents: true)
+            .titleOnly,
+        isFalse,
+      );
     });
   });
 }

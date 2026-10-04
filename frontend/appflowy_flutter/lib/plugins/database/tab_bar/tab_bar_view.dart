@@ -679,7 +679,8 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
                 _canEdit &&
                 samePageCoverSource(view, locallyUpdatedView ?? widget.view) &&
                 AutomaticViewCover.showsCover(
-                    locallyUpdatedView ?? widget.view),
+                  locallyUpdatedView ?? widget.view,
+                ),
             isSameCoverTarget: (fresh) =>
                 fresh.layout == view.layout &&
                 AutomaticViewCover.showsCover(fresh),

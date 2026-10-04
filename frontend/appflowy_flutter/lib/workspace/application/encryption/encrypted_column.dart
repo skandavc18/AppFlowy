@@ -69,8 +69,9 @@ class EncryptedColumns {
       final mark = values[envelopeKey];
       if (mark is! Map || mark['version'] != currentVersion) return null;
       final fields = mark['fields'];
-      if (fields is! List || fields.any((field) => field is! String))
+      if (fields is! List || fields.any((field) => field is! String)) {
         return null;
+      }
       return EncryptedColumns(fieldIds: fields.cast<String>().toSet());
     } on Object {
       return null;
@@ -349,8 +350,9 @@ class EncryptedColumnRegistry {
     try {
       final host = await _hostFor(viewId);
       final id = '$host|$fieldId';
-      if (!_rewriting.add(id))
+      if (!_rewriting.add(id)) {
         return const ColumnEncryptionResult.failed('busy');
+      }
       operation = id;
       if (await readColumns(viewId) == null) {
         return const ColumnEncryptionResult.failed('read');
@@ -386,7 +388,9 @@ class EncryptedColumnRegistry {
   }
 
   Future<Map<String, String>?> _columnValues(
-      String viewId, String fieldId) async {
+    String viewId,
+    String fieldId,
+  ) async {
     final rows = await DatabaseEventGetRowsAsText(
       DatabaseViewIdPB()..value = viewId,
     ).send().fold<RepeatedRowTextPB?>((rows) => rows, (_) => null);

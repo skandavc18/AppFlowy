@@ -347,24 +347,34 @@ void main() {
         await tester.tap(find.text(suggestion));
         await tester.pumpAndSettle();
         expect(engine.requests.single.question, suggestion);
-        expect(find.text(LocaleKeys.commandPalette_ai_thinking.tr()),
-            findsWidgets);
-        expect(find.byKey(const ValueKey('command-palette-ai-stop')),
-            findsOneWidget);
+        expect(
+          find.text(LocaleKeys.commandPalette_ai_thinking.tr()),
+          findsWidgets,
+        );
+        expect(
+          find.byKey(const ValueKey('command-palette-ai-stop')),
+          findsOneWidget,
+        );
 
         engine.say('Monday: **write the plan**.');
         await tester.pump();
         await tester.pump();
-        expect(find.textContaining('write the plan', findRichText: true),
-            findsWidgets);
+        expect(
+          find.textContaining('write the plan', findRichText: true),
+          findsWidgets,
+        );
         // Nothing to act on until the answer is complete.
-        expect(find.byKey(const ValueKey('command-palette-ai-save')),
-            findsNothing);
+        expect(
+          find.byKey(const ValueKey('command-palette-ai-save')),
+          findsNothing,
+        );
 
         engine.finish();
         await tester.pumpAndSettle();
-        expect(find.byKey(const ValueKey('command-palette-ai-stop')),
-            findsNothing);
+        expect(
+          find.byKey(const ValueKey('command-palette-ai-stop')),
+          findsNothing,
+        );
         await tester.tap(find.byKey(const ValueKey('command-palette-ai-save')));
         await tester.pumpAndSettle();
         expect(saved.single.answer, 'Monday: **write the plan**.');
@@ -426,7 +436,9 @@ void main() {
         tester
             .widget<PaletteSwitch>(
               find.descendant(
-                  of: spelling, matching: find.byType(PaletteSwitch)),
+                of: spelling,
+                matching: find.byType(PaletteSwitch),
+              ),
             )
             .value,
         isFalse,

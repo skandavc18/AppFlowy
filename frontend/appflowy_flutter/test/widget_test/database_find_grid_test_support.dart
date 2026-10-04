@@ -84,8 +84,11 @@ class DatabaseFindGridModel {
     }
     setText(findGridNearRow, findGridNearField, 'near needle cell');
     if (order.contains(findGridFarRow)) {
-      setText(findGridFarRow, findGridFarField,
-          '${'long prefix ' * 24}needle tail');
+      setText(
+        findGridFarRow,
+        findGridFarField,
+        '${'long prefix ' * 24}needle tail',
+      );
     }
     setText(findGridNearRow, 'find-field-4', 'hidden needle sentinel');
     setText('filtered-row', findGridNearField, 'filtered needle sentinel');
@@ -167,7 +170,8 @@ class DatabaseFindGridFixture extends StatefulWidget {
 
 class DatabaseFindGridFixtureState extends State<DatabaseFindGridFixture> {
   late final scroll = GridScrollController(
-      scrollGroupController: LinkedScrollControllerGroup());
+    scrollGroupController: LinkedScrollControllerGroup(),
+  );
   late final headerScroll = scroll.linkHorizontalController();
   late DatabaseFindController navigation;
   final viewportKey = GlobalKey();
@@ -196,8 +200,10 @@ class DatabaseFindGridFixtureState extends State<DatabaseFindGridFixture> {
     final request = requests.isEmpty ? null : requests.last;
     final target = request?.target;
     final rows = navigation.materializedRows
-        .map((row) => '${row.target.rowId}(height=${row.size.height}, '
-            'onstage=${row.isOnstage})')
+        .map(
+          (row) => '${row.target.rowId}(height=${row.size.height}, '
+              'onstage=${row.isOnstage})',
+        )
         .join(', ');
     return 'target=${target?.viewId}/${target?.rowId}/${target?.fieldId}, '
         'requestCurrent=${request?.isCurrent}, '
@@ -234,12 +240,14 @@ class DatabaseFindGridFixtureState extends State<DatabaseFindGridFixture> {
             )
             .toList();
     // Observe the actual handoff, not a delayed, already-settled snapshot.
-    materializationSamples.add((
-      request: request,
-      row: rows.isEmpty ? null : rows.first,
-      rowHeight: rows.isEmpty ? null : rows.first.size.height,
-      cellReady: navigation.materializedAnchors(request.target).isNotEmpty,
-    ));
+    materializationSamples.add(
+      (
+        request: request,
+        row: rows.isEmpty ? null : rows.first,
+        rowHeight: rows.isEmpty ? null : rows.first.size.height,
+        cellReady: navigation.materializedAnchors(request.target).isNotEmpty,
+      ),
+    );
     return result;
   }
 
@@ -306,7 +314,8 @@ class DatabaseFindGridFixtureState extends State<DatabaseFindGridFixture> {
                               buildDefaultDragHandles: false,
                               itemCount: model.order.length,
                               onReorder: (_, __) => throw StateError(
-                                  'Find must not reorder rows'),
+                                'Find must not reorder rows',
+                              ),
                               itemBuilder: (context, index) {
                                 final rowId = model.order[index];
                                 return GridRow(
@@ -501,8 +510,11 @@ Finder findGridCell(String rowId, String fieldId, {bool skipOffstage = true}) =>
       skipOffstage: skipOffstage,
     );
 
-Finder findGridTextField(String rowId, String fieldId,
-        {bool skipOffstage = true}) =>
+Finder findGridTextField(
+  String rowId,
+  String fieldId, {
+  bool skipOffstage = true,
+}) =>
     find.descendant(
       of: findGridCell(rowId, fieldId, skipOffstage: skipOffstage),
       matching: find.byType(TextField, skipOffstage: skipOffstage),

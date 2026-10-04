@@ -615,7 +615,9 @@ class WorkspacePageHeader extends StatelessWidget {
                               0,
                             ),
                             child: SizedBox(
-                                width: double.infinity, child: leading),
+                              width: double.infinity,
+                              child: leading,
+                            ),
                           ),
                         ),
                       ),

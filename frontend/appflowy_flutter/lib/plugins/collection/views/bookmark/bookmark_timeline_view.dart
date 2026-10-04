@@ -113,26 +113,27 @@ class _TimelineState extends State<_Timeline> {
               SliverPadding(
                 padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
                 sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                  (context, index) => Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 880),
-                      child: switch (lines[index]) {
-                        final _DateLine line =>
-                          _Heading(date: line.date, theme: widget.theme),
-                        final _EntryLine line => _Row(
-                            entry: line.entry,
-                            last: line.last,
-                            controller: controller,
-                            collection: widget.collection,
-                            theme: widget.theme,
-                          ),
-                      },
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 880),
+                        child: switch (lines[index]) {
+                          final _DateLine line =>
+                            _Heading(date: line.date, theme: widget.theme),
+                          final _EntryLine line => _Row(
+                              entry: line.entry,
+                              last: line.last,
+                              controller: controller,
+                              collection: widget.collection,
+                              theme: widget.theme,
+                            ),
+                        },
+                      ),
                     ),
+                    childCount: lines.length,
                   ),
-                  childCount: lines.length,
-                )),
-              )
+                ),
+              ),
           ],
         ),
       ),

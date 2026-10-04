@@ -224,8 +224,10 @@ void main() {
                 () =>
                     tester
                         .widget<DocumentViewportHeader>(
-                          find.byType(DocumentViewportHeader,
-                              skipOffstage: false),
+                          find.byType(
+                            DocumentViewportHeader,
+                            skipOffstage: false,
+                          ),
                         )
                         .identity
                         .subtitle !=
@@ -254,8 +256,10 @@ void main() {
             );
             final renderer = image
                 ? find.byType(InteractiveViewer, skipOffstage: false)
-                : find.text('AppFlowy has no viewer for this file type yet.',
-                    skipOffstage: false);
+                : find.text(
+                    'AppFlowy has no viewer for this file type yet.',
+                    skipOffstage: false,
+                  );
             final originalRenderer = tester.element(renderer);
             _expectWorkspaceBody(tester, renderer);
             expect(_revealFor(tester, _copy).opacity, 1);
@@ -284,12 +288,15 @@ void main() {
                 image ? null : _toolbarViewportRect(tester, renderer);
             final messageContent = image
                 ? null
-                : tester.getSize(find
-                    .ancestor(
-                      of: renderer,
-                      matching: find.byType(ViewerCard, skipOffstage: false),
-                    )
-                    .first);
+                : tester.getSize(
+                    find
+                        .ancestor(
+                          of: renderer,
+                          matching:
+                              find.byType(ViewerCard, skipOffstage: false),
+                        )
+                        .first,
+                  );
             final revealedOffset = tester
                 .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
                 .outerController
@@ -328,31 +335,40 @@ void main() {
             final body = tester.getRect(bodyFinder);
             expect(tester.element(bodyFinder), same(bodyElement));
             expect(
-                body,
-                Rect.fromLTRB(revealedBody.left, revealedBody.top + travel,
-                    revealedBody.right, header.bottom));
+              body,
+              Rect.fromLTRB(
+                revealedBody.left,
+                revealedBody.top + travel,
+                revealedBody.right,
+                header.bottom,
+              ),
+            );
             expect(
-                tester
-                    .getRect(find
-                        .byKey(const ValueKey('workspace-file-header-region')))
-                    .height,
-                naturalHeader.height);
+              tester
+                  .getRect(
+                    find.byKey(const ValueKey('workspace-file-header-region')),
+                  )
+                  .height,
+              naturalHeader.height,
+            );
             if (image) {
               expect(tester.getRect(renderer), body);
             } else {
               final nativeViewport = _toolbarViewportRect(tester, renderer);
               expect(
-                  nativeViewport,
-                  Rect.fromCenter(
-                    center: body.center,
-                    width: messageViewport!.width,
-                    height: messageContent!.height.clamp(0.0, body.height),
-                  ));
+                nativeViewport,
+                Rect.fromCenter(
+                  center: body.center,
+                  width: messageViewport!.width,
+                  height: messageContent!.height.clamp(0.0, body.height),
+                ),
+              );
               expect(
-                  tester.getRect(renderer),
-                  revealedBounds.shift(
-                    nativeViewport.topLeft - messageViewport.topLeft,
-                  ));
+                tester.getRect(renderer),
+                revealedBounds.shift(
+                  nativeViewport.topLeft - messageViewport.topLeft,
+                ),
+              );
             }
             expect(tester.element(renderer), same(originalRenderer));
             _expectWorkspaceBody(tester, renderer);
@@ -549,11 +565,14 @@ void main() {
       final mouse =
           await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
       final renderer = find.byType(InteractiveViewer, skipOffstage: false);
-      final content = find.byKey(const ValueKey('workspace-file-header-region'),
-          skipOffstage: false);
+      final content = find.byKey(
+        const ValueKey('workspace-file-header-region'),
+        skipOffstage: false,
+      );
       final titleInput = find.byKey(
-          const ValueKey('workspace-inline-name-editor'),
-          skipOffstage: false);
+        const ValueKey('workspace-inline-name-editor'),
+        skipOffstage: false,
+      );
       try {
         await mouse.addPointer(location: const Offset(-20, -20));
         await _warmPhoto(tester, photo);
@@ -574,16 +593,20 @@ void main() {
           () =>
               renderer.evaluate().isNotEmpty &&
               tester
-                  .widgetList<RawImage>(find.descendant(
-                    of: renderer,
-                    matching: find.byType(RawImage, skipOffstage: false),
-                    skipOffstage: false,
-                  ))
+                  .widgetList<RawImage>(
+                    find.descendant(
+                      of: renderer,
+                      matching: find.byType(RawImage, skipOffstage: false),
+                      skipOffstage: false,
+                    ),
+                  )
                   .any((image) => image.image != null) &&
               tester
                       .widget<DocumentViewportHeader>(
-                        find.byType(DocumentViewportHeader,
-                            skipOffstage: false),
+                        find.byType(
+                          DocumentViewportHeader,
+                          skipOffstage: false,
+                        ),
                       )
                       .identity
                       .subtitle !=
@@ -601,8 +624,10 @@ void main() {
           skipOffstage: false,
         );
         final frame = tester.widget<RawImage>(rawImage).image!;
-        final identity = find.byKey(const ValueKey('workspace-file-identity'),
-            skipOffstage: false);
+        final identity = find.byKey(
+          const ValueKey('workspace-file-identity'),
+          skipOffstage: false,
+        );
         final identityState = tester.state(identity);
         final mediaState =
             tester.state(find.byType(MediaActionButtons, skipOffstage: false));
@@ -617,16 +642,20 @@ void main() {
         expect(scroll.clipBehavior, Clip.hardEdge);
         _expectWorkspaceBody(tester, renderer);
         expect(
-            tester.getSize(
-                find.byKey(const ValueKey('workspace-file-identity-icon'))),
-            const Size.square(56));
+          tester.getSize(
+            find.byKey(const ValueKey('workspace-file-identity-icon')),
+          ),
+          const Size.square(56),
+        );
         expect(
-            tester
-                    .getRect(find
-                        .byKey(const ValueKey('workspace-file-identity-icon')))
-                    .top -
-                tester.getRect(content).top,
-            closeTo(44, 0.01));
+          tester
+                  .getRect(
+                    find.byKey(const ValueKey('workspace-file-identity-icon')),
+                  )
+                  .top -
+              tester.getRect(content).top,
+          closeTo(44, 0.01),
+        );
 
         await mouse.moveTo(const Offset(8, 8));
         await _motion(tester);
@@ -634,18 +663,22 @@ void main() {
         expect(find.byKey(_copy).hitTestable(), findsNothing);
         await _scrollWorkspaceFileHeader(tester, toEnd: true);
         await _ensureToolbarTargetVisible(
-            tester, find.byType(MediaActionButtons, skipOffstage: false));
+          tester,
+          find.byType(MediaActionButtons, skipOffstage: false),
+        );
         expect(find.byKey(_copy).hitTestable(), findsOneWidget);
         await tester.tap(find.byKey(_copy), kind: ui.PointerDeviceKind.mouse);
         await tester.pump();
         expect(actions.calls.single.kind, 'copy');
 
         final titleFocus = tester
-            .widget<Focus>(find.byWidgetPredicate(
-              (widget) =>
-                  widget is Focus &&
-                  widget.focusNode?.debugLabel == 'workspace-file-title',
-            ))
+            .widget<Focus>(
+              find.byWidgetPredicate(
+                (widget) =>
+                    widget is Focus &&
+                    widget.focusNode?.debugLabel == 'workspace-file-title',
+              ),
+            )
             .focusNode!;
         await _tabTo(tester, titleFocus);
         await tester.sendKeyEvent(LogicalKeyboardKey.f2);
@@ -666,37 +699,43 @@ void main() {
           expect(_toolbarViewportRect(tester, content).size, viewport.size);
           expect(tester.getSize(content).height, naturalHeight);
           expect(viewport.height, closeTo(size.height, 0.01));
-          expect(tester.getRect(renderer).top,
-              closeTo(viewport.top + naturalHeight - position.pixels, 0.01));
+          expect(
+            tester.getRect(renderer).top,
+            closeTo(viewport.top + naturalHeight - position.pixels, 0.01),
+          );
           _expectWorkspaceBody(tester, renderer);
           expect(position.maxScrollExtent, closeTo(naturalHeight, 0.01));
           expect(tester.element(renderer), same(rendererElement));
           expect(tester.state(renderer), same(rendererState));
           expect(
-              tester
-                  .widget<InteractiveViewer>(renderer)
-                  .transformationController,
-              same(transform));
+            tester.widget<InteractiveViewer>(renderer).transformationController,
+            same(transform),
+          );
           expect(transform.value, matrix);
-          expect(tester.widget<RawImage>(rawImage).image!.isCloneOf(frame),
-              isTrue);
+          expect(
+            tester.widget<RawImage>(rawImage).image!.isCloneOf(frame),
+            isTrue,
+          );
           expect(tester.state(identity), same(identityState));
           expect(
-              tester
-                  .state(find.byType(MediaActionButtons, skipOffstage: false)),
-              same(mediaState));
+            tester.state(find.byType(MediaActionButtons, skipOffstage: false)),
+            same(mediaState),
+          );
           expect(
-              tester
-                  .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
-                  .outerController
-                  .position,
-              same(position));
+            tester
+                .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
+                .outerController
+                .position,
+            same(position),
+          );
           final currentHost = StandaloneFileScope.maybeOf(rendererElement)!;
           expect(currentHost.chrome, same(host.chrome));
           expect(currentHost.metadata, same(host.metadata));
           expect(tester.state(titleInput), same(titleState));
-          expect(tester.widget<EditableText>(titleInput).controller,
-              same(field.controller));
+          expect(
+            tester.widget<EditableText>(titleInput).controller,
+            same(field.controller),
+          );
           expect(field.controller.value, draft);
           expect(field.focusNode.hasFocus, isTrue);
           expect(MediaQuery.textScalerOf(rendererElement).scale(10), 20);
@@ -722,10 +761,14 @@ void main() {
         actions.calls.single.succeed();
         await _motion(tester);
         await _ensureToolbarTargetVisible(
-            tester, find.byType(MediaActionButtons, skipOffstage: false));
+          tester,
+          find.byType(MediaActionButtons, skipOffstage: false),
+        );
         await _tabTo(tester, _button(tester, _share).focusNode!);
-        _expectBadge(tester,
-            viewport: tester.getRect(find.byKey(_fileHeaderScroll)));
+        _expectBadge(
+          tester,
+          viewport: tester.getRect(find.byKey(_fileHeaderScroll)),
+        );
         FocusManager.instance.primaryFocus?.unfocus();
         await mouse.moveTo(const Offset(-20, -20));
         await tester.pump(const Duration(seconds: 2));
@@ -749,8 +792,10 @@ void main() {
         expect(find.byKey(_share).hitTestable(), findsOneWidget);
         final shareNode = tester.getSemantics(find.byKey(_share));
         expect(shareNode.attached, isTrue);
-        expect(shareNode.getSemanticsData().hasFlag(ui.SemanticsFlag.isButton),
-            isTrue);
+        expect(
+          shareNode.getSemanticsData().hasFlag(ui.SemanticsFlag.isButton),
+          isTrue,
+        );
         final anchor = tester.getRect(find.byKey(_share));
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
         await tester.pump();
@@ -760,11 +805,15 @@ void main() {
         expect(actions.calls.last.origin, anchor);
         actions.calls.last.succeed();
         await _motion(tester);
-        expect(tester.getRect(find.byKey(_fileHeaderScroll)).size,
-            const Size(320, 260));
+        expect(
+          tester.getRect(find.byKey(_fileHeaderScroll)).size,
+          const Size(320, 260),
+        );
         _expectWorkspaceBody(tester, renderer);
         expect(
-            tester.widget<RawImage>(rawImage).image!.isCloneOf(frame), isTrue);
+          tester.widget<RawImage>(rawImage).image!.isCloneOf(frame),
+          isTrue,
+        );
         expect(view.writeToBuffer(), model);
         expect(loader.requests, hasLength(1));
         expect(tester.takeException(), isNull);
@@ -909,8 +958,10 @@ void main() {
         actions.calls.single.succeed();
         await _motion(tester);
         if (scenario == 'keyboard' || scenario == 'visible') {
-          _expectBadge(tester,
-              viewport: tester.getRect(find.byKey(_fileHeaderScroll)));
+          _expectBadge(
+            tester,
+            viewport: tester.getRect(find.byKey(_fileHeaderScroll)),
+          );
           expect(copyFocus.hasFocus, isTrue);
           final settled = page.outerController.offset;
           // Native repeated focus/reveal and ordinary paints must not drift.
@@ -2263,8 +2314,10 @@ void main() {
         await _motion(tester);
         expect(_revealFor(tester, _copy).opacity, 1);
         expect(find.semantics.byLabel('Copy'), findsOneWidget);
-        expect(find.byKey(const ValueKey('pdf-fullscreen-close')).hitTestable(),
-            findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('pdf-fullscreen-close')).hitTestable(),
+          findsOneWidget,
+        );
         await _tabTo(tester, _button(tester, _copy).focusNode!);
         await tester.pump(const Duration(seconds: 4));
         expect(_revealFor(tester, _copy).opacity, 1);
@@ -2401,7 +2454,10 @@ void main() {
             child: pdf?.preview(actions, autoHide: true) ??
                 WorkspaceFileView(
                   view: _view(
-                      'fullscreen-photo', 'Original photo.PNG', photo.path),
+                    'fullscreen-photo',
+                    'Original photo.PNG',
+                    photo.path,
+                  ),
                   resolveStorageUrl: _storedUrl,
                   materializeFile: ({required source, required name}) async =>
                       photo,
@@ -2426,9 +2482,12 @@ void main() {
           final control = find.byKey(closeKey);
           expect(control, findsOneWidget);
           expect(
-              find.ancestor(
-                  of: control, matching: find.byType(SingleChildScrollView)),
-              findsNothing);
+            find.ancestor(
+              of: control,
+              matching: find.byType(SingleChildScrollView),
+            ),
+            findsNothing,
+          );
           final ownedContext = tester.element(routeFinder);
           final ownedRoute = ModalRoute.of(ownedContext)!;
           final close =
@@ -2441,14 +2500,19 @@ void main() {
               find.descendant(of: control, matching: find.byType(TextButton));
           final node = tester.getSemantics(button);
           expect(node.attached, isTrue);
-          expect(node.getSemanticsData().hasFlag(ui.SemanticsFlag.isButton),
-              isTrue);
-          expect(node.getSemanticsData().hasAction(ui.SemanticsAction.tap),
-              isTrue);
+          expect(
+            node.getSemanticsData().hasFlag(ui.SemanticsFlag.isButton),
+            isTrue,
+          );
+          expect(
+            node.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+            isTrue,
+          );
           final newer = showDialog<void>(
-              context: ownedContext,
-              barrierDismissible: false,
-              builder: (_) => const AlertDialog(content: Text('Newer dialog')));
+            context: ownedContext,
+            barrierDismissible: false,
+            builder: (_) => const AlertDialog(content: Text('Newer dialog')),
+          );
           await tester.pumpAndSettle();
           close(); // A callback retained before the dialog cannot pop it.
           await _motion(tester);
@@ -2905,7 +2969,8 @@ Future<void> _controlKey(WidgetTester tester, LogicalKeyboardKey key) async {
 
 MediaActionSource _target(WidgetTester tester) => tester
     .widget<MediaActionButtons>(
-        find.byType(MediaActionButtons, skipOffstage: false))
+      find.byType(MediaActionButtons, skipOffstage: false),
+    )
     .source;
 
 IconButton _button(WidgetTester tester, Key key) =>
@@ -2926,8 +2991,9 @@ IconButton _button(WidgetTester tester, Key key) =>
     final fade = find
         .descendant(
           of: find.byElementPredicate(
-              (candidate) => identical(candidate, element),
-              skipOffstage: false),
+            (candidate) => identical(candidate, element),
+            skipOffstage: false,
+          ),
           matching: find.byType(AnimatedOpacity, skipOffstage: false),
           skipOffstage: false,
         )
@@ -2950,16 +3016,21 @@ IconButton _button(WidgetTester tester, Key key) =>
 
 Rect _expectBadge(WidgetTester tester, {Rect? viewport}) {
   final badge = tester.getRect(find.byKey(_copied));
-  final surface = tester.getRect(find
-      .ancestor(
-        of: find.byKey(_copied),
-        matching: find.byType(DecoratedBox),
-      )
-      .first);
+  final surface = tester.getRect(
+    find
+        .ancestor(
+          of: find.byKey(_copied),
+          matching: find.byType(DecoratedBox),
+        )
+        .first,
+  );
   final bounds = tester.getRect(find.byKey(_capture));
-  expect(bounds.intersect(surface), surface,
-      reason:
-          'The complete feedback surface, including padding, must be visible.');
+  expect(
+    bounds.intersect(surface),
+    surface,
+    reason:
+        'The complete feedback surface, including padding, must be visible.',
+  );
   expect(badge.top, greaterThanOrEqualTo(bounds.top));
   expect(badge.left, greaterThanOrEqualTo(bounds.left));
   expect(badge.right, lessThanOrEqualTo(bounds.right));
@@ -3032,7 +3103,9 @@ void _expectPdfToolbarSurface(WidgetTester tester, String mode) {
     tester
         .widget<DocumentViewportBar>(
           find.ancestor(
-              of: actions, matching: find.byType(DocumentViewportBar)),
+            of: actions,
+            matching: find.byType(DocumentViewportBar),
+          ),
         )
         .background,
     palette.canvas,
@@ -3060,10 +3133,12 @@ Future<void> _scrollWorkspaceFileHeader(
   // The kinetic adapter clamps wheel impulses; one oversized packet is not
   // a jump-to-end command. Exercise bounded real wheel notches to the edge.
   for (var i = 0; i < 20 && (position.pixels - target).abs() > .01; i++) {
-    await tester.sendEventToBinding(PointerScrollEvent(
-      position: tester.getTopLeft(header) + const Offset(8, 40),
-      scrollDelta: Offset(0, toEnd ? 120 : -120),
-    ));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getTopLeft(header) + const Offset(8, 40),
+        scrollDelta: Offset(0, toEnd ? 120 : -120),
+      ),
+    );
     await _motion(tester);
     // Copy may intentionally remain pending, with a repeating progress ticker.
     // A focused title also owns its caret. Neither is scroll activity. Require
@@ -3087,8 +3162,11 @@ Future<void> _scrollWorkspaceFileHeader(
               : 0;
       previous = current;
     }
-    expect(stableFrames, 3,
-        reason: 'Actual file scroll must finish within 120 frames');
+    expect(
+      stableFrames,
+      3,
+      reason: 'Actual file scroll must finish within 120 frames',
+    );
   }
   expect(position.pixels, closeTo(target, 0.01));
 }
@@ -3130,8 +3208,9 @@ Future<void> _ensureToolbarTargetVisible(
   final position = tester.state<ScrollableState>(scrollable).position;
   expect(viewport.width, greaterThan(0));
   expect(position.viewportDimension, closeTo(viewport.width, 0.01));
-  if (target.hitTestable().evaluate().isEmpty)
+  if (target.hitTestable().evaluate().isEmpty) {
     await tester.ensureVisible(target);
+  }
   await _motion(tester);
   expect(tester.element(target), same(element));
   expect(tester.getSize(target), size);

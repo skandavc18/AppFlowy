@@ -86,7 +86,9 @@ void main() {
                         child: Column(
                           children: [
                             ExternalEmbedBlockComponent(
-                                key: node.key, node: node),
+                              key: node.key,
+                              node: node,
+                            ),
                             const SizedBox(key: _following, height: 20),
                           ],
                         ),

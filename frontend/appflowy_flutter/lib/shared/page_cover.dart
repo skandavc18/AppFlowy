@@ -26,8 +26,11 @@ String coverLabel(String key, String fallback) {
 }
 
 class PageCoverBackendScope extends InheritedWidget {
-  const PageCoverBackendScope(
-      {super.key, required this.backend, required super.child});
+  const PageCoverBackendScope({
+    super.key,
+    required this.backend,
+    required super.child,
+  });
   final PageCoverBackendService backend;
   static PageCoverBackendService? maybeOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<PageCoverBackendScope>()
@@ -39,8 +42,11 @@ class PageCoverBackendScope extends InheritedWidget {
 
 /// Synchronous gate for a host's pending media action; never takes focus.
 class PageCoverInteractionGate extends InheritedWidget {
-  const PageCoverInteractionGate(
-      {super.key, required this.allowed, required super.child});
+  const PageCoverInteractionGate({
+    super.key,
+    required this.allowed,
+    required super.child,
+  });
   final ValueNotifier<bool> allowed;
   static ValueNotifier<bool>? maybeOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<PageCoverInteractionGate>()
@@ -209,10 +215,14 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
 
   void _move(DragUpdateDetails details) {
     if (_origin == null) return;
-    _controller?.preview((_startHeight + details.globalPosition.dy - _origin!)
-        .clamp(
-            PageCoverHeight.minimum, PageCoverHeight.maximumFor(widget.width))
-        .toDouble());
+    _controller?.preview(
+      (_startHeight + details.globalPosition.dy - _origin!)
+          .clamp(
+            PageCoverHeight.minimum,
+            PageCoverHeight.maximumFor(widget.width),
+          )
+          .toDouble(),
+    );
   }
 
   void _end(DragEndDetails details) {
@@ -226,10 +236,16 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
 
   void _step(double delta) {
     _cancel();
-    unawaited(_controller?.save((_height + delta)
-        .clamp(
-            PageCoverHeight.minimum, PageCoverHeight.maximumFor(widget.width))
-        .toDouble()));
+    unawaited(
+      _controller?.save(
+        (_height + delta)
+            .clamp(
+              PageCoverHeight.minimum,
+              PageCoverHeight.maximumFor(widget.width),
+            )
+            .toDouble(),
+      ),
+    );
   }
 
   void _reset() {
@@ -238,8 +254,9 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
   }
 
   KeyEventResult _key(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent)
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
+    }
     if (event.logicalKey == LogicalKeyboardKey.escape && _origin != null) {
       _cancel();
       return KeyEventResult.handled;
@@ -247,7 +264,9 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
     if (_controller?.canResize != true) return KeyEventResult.ignored;
     if (HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isAltPressed ||
-        HardwareKeyboard.instance.isMetaPressed) return KeyEventResult.ignored;
+        HardwareKeyboard.instance.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
     final delta = HardwareKeyboard.instance.isShiftPressed ? 10.0 : 1.0;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       _step(delta);
@@ -289,7 +308,8 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
     // Optional independently-owned position metadata wins over the default.
     try {
       final position = ViewCoverCodec.decodeExtra(
-          widget.view?.extra ?? '')['page_cover_position'];
+        widget.view?.extra ?? '',
+      )['page_cover_position'];
       if (position is num &&
           position.isFinite &&
           position >= -1 &&
@@ -303,16 +323,21 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
       appearance: appearance,
       alignment: alignment,
       child: Builder(
-        builder: (context) => widget.builder(context, _height,
-            _controller?.canResize == true ? _grip(context) : null),
+        builder: (context) => widget.builder(
+          context,
+          _height,
+          _controller?.canResize == true ? _grip(context) : null,
+        ),
       ),
     );
   }
 
   Widget _grip(BuildContext context) {
     final palette = WorkspacePalette.of(context);
-    final hint = coverLabel('resizeHint',
-        'Drag to resize. Up/Down: 1 pixel; Shift: 10 pixels. Home: reset. Escape: cancel.');
+    final hint = coverLabel(
+      'resizeHint',
+      'Drag to resize. Up/Down: 1 pixel; Shift: 10 pixels. Home: reset. Escape: cancel.',
+    );
     final failed = _controller?.hasFailure == true;
     final status = failed
         ? coverLabel('saveFailed', 'Could not save cover height. Try again.')
@@ -328,12 +353,16 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
         hint: status,
         value: _height.toStringAsFixed(1),
         increasedValue: (_height + 1)
-            .clamp(PageCoverHeight.minimum,
-                PageCoverHeight.maximumFor(widget.width))
+            .clamp(
+              PageCoverHeight.minimum,
+              PageCoverHeight.maximumFor(widget.width),
+            )
             .toStringAsFixed(1),
         decreasedValue: (_height - 1)
-            .clamp(PageCoverHeight.minimum,
-                PageCoverHeight.maximumFor(widget.width))
+            .clamp(
+              PageCoverHeight.minimum,
+              PageCoverHeight.maximumFor(widget.width),
+            )
             .toStringAsFixed(1),
         slider: true,
         enabled: true,
@@ -344,7 +373,8 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
         onDecrease: () => _step(-1),
         customSemanticsActions: {
           CustomSemanticsAction(
-              label: coverLabel('resetHeight', 'Reset cover height')): _reset,
+            label: coverLabel('resetHeight', 'Reset cover height'),
+          ): _reset,
         },
         child: Tooltip(
           message: status,
@@ -399,8 +429,11 @@ class _PageCoverLayoutState extends State<PageCoverLayout> {
 class PageCoverPanRecognizer extends PanGestureRecognizer {
   @override
   bool hasSufficientGlobalDistanceToAccept(
-          PointerDeviceKind kind, double? deviceTouchSlop) =>
-      globalDistanceMoved.abs() > computeHitSlop(kind, gestureSettings);
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) =>
+      globalDistanceMoved.abs() >
+      computeHitSlop(pointerDeviceKind, gestureSettings);
 
   @override
   void handleEvent(PointerEvent event) {

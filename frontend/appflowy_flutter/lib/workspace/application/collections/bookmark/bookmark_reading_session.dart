@@ -56,8 +56,10 @@ abstract final class BookmarkReaderStrings {
   static String get reader => _text('reader', 'Reader');
   static String siteView(String site) =>
       _text('siteView', 'As {} shows it').replaceFirst('{}', site);
-  static String get unavailable => _text('readerUnavailable',
-      'Reader is unavailable for this page. Open Live to continue.');
+  static String get unavailable => _text(
+        'readerUnavailable',
+        'Reader is unavailable for this page. Open Live to continue.',
+      );
   static String get gated => _text(
       'readerGated',
       'A sign-in, subscription or consent prompt covers this page. '
@@ -68,9 +70,13 @@ abstract final class BookmarkReaderStrings {
   static String get blockingOff =>
       _text('blockingOff', 'Ad-network blocking off — turn on and reload');
   static String get blockingFailed => _text(
-      'blockingFailed', 'Ad-network blocking unavailable — retry or turn off');
+        'blockingFailed',
+        'Ad-network blocking unavailable — retry or turn off',
+      );
   static String get saveFailed => _text(
-      'readerSaveFailed', 'The offline copy could not be saved. Please retry.');
+        'readerSaveFailed',
+        'The offline copy could not be saved. Please retry.',
+      );
   static String get gesturesAuto =>
       _text('gesturesAuto', 'Automatic gestures — switch to website gestures');
   static String get gesturesSite =>

@@ -894,8 +894,10 @@ class _Translations extends AssetLoader {
 /// Keep the real kernel's language/idle state, but never start a process even
 /// if an access regression accidentally reaches an execution callback.
 class _IdleNotebookKernel extends NotebookKernel {
-  _IdleNotebookKernel(
-      {required super.language, required super.workingDirectory});
+  _IdleNotebookKernel({
+    required super.language,
+    required super.workingDirectory,
+  });
 
   int starts = 0;
   final executions = <String>[];

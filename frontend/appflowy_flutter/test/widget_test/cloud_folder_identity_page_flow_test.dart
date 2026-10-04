@@ -54,8 +54,10 @@ void main() {
           layout: ViewLayoutPB.Document,
           icon: ViewIconPB(ty: ViewIconTypePB.Emoji, value: '📁'),
           extra: ViewCoverCodec.mergeCover(
-            source.mergeIntoExtra(const WorkspaceItemMetadata.folder()
-                .mergeIntoExtra('{"unrelated":"retain"}')),
+            source.mergeIntoExtra(
+              const WorkspaceItemMetadata.folder()
+                  .mergeIntoExtra('{"unrelated":"retain"}'),
+            ),
             cover,
           ),
         );
@@ -96,20 +98,25 @@ void main() {
         expect(identity.root.id, root.id);
         expect(identity.viewForId(root.id)!.icon, root.icon);
         expect(identity.canRename(root.id), !readOnly);
-        expect(tester.widget<ViewCoverImage>(find.byType(ViewCoverImage)).cover,
-            cover);
         expect(
-            tester
-                .widget<WorkspacePageHeader>(find.byType(WorkspacePageHeader))
-                .coverView!
-                .id,
-            root.id);
+          tester.widget<ViewCoverImage>(find.byType(ViewCoverImage)).cover,
+          cover,
+        );
         expect(
-            tester
-                .widget<ViewDecorationActions>(
-                    find.byType(ViewDecorationActions))
-                .showCoverAction,
-            !readOnly);
+          tester
+              .widget<WorkspacePageHeader>(find.byType(WorkspacePageHeader))
+              .coverView!
+              .id,
+          root.id,
+        );
+        expect(
+          tester
+              .widget<ViewDecorationActions>(
+                find.byType(ViewDecorationActions),
+              )
+              .showCoverAction,
+          !readOnly,
+        );
         expect(find.text('My cloud folder'), findsOneWidget);
         expect(find.byType(FileActionBand), findsOneWidget);
         expect(live!.status, ProviderStatus.loading);
@@ -127,15 +134,19 @@ void main() {
         }
         void retained() {
           expect(tester.state(header), same(headerState));
-          expect(tester.widget<FolderGalleryHeader>(header).controller,
-              same(identity));
+          expect(
+            tester.widget<FolderGalleryHeader>(header).controller,
+            same(identity),
+          );
           expect(tester.state(find.byType(NestedScrollView)), same(page));
           expect(page.innerController.positions, hasLength(1));
           expect(identity.viewForId(root.id)!.extra, root.extra);
           if (draft != null) {
-            expect(draft!.controller.text, 'Unsaved workspace title');
-            expect(draft!.controller.selection,
-                const TextSelection(baseOffset: 2, extentOffset: 7));
+            expect(draft.controller.text, 'Unsaved workspace title');
+            expect(
+              draft.controller.selection,
+              const TextSelection(baseOffset: 2, extentOffset: 7),
+            );
           }
         }
 
@@ -147,13 +158,16 @@ void main() {
         final retry = live!.refresh();
         await settleFileControls(tester);
         retained();
-        provider.next.complete(List.generate(
+        provider.next.complete(
+          List.generate(
             100,
             (i) => ProviderNode(
-                  id: 'file-$i',
-                  name: 'Cloud file $i',
-                  kind: ProviderNodeKind.other,
-                )));
+              id: 'file-$i',
+              name: 'Cloud file $i',
+              kind: ProviderNodeKind.other,
+            ),
+          ),
+        );
         await retry;
         await settleFileControls(tester);
         retained();
@@ -167,10 +181,12 @@ void main() {
         retained();
         final outer = page.outerController.offset;
         final viewport = tester.getRect(find.byType(WorkspaceFolderStage));
-        await tester.sendEventToBinding(PointerScrollEvent(
-          position: viewport.bottomCenter - const Offset(0, 30),
-          scrollDelta: const Offset(0, 120),
-        ));
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: viewport.bottomCenter - const Offset(0, 30),
+            scrollDelta: const Offset(0, 120),
+          ),
+        );
         await tester.pumpAndSettle();
         expect(page.outerController.offset, greaterThan(outer));
         expect(find.byType(ExternalContentView), findsOneWidget);
@@ -186,26 +202,34 @@ void main() {
           ..extra = ViewCoverCodec.mergeCover(root.extra, changedCover);
         listener.updated!(updated);
         await settleFileControls(tester);
-        expect(tester.widget<FolderGalleryHeader>(header).controller,
-            same(identity));
+        expect(
+          tester.widget<FolderGalleryHeader>(header).controller,
+          same(identity),
+        );
         expect(tester.state(find.byType(NestedScrollView)), same(page));
         expect(identity.viewForId(root.id)!.name, updated.name);
         expect(identity.viewForId(root.id)!.icon, updated.icon);
         expect(identity.canRename(root.id), isFalse);
-        expect(find.text('Current workspace title', skipOffstage: false),
-            findsOneWidget);
         expect(
-            tester
-                .widget<ViewCoverImage>(
-                    find.byType(ViewCoverImage, skipOffstage: false))
-                .cover,
-            changedCover);
+          find.text('Current workspace title', skipOffstage: false),
+          findsOneWidget,
+        );
         expect(
-            tester
-                .widget<ViewDecorationActions>(
-                    find.byType(ViewDecorationActions, skipOffstage: false))
-                .showCoverAction,
-            isFalse);
+          tester
+              .widget<ViewCoverImage>(
+                find.byType(ViewCoverImage, skipOffstage: false),
+              )
+              .cover,
+          changedCover,
+        );
+        expect(
+          tester
+              .widget<ViewDecorationActions>(
+                find.byType(ViewDecorationActions, skipOffstage: false),
+              )
+              .showCoverAction,
+          isFalse,
+        );
         expect(identity.viewForId(root.id)!.source.options, source.options);
         expect(root.writeToBuffer(), saved);
         expect(creations, 1);

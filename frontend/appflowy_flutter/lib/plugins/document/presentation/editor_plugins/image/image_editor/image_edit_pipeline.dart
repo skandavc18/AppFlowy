@@ -405,7 +405,8 @@ void _paintTonePass(
   }
   final paint = ui.Paint()
     ..colorFilter = ui.ColorFilter.matrix(
-        _toneMaskMatrix(baseMatrix, highlights: highlights))
+      _toneMaskMatrix(baseMatrix, highlights: highlights),
+    )
     ..color = ui.Color.fromRGBO(255, 255, 255, strength)
     // Adding white lifts the masked range; multiplying by the mask's inverse
     // pulls it down. Both keep untouched tones exactly where they were.
@@ -563,7 +564,11 @@ void paintAnnotations(
         _paintText(canvas, toLocal(annotation.points.first), annotation, area);
       case ImageAnnotationTool.marker:
         _paintMarker(
-            canvas, toLocal(annotation.points.first), annotation, area);
+          canvas,
+          toLocal(annotation.points.first),
+          annotation,
+          area,
+        );
     }
   }
   canvas.restore();

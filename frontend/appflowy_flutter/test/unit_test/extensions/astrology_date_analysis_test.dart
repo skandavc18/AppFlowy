@@ -23,7 +23,7 @@ const _longitudes = [
   278.0,
   305.0,
   345.0,
-  165.0
+  165.0,
 ];
 const _speeds = [0.98, 13.2, 0.4, -0.65, 0.08, 1.1, 0.02, -0.05, -0.05];
 
@@ -397,7 +397,8 @@ void main() {
         astrologyEventsNatalKey(input),
         isNot(
           astrologyEventsNatalKey(
-              input.copyWith(utc: DateTime.utc(1990, 1, 2))),
+            input.copyWith(utc: DateTime.utc(1990, 1, 2)),
+          ),
         ),
       );
       expect(

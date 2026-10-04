@@ -573,7 +573,9 @@ void main() {
           }
         }
         expect(
-            instants.last.difference(instants.first), const Duration(hours: 1));
+          instants.last.difference(instants.first),
+          const Duration(hours: 1),
+        );
       });
 
       test('offset-driven Moon cusps update sign nakshatra pada and Sri Lagna',

@@ -402,7 +402,7 @@ XmlElement _validateSvg(String source, String reason) {
     'filter',
     'script',
     'style',
-    'foreignObject'
+    'foreignObject',
   };
   expect(
     elements.where((element) => forbidden.contains(element.name.local)),

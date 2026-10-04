@@ -107,8 +107,10 @@ void main() {
     expect(await second, isTrue);
     expect(h.backend.maxActiveWrites, 1);
     expect(h.backend.reads, [h.view.id, h.view.id]);
-    expect(h.backend.writes.map((write) => IconSize.decode(write.extra)),
-        [97.5, 178.25]);
+    expect(
+      h.backend.writes.map((write) => IconSize.decode(write.extra)),
+      [97.5, 178.25],
+    );
     expect(h.controller.savedSize, 178.25);
   });
 

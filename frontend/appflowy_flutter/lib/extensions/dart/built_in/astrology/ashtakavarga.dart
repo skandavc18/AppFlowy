@@ -59,8 +59,11 @@ const _rules = <List<List<int>>>[
 ];
 
 class AshtakavargaResult {
-  const AshtakavargaResult(
-      {required this.bhinna, required this.sarva, required this.prastara});
+  const AshtakavargaResult({
+    required this.bhinna,
+    required this.sarva,
+    required this.prastara,
+  });
   final List<List<int>> bhinna;
   final List<int> sarva;
   final List<List<List<int>>> prastara;
@@ -75,7 +78,8 @@ AshtakavargaResult calculateAshtakavarga(AstrologyChart chart) =>
 AshtakavargaResult ashtakavargaForSigns(List<int> signs) {
   if (signs.length != 8 || signs.any((sign) => sign < 0 || sign > 11)) {
     throw ArgumentError(
-        'Seven planet signs and the Lagna sign (0–11) are required.');
+      'Seven planet signs and the Lagna sign (0–11) are required.',
+    );
   }
   final bhinna = List.generate(8, (_) => List.filled(12, 0));
   final prastara =

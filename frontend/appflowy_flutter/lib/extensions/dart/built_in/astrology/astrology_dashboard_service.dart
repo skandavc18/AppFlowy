@@ -133,7 +133,8 @@ class BackendAstrologyDashboardRepository
           fields.where((field) => field.name == column.name).toList();
       if (matches.length != 1 || matches.single.fieldType != column.type) {
         throw StateError(
-            'The life-events field "${column.name}" is incorrect.');
+          'The life-events field "${column.name}" is incorrect.',
+        );
       }
       final field = matches.single;
       if (column == columns.first &&
@@ -247,7 +248,8 @@ class AstrologyDashboardService {
     final libraryDocument = _astrologyDocument(library);
     if (libraryDocument == null || !isAstrologyLibrary(libraryDocument)) {
       throw StateError(
-          'The destination is not an Astrology dashboard library.');
+        'The destination is not an Astrology dashboard library.',
+      );
     }
 
     if (existingViewId != null) {
@@ -416,7 +418,8 @@ class AstrologyDashboardService {
   Future<void> _requireChild(ViewPB view, String parentViewId) async {
     if (view.id.isEmpty || view.id == parentViewId) {
       throw StateError(
-          'A horoscope and its container must be different views.');
+        'A horoscope and its container must be different views.',
+      );
     }
     if (view.parentViewId.isNotEmpty) {
       if (view.parentViewId != parentViewId) {
@@ -497,7 +500,8 @@ class AstrologyDashboardService {
     }
     if (input.utc == null || !input.utc!.isUtc) {
       throw const FormatException(
-          'Choose a fixed UTC birth time before saving.');
+        'Choose a fixed UTC birth time before saving.',
+      );
     }
     final place = input.place;
     if (place == null || place.name.trim().isEmpty) {

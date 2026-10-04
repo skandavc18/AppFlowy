@@ -29,44 +29,49 @@ void main() {
         await ref.resolveListenable().load();
         try {
           await mountFileControls(
-              tester,
-              PremiumScrollScope(
-                enabled: true,
-                child: StandaloneFileScope(
-                  canvas: Colors.transparent,
-                  rendererName: 'paged-flow.pdf',
-                  displayName: 'paged-flow.pdf',
-                  chrome: chrome,
-                  canEdit: () => false,
-                  canRead: () => true,
-                  editable: false,
-                  available: true,
-                  child: StandaloneFilePage(
-                    header: const SizedBox(
-                        height: 240, child: Text('PDF identity')),
-                    body: PdfPreview(
-                        file: file,
-                        name: 'paged-flow.pdf',
-                        metadata: const {
-                          'layoutMode': 'pageBreak',
-                          'pageTransition': 'none'
-                        },
-                        sourceDocumentRef: ref,
-                        editable: false,
-                        onMetadataChanged: (_) {}),
+            tester,
+            PremiumScrollScope(
+              enabled: true,
+              child: StandaloneFileScope(
+                canvas: Colors.transparent,
+                rendererName: 'paged-flow.pdf',
+                displayName: 'paged-flow.pdf',
+                chrome: chrome,
+                canEdit: () => false,
+                canRead: () => true,
+                editable: false,
+                available: true,
+                child: StandaloneFilePage(
+                  header: const SizedBox(
+                    height: 240,
+                    child: Text('PDF identity'),
+                  ),
+                  body: PdfPreview(
+                    file: file,
+                    name: 'paged-flow.pdf',
+                    metadata: const {
+                      'layoutMode': 'pageBreak',
+                      'pageTransition': 'none',
+                    },
+                    sourceDocumentRef: ref,
+                    editable: false,
+                    onMetadataChanged: (_) {},
                   ),
                 ),
               ),
-              reduced: reduced,
-              height: 720);
+            ),
+            reduced: reduced,
+          );
           await tester.pumpAndSettle();
           final viewer = tester.widget<PdfViewer>(find.byType(PdfViewer));
           final controller = viewer.controller!;
           expect(controller.isReady, isTrue);
           // At first-page Fit, reverse is a verified page boundary, not just
           // an arbitrary matrix position on a later fitted page.
-          await controller.goTo(Matrix4.diagonal3Values(.5, .5, 1),
-              duration: Duration.zero);
+          await controller.goTo(
+            Matrix4.diagonal3Values(.5, .5, 1),
+            duration: Duration.zero,
+          );
           await tester.pumpAndSettle();
           final page = tester
               .state<NestedScrollViewState>(find.byType(NestedScrollView));
@@ -86,8 +91,12 @@ void main() {
             if (gesture != null) {
               await gesture.panZoomUpdate(point, pan: Offset(0, -total));
             } else {
-              await tester.sendEventToBinding(PointerScrollEvent(
-                  position: point, scrollDelta: Offset(0, delta)));
+              await tester.sendEventToBinding(
+                PointerScrollEvent(
+                  position: point,
+                  scrollDelta: Offset(0, delta),
+                ),
+              );
             }
             await tester.pump();
           }
@@ -100,15 +109,20 @@ void main() {
           expect(controller.value, start);
           if (gesture != null) {
             final zoom = controller.currentZoom;
-            await gesture.panZoomUpdate(point,
-                pan: Offset(0, -total), scale: 1.2);
+            await gesture.panZoomUpdate(
+              point,
+              pan: Offset(0, -total),
+              scale: 1.2,
+            );
             await tester.pump();
             expect(controller.currentZoom, greaterThan(zoom));
             expect(page.outerController.offset, closeTo(40, .01));
             await gesture.panZoomEnd();
           }
-          expect(tester.widget<PdfViewer>(find.byType(PdfViewer)).controller,
-              same(controller));
+          expect(
+            tester.widget<PdfViewer>(find.byType(PdfViewer)).controller,
+            same(controller),
+          );
           expect(factory.opens, 1);
           expect(tester.takeException(), isNull);
         } finally {
@@ -128,19 +142,33 @@ void main() {
         final file =
             MemoryCodeFile(List.generate(400, (i) => 'print($i)').join('\n'));
         final backend = FileControlBackend(
-            fileControlView('flow', 'flow.py', file.path), file);
-        await mountFileControls(tester, backend.viewer(),
-            mode: theme, width: 800, height: 720, reduced: true);
+          fileControlView('flow', 'flow.py', file.path),
+          file,
+        );
+        await mountFileControls(
+          tester,
+          backend.viewer(),
+          mode: theme,
+          width: 800,
+          reduced: true,
+        );
         final fieldFinder =
             find.byWidgetPredicate((w) => w is TextField && w.expands);
         final field = tester.widget<TextField>(fieldFinder);
-        final native = tester.state(find.descendant(
-            of: fieldFinder, matching: find.byType(EditableText)));
+        final native = tester.state(
+          find.descendant(
+            of: fieldFinder,
+            matching: find.byType(EditableText),
+          ),
+        );
         final runner = tester.state(find.byType(SandboxedCodeRunner));
         final page = tester.state<NestedScrollViewState>(
-            find.byKey(const ValueKey('workspace-file-page-scroll')));
-        final header = find.byKey(const ValueKey('workspace-file-identity'),
-            skipOffstage: false);
+          find.byKey(const ValueKey('workspace-file-page-scroll')),
+        );
+        final header = find.byKey(
+          const ValueKey('workspace-file-identity'),
+          skipOffstage: false,
+        );
         final initial = tester.getRect(header);
         final extent = page.outerController.position.maxScrollExtent;
         final selection = const TextSelection(baseOffset: 1, extentOffset: 7);
@@ -160,8 +188,12 @@ void main() {
           if (gesture != null) {
             await gesture.panZoomUpdate(point, pan: Offset(0, -total));
           } else {
-            await tester.sendEventToBinding(PointerScrollEvent(
-                position: point, scrollDelta: Offset(0, delta)));
+            await tester.sendEventToBinding(
+              PointerScrollEvent(
+                position: point,
+                scrollDelta: Offset(0, delta),
+              ),
+            );
           }
           await tester.pump();
         }
@@ -183,11 +215,18 @@ void main() {
         if (gesture != null) await gesture.panZoomEnd();
         expect(tester.state(find.byType(SandboxedCodeRunner)), same(runner));
         expect(
-            tester.state(find.descendant(
-                of: fieldFinder, matching: find.byType(EditableText))),
-            same(native));
-        expect(tester.widget<TextField>(fieldFinder).controller,
-            same(field.controller));
+          tester.state(
+            find.descendant(
+              of: fieldFinder,
+              matching: find.byType(EditableText),
+            ),
+          ),
+          same(native),
+        );
+        expect(
+          tester.widget<TextField>(fieldFinder).controller,
+          same(field.controller),
+        );
         expect(field.controller!.selection, selection);
         expect(file.reads, 1);
         expect(file.writes, 0);
@@ -212,30 +251,31 @@ void main() {
     await ref.resolveListenable().load();
     try {
       await mountFileControls(
-          tester,
-          StandaloneFileScope(
-            canvas: Colors.transparent,
-            rendererName: 'page-flow.pdf',
-            displayName: 'page-flow.pdf',
-            chrome: chrome,
-            canEdit: () => false,
-            canRead: () => true,
-            editable: false,
-            available: true,
-            child: StandaloneFilePage(
-              header:
-                  const SizedBox(height: 240, child: Text('PDF page identity')),
-              body: PdfPreview(
-                  file: file,
-                  name: 'page-flow.pdf',
-                  metadata: const {},
-                  sourceDocumentRef: ref,
-                  editable: false,
-                  onMetadataChanged: (_) {}),
+        tester,
+        StandaloneFileScope(
+          canvas: Colors.transparent,
+          rendererName: 'page-flow.pdf',
+          displayName: 'page-flow.pdf',
+          chrome: chrome,
+          canEdit: () => false,
+          canRead: () => true,
+          editable: false,
+          available: true,
+          child: StandaloneFilePage(
+            header:
+                const SizedBox(height: 240, child: Text('PDF page identity')),
+            body: PdfPreview(
+              file: file,
+              name: 'page-flow.pdf',
+              metadata: const {},
+              sourceDocumentRef: ref,
+              editable: false,
+              onMetadataChanged: (_) {},
             ),
           ),
-          reduced: true,
-          height: 720);
+        ),
+        reduced: true,
+      );
       await tester.pumpAndSettle();
       final viewer = tester.widget<PdfViewer>(find.byType(PdfViewer));
       final controller = viewer.controller!;
@@ -254,7 +294,8 @@ void main() {
       final point = Offset(bounds.center.dx, bounds.bottom - 30);
       Future<void> wheel(double delta) async {
         await tester.sendEventToBinding(
-            PointerScrollEvent(position: point, scrollDelta: Offset(0, delta)));
+          PointerScrollEvent(position: point, scrollDelta: Offset(0, delta)),
+        );
         await tester.pump();
       }
 
@@ -263,15 +304,21 @@ void main() {
       expect(controller.value, start);
       await wheel(200);
       expect(page.outerController.offset, 240);
-      expect(controller.value.getTranslation().y,
-          closeTo(start.getTranslation().y - 60, .01));
+      expect(
+        controller.value.getTranslation().y,
+        closeTo(start.getTranslation().y - 60, .01),
+      );
       await wheel(-80);
-      expect(controller.value.getTranslation().y,
-          closeTo(start.getTranslation().y, .01));
+      expect(
+        controller.value.getTranslation().y,
+        closeTo(start.getTranslation().y, .01),
+      );
       expect(page.outerController.offset, 220);
       expect(controller.currentZoom, zoom);
-      expect(tester.widget<PdfViewer>(find.byType(PdfViewer)).controller,
-          same(controller));
+      expect(
+        tester.widget<PdfViewer>(find.byType(PdfViewer)).controller,
+        same(controller),
+      );
       expect(factory.opens, 1);
       expect(tester.takeException(), isNull);
     } finally {
@@ -286,9 +333,11 @@ void main() {
 class _Factory extends Fake implements PdfDocumentFactory {
   int opens = 0;
   @override
-  Future<PdfDocument> openFile(String filePath,
-      {PdfPasswordProvider? passwordProvider,
-      bool firstAttemptByEmptyPassword = true}) async {
+  Future<PdfDocument> openFile(
+    String filePath, {
+    PdfPasswordProvider? passwordProvider,
+    bool firstAttemptByEmptyPassword = true,
+  }) async {
     opens++;
     return _Document(filePath);
   }
@@ -331,17 +380,18 @@ class _Page extends PdfPage {
   @override
   Future<List<PdfLink>> loadLinks({bool compact = false}) async => [];
   @override
-  Future<PdfImage?> render(
-          {int x = 0,
-          int y = 0,
-          int? width,
-          int? height,
-          double? fullWidth,
-          double? fullHeight,
-          Color? backgroundColor,
-          PdfAnnotationRenderingMode annotationRenderingMode =
-              PdfAnnotationRenderingMode.annotationAndForms,
-          PdfPageRenderCancellationToken? cancellationToken}) async =>
+  Future<PdfImage?> render({
+    int x = 0,
+    int y = 0,
+    int? width,
+    int? height,
+    double? fullWidth,
+    double? fullHeight,
+    Color? backgroundColor,
+    PdfAnnotationRenderingMode annotationRenderingMode =
+        PdfAnnotationRenderingMode.annotationAndForms,
+    PdfPageRenderCancellationToken? cancellationToken,
+  }) async =>
       null;
 }
 

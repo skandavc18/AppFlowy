@@ -70,7 +70,7 @@ class NativeFilePageScrollDispatcher {
         !delta.isFinite ||
         delta == 0 ||
         _pending.length >= capacity) {
-      return Future.value(null);
+      return Future.value();
     }
     final request = _VerticalRequest(delta, _epoch);
     request.expiry = Timer(deadline, () {
@@ -102,8 +102,11 @@ class NativeFilePageScrollDispatcher {
       !request.result.isCompleted &&
       isCurrent();
 
-  static double _actual(double requested, double actual,
-      {double tolerance = 0.01}) {
+  static double _actual(
+    double requested,
+    double actual, {
+    double tolerance = 0.01,
+  }) {
     if (!actual.isFinite ||
         actual.abs() > requested.abs() + tolerance ||
         (actual != 0 && actual.sign != requested.sign)) {
@@ -194,8 +197,11 @@ class NativeFilePageScrollBridge {
   bool _cancelInFlight = false;
   (InAppWebViewController, ContentWorld, String, int)? _queuedCancel;
 
-  void bind(StandaloneFilePageScroll? page, bool Function() eligible,
-      {double devicePixelRatio = 1}) {
+  void bind(
+    StandaloneFilePageScroll? page,
+    bool Function() eligible, {
+    double devicePixelRatio = 1,
+  }) {
     if (_page?.outer != page?.outer) cancel();
     _page = page;
     _eligible = eligible;
@@ -250,8 +256,10 @@ class NativeFilePageScrollBridge {
     }
   }
 
-  void configure(
-      {required bool kinetic, required PremiumScrollPhysicsConfig config}) {
+  void configure({
+    required bool kinetic,
+    required PremiumScrollPhysicsConfig config,
+  }) {
     if (_kinetic == kinetic && _config == config) return;
     _kinetic = kinetic;
     _config = config;
@@ -279,11 +287,13 @@ class NativeFilePageScrollBridge {
     );
     try {
       final result = await controller.evaluateJavascript(
-        source: buildNativeFilePageScrollScript(document,
-            kinetic: _kinetic,
-            devicePixelRatio: _devicePixelRatio,
-            revision: revision,
-            config: _config),
+        source: buildNativeFilePageScrollScript(
+          document,
+          kinetic: _kinetic,
+          devicePixelRatio: _devicePixelRatio,
+          revision: revision,
+          config: _config,
+        ),
         contentWorld: _world,
       );
       return revision == _revision && result == true;
@@ -300,12 +310,16 @@ class NativeFilePageScrollBridge {
         args[1] is! num ||
         args[2] is! num ||
         args[3] is! String ||
-        !(_eligible?.call() ?? false)) return null;
+        !(_eligible?.call() ?? false)) {
+      return null;
+    }
     final gestureValue = args[1] as num;
     if (!gestureValue.isFinite ||
         gestureValue < 0 ||
         gestureValue.toInt() != gestureValue ||
-        !const {'input', 'cancel'}.contains(args[3])) return null;
+        !const {'input', 'cancel'}.contains(args[3])) {
+      return null;
+    }
     final gesture = gestureValue.toInt();
     if (gesture < _gesture) return null;
     if (gesture != _gesture) {
@@ -323,8 +337,9 @@ class NativeFilePageScrollBridge {
     final document = _document;
     final actual =
         await _dispatcher?.consumeVertical((args[2] as num).toDouble());
-    if (document != _document || gesture != _gesture || actual == null)
+    if (document != _document || gesture != _gesture || actual == null) {
       return null;
+    }
     final outer = _page?.outer;
     final hidden = outer == null ||
         (outer.positions.length == 1 &&
@@ -376,8 +391,11 @@ class NativeFilePageScrollBridge {
 /// Input stays with WebView2. This marker only verifies that a late DOM reply
 /// still belongs to an active, hit-testable file, including embed gates/tabs.
 class NativeFilePageScroll extends StatefulWidget {
-  const NativeFilePageScroll(
-      {super.key, required this.bridge, required this.child});
+  const NativeFilePageScroll({
+    super.key,
+    required this.bridge,
+    required this.child,
+  });
   final NativeFilePageScrollBridge bridge;
   final Widget child;
   @override
@@ -420,7 +438,9 @@ class _NativeFilePageScrollState extends State<NativeFilePageScroll> {
         !_active ||
         !_inputEnabled ||
         !TickerMode.of(context) ||
-        ModalRoute.of(context)?.isCurrent == false) return false;
+        ModalRoute.of(context)?.isCurrent == false) {
+      return false;
+    }
     final event = _lastInput;
     if (event == null) return false;
     // Do not unwrap ScrollGestureGate's filtered targets.
@@ -434,8 +454,11 @@ class _NativeFilePageScrollState extends State<NativeFilePageScroll> {
     _inputEnabled = ScrollConfiguration.of(context)
         .getScrollPhysics(context)
         .allowUserScrolling;
-    widget.bridge.bind(_page, _eligible,
-        devicePixelRatio: View.of(context).devicePixelRatio);
+    widget.bridge.bind(
+      _page,
+      _eligible,
+      devicePixelRatio: View.of(context).devicePixelRatio,
+    );
     if (!TickerMode.of(context) || !_inputEnabled) widget.bridge.cancel();
   }
 
@@ -465,8 +488,9 @@ class _NativeFilePageScrollState extends State<NativeFilePageScroll> {
           behavior: HitTestBehavior.opaque,
           onPointerSignal: (event) {
             _lastInput = event;
-            if (event is PointerScrollInertiaCancelEvent)
+            if (event is PointerScrollInertiaCancelEvent) {
               widget.bridge.cancel();
+            }
             if (event is PointerScrollEvent) {
               // WebView's native listener has already received this original event.
               // Prevent an ancestor Flutter Scrollable from consuming it as well.
@@ -484,23 +508,26 @@ class _NativeFilePageScrollState extends State<NativeFilePageScroll> {
             widget.bridge.cancel();
           },
           onPointerCancel: (_) => widget.bridge.cancel(),
-          child: LayoutBuilder(builder: (context, constraints) {
-            final outer = _page?.outer;
-            final position =
-                outer?.positions.length == 1 ? outer!.position : null;
-            final height = position?.hasViewportDimension == true
-                ? position!.viewportDimension
-                : constraints.maxHeight;
-            // Constant finite texture geometry while the header clips/unclips it.
-            // Native WebView cancels a touch stream if its composition size changes.
-            return ClipRect(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final outer = _page?.outer;
+              final position =
+                  outer?.positions.length == 1 ? outer!.position : null;
+              final height = position?.hasViewportDimension == true
+                  ? position!.viewportDimension
+                  : constraints.maxHeight;
+              // Constant finite texture geometry while the header clips/unclips it.
+              // Native WebView cancels a touch stream if its composition size changes.
+              return ClipRect(
                 child: OverflowBox(
-              alignment: Alignment.topLeft,
-              minHeight: height.isFinite ? height : null,
-              maxHeight: height.isFinite ? height : null,
-              child: widget.child,
-            ));
-          }),
+                  alignment: Alignment.topLeft,
+                  minHeight: height.isFinite ? height : null,
+                  maxHeight: height.isFinite ? height : null,
+                  child: widget.child,
+                ),
+              );
+            },
+          ),
         ),
       );
 }

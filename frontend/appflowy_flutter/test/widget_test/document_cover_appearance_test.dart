@@ -19,10 +19,13 @@ void main() {
           '$theme/$fit actual DesktopCover preserves legacy image through a height write',
           (tester) async {
         final editor = EditorState.blank();
-        final node = Node(type: 'page', attributes: {
-          DocumentHeaderBlockKeys.coverType: CoverType.asset.toString(),
-          DocumentHeaderBlockKeys.coverDetails: 'n1',
-        });
+        final node = Node(
+          type: 'page',
+          attributes: {
+            DocumentHeaderBlockKeys.coverType: CoverType.asset.toString(),
+            DocumentHeaderBlockKeys.coverDetails: 'n1',
+          },
+        );
         final attributes = Map<String, dynamic>.from(node.attributes);
         var view = ViewPB(id: 'legacy-cover', layout: ViewLayoutPB.Document);
         final appearance =
@@ -50,10 +53,10 @@ void main() {
         await tester.pump();
         final state = tester.state(find.byType(DesktopCover));
         expect(
-            (tester.widget<Image>(find.byType(Image)).image
-                    as CoverImageProvider)
-                .imageProvider,
-            AssetImage(PageStyleCoverImageType.builtInImagePath('n1')));
+          (tester.widget<Image>(find.byType(Image)).image as CoverImageProvider)
+              .imageProvider,
+          AssetImage(PageStyleCoverImageType.builtInImagePath('n1')),
+        );
         view = PageCoverHeight.applyTo(view, 313.5);
         await tester.pumpWidget(app());
         await tester.pump();
@@ -72,18 +75,25 @@ void main() {
     testWidgets('$theme explicit modern none beats an old node cover',
         (tester) async {
       final editor = EditorState.blank();
-      final node = Node(type: 'page', attributes: {
-        DocumentHeaderBlockKeys.coverType: CoverType.asset.toString(),
-        DocumentHeaderBlockKeys.coverDetails: 'n1',
-      });
+      final node = Node(
+        type: 'page',
+        attributes: {
+          DocumentHeaderBlockKeys.coverType: CoverType.asset.toString(),
+          DocumentHeaderBlockKeys.coverDetails: 'n1',
+        },
+      );
       final view = ViewPB(
-          id: 'removed-cover',
-          layout: ViewLayoutPB.Document,
-          extra: PageCoverHeight.merge(
-              ViewCoverCodec.mergeCover('', const PageStyleCover.none()), 200));
-      await tester.pumpWidget(workspaceOverlayTestApp(
-        appearance: theme,
-        child: SizedBox(
+        id: 'removed-cover',
+        layout: ViewLayoutPB.Document,
+        extra: PageCoverHeight.merge(
+          ViewCoverCodec.mergeCover('', const PageStyleCover.none()),
+          200,
+        ),
+      );
+      await tester.pumpWidget(
+        workspaceOverlayTestApp(
+          appearance: theme,
+          child: SizedBox(
             width: 600,
             height: 200,
             child: DesktopCover(
@@ -92,8 +102,10 @@ void main() {
               node: node,
               coverType: CoverType.asset,
               coverDetails: 'n1',
-            )),
-      ));
+            ),
+          ),
+        ),
+      );
       await tester.pump();
       expect(find.byType(Image), findsNothing);
       expect(node.attributes[DocumentHeaderBlockKeys.coverDetails], 'n1');
@@ -110,22 +122,25 @@ void main() {
       Widget app(String value) => workspaceOverlayTestApp(
             appearance: theme,
             child: SizedBox(
-                width: 600,
-                height: 200,
-                child: DesktopCover(
-                  view: ViewPB(
-                    id: 'modern-cover',
-                    layout: ViewLayoutPB.Document,
-                    extra: ViewCoverCodec.mergeCover(
-                        '',
-                        PageStyleCover(
-                            type: PageStyleCoverImageType.builtInImage,
-                            value: value)),
+              width: 600,
+              height: 200,
+              child: DesktopCover(
+                view: ViewPB(
+                  id: 'modern-cover',
+                  layout: ViewLayoutPB.Document,
+                  extra: ViewCoverCodec.mergeCover(
+                    '',
+                    PageStyleCover(
+                      type: PageStyleCoverImageType.builtInImage,
+                      value: value,
+                    ),
                   ),
-                  editorState: editor,
-                  node: node,
-                  coverType: CoverType.none,
-                )),
+                ),
+                editorState: editor,
+                node: node,
+                coverType: CoverType.none,
+              ),
+            ),
           );
       await tester.pumpWidget(app('n1'));
       await tester.pump();
@@ -134,9 +149,10 @@ void main() {
       await tester.pump();
       expect(tester.state(find.byType(DesktopCover)), same(state));
       expect(
-          (tester.widget<Image>(find.byType(Image)).image as CoverImageProvider)
-              .imageProvider,
-          AssetImage(PageStyleCoverImageType.builtInImagePath('n2')));
+        (tester.widget<Image>(find.byType(Image)).image as CoverImageProvider)
+            .imageProvider,
+        AssetImage(PageStyleCoverImageType.builtInImagePath('n2')),
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       editor.dispose();

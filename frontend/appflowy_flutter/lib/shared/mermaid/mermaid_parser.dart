@@ -928,7 +928,9 @@ MermaidDocument _parseStateDiagram(String header, List<_Line> body) {
       if (aliased != null) {
         builder.addNode(
           MermaidNode(
-              id: aliased.group(2)!, label: _unquote(aliased.group(1)!)),
+            id: aliased.group(2)!,
+            label: _unquote(aliased.group(1)!),
+          ),
         );
         continue;
       }
@@ -1225,8 +1227,12 @@ MermaidDocument _parseTimeline(List<_Line> body) {
       continue;
     }
     if (parts.length == 1) {
-      current.add(MermaidTimelineEntry(
-          period: _unquote(parts.first), events: const []));
+      current.add(
+        MermaidTimelineEntry(
+          period: _unquote(parts.first),
+          events: const [],
+        ),
+      );
       continue;
     }
     current.add(

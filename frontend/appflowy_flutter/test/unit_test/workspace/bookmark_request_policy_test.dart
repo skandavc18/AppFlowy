@@ -24,7 +24,7 @@ void main() {
       'amazon.com',
       'news.example',
       'header.example',
-      'download.example'
+      'download.example',
     ]) {
       expect(BookmarkRequestPolicy.isAdHost(host), isFalse, reason: host);
     }
@@ -51,12 +51,15 @@ void main() {
       'https://news.example/?return=https://ads.doubleclick.net/path',
       'https://maps.googleapis.com/maps/api/js',
       'https://accounts.google.com/login',
-      'https://checkout.stripe.com/pay'
+      'https://checkout.stripe.com/pay',
     ]) {
       // Native URLPattern semantics are intentionally NOT approximated with
       // whole-URL globs. Assert the host policy independently of path/query.
-      expect(BookmarkRequestPolicy.isAdHost(Uri.parse(url).host), isFalse,
-          reason: url);
+      expect(
+        BookmarkRequestPolicy.isAdHost(Uri.parse(url).host),
+        isFalse,
+        reason: url,
+      );
     }
   });
 
@@ -72,7 +75,7 @@ void main() {
     expect(calls, hasLength(2));
     expect(calls.last['urls'], isEmpty);
     expect(calls.last['urlPatterns'], [
-      for (final pattern in patterns) {'urlPattern': pattern, 'block': true}
+      for (final pattern in patterns) {'urlPattern': pattern, 'block': true},
     ]);
   });
 
@@ -80,14 +83,15 @@ void main() {
       () async {
     var calls = 0;
     await expectLater(
-        BookmarkRequestPolicy.install(
-          BookmarkRequestPolicy.blockedUrls('https://news.example'),
-          (_) async {
-            calls++;
-            return null;
-          },
-        ),
-        throwsUnsupportedError);
+      BookmarkRequestPolicy.install(
+        BookmarkRequestPolicy.blockedUrls('https://news.example'),
+        (_) async {
+          calls++;
+          return null;
+        },
+      ),
+      throwsUnsupportedError,
+    );
     expect(calls, 1);
   });
 
@@ -100,46 +104,56 @@ void main() {
     test('${error.runtimeType} is not CDP capability evidence', () async {
       var calls = 0;
       await expectLater(
-          BookmarkRequestPolicy.install(
-            BookmarkRequestPolicy.blockedUrls('https://news.example'),
-            (_) async {
-              calls++;
-              throw error;
-            },
-          ),
-          throwsA(same(error)));
-      expect(calls, 1,
-          reason: 'Do not attempt installation after an unrelated failure.');
+        BookmarkRequestPolicy.install(
+          BookmarkRequestPolicy.blockedUrls('https://news.example'),
+          (_) async {
+            calls++;
+            throw error;
+          },
+        ),
+        throwsA(same(error)),
+      );
+      expect(
+        calls,
+        1,
+        reason: 'Do not attempt installation after an unrelated failure.',
+      );
     });
   }
 
   test('an intentional first-party ad-network bookmark is exempt', () {
     expect(
-        BookmarkRequestPolicy.blockedUrls('https://console.adnxs.com/docs')
-            .any((pattern) => pattern.contains('adnxs.com')),
-        isFalse);
+      BookmarkRequestPolicy.blockedUrls('https://console.adnxs.com/docs')
+          .any((pattern) => pattern.contains('adnxs.com')),
+      isFalse,
+    );
   });
 
   test('activation is explicit; unknown and script requests are denied', () {
     expect(BookmarkRequestPolicy.userActivated(), isFalse);
     expect(BookmarkRequestPolicy.userActivated(hasGesture: false), isFalse);
     expect(
-        BookmarkRequestPolicy.userActivated(
-            hasGesture: false, linkActivated: true),
-        isFalse);
+      BookmarkRequestPolicy.userActivated(
+        hasGesture: false,
+        linkActivated: true,
+      ),
+      isFalse,
+    );
     expect(BookmarkRequestPolicy.userActivated(hasGesture: true), isTrue);
     expect(BookmarkRequestPolicy.userActivated(linkActivated: true), isTrue);
     for (final value in [
       'file:///C:/secret',
       'javascript:alert(1)',
-      'data:text/html,x'
+      'data:text/html,x',
     ]) {
       expect(BookmarkRequestPolicy.safeExternal(Uri.parse(value)), isFalse);
     }
     expect(
-        BookmarkRequestPolicy.safeExternal(
-            Uri.parse('mailto:reader@example.com')),
-        isTrue);
+      BookmarkRequestPolicy.safeExternal(
+        Uri.parse('mailto:reader@example.com'),
+      ),
+      isTrue,
+    );
   });
 
   test('target navigation waits for policy acknowledgment', () async {
@@ -245,16 +259,17 @@ void main() {
     final session = BookmarkBlockingSession();
     var navigations = 0;
     expect(
-        await session.apply(
-          enabled: true,
-          firstPartyUrl: 'https://news.example',
-          isCurrent: () => true,
-          install: (_) async => throw StateError('CDP unavailable'),
-          navigate: () async {
-            navigations++;
-          },
-        ),
-        isFalse);
+      await session.apply(
+        enabled: true,
+        firstPartyUrl: 'https://news.example',
+        isCurrent: () => true,
+        install: (_) async => throw StateError('CDP unavailable'),
+        navigate: () async {
+          navigations++;
+        },
+      ),
+      isFalse,
+    );
     expect(navigations, 0);
     session.close();
   });

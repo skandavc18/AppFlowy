@@ -538,7 +538,9 @@ class DocumentFindSession extends ChangeNotifier {
           !context.mounted ||
           text == null ||
           node.type == 'encrypted_block' ||
-          looksSealed(text.trimLeft())) continue;
+          looksSealed(text.trimLeft())) {
+        continue;
+      }
       if (text.length > limits.maxBytes ||
           (bytes += utf8.encode(text).length) > limits.maxBytes) {
         _localTruncated = true;
@@ -556,9 +558,12 @@ class DocumentFindSession extends ChangeNotifier {
     if (_projectionRevision == _revision &&
         _projectionModelRevision == _modelRevision &&
         results.length == _matches.length &&
-        List.generate(results.length,
-                (index) => results[index].sameLocation(_matches[index]))
-            .every((same) => same)) return;
+        List.generate(
+          results.length,
+          (index) => results[index].sameLocation(_matches[index]),
+        ).every((same) => same)) {
+      return;
+    }
     _projectionRevision = _revision;
     _projectionModelRevision = _modelRevision;
     _matches = List.unmodifiable(results);
@@ -745,8 +750,9 @@ class DocumentFindSession extends ChangeNotifier {
   }
 
   List<Node> _readDocument() {
-    if (readOnlyProjection && _projectionNodes != null)
+    if (readOnlyProjection && _projectionNodes != null) {
       return _projectionNodes!;
+    }
     final nodes = <Node>[];
     void visit(Node node) {
       if (readOnlyProjection && nodes.length >= limits.maxEntries) return;
@@ -771,14 +777,18 @@ class DocumentFindSession extends ChangeNotifier {
         continue;
       }
       late final _FindNodeWatch watch;
-      watch = _FindNodeWatch(node, () {
-        if (!_disposed && !editorState.isDisposed && watch.capture()) {
-          _projectionNodes = null;
-          _modelRevision++;
-          _waitingToReveal = false;
-          _queueRefresh();
-        }
-      }, projection: readOnlyProjection);
+      watch = _FindNodeWatch(
+        node,
+        () {
+          if (!_disposed && !editorState.isDisposed && watch.capture()) {
+            _projectionNodes = null;
+            _modelRevision++;
+            _waitingToReveal = false;
+            _queueRefresh();
+          }
+        },
+        projection: readOnlyProjection,
+      );
       _watches[node] = watch;
       node.addListener(watch.onChanged);
     }

@@ -16,49 +16,65 @@ const _notification =
 void main() {
   test('media row adapts only its existing hover paint', () {
     final build = _build(
-        _class('$_cellEditors/media_cell_editor.dart', '_RenderMediaState'));
+      _class('$_cellEditors/media_cell_editor.dart', '_RenderMediaState'),
+    );
     final hover = _hover(build, 'isHovering', 'greyHover');
     final style = _calls(_named(hover, 'style'), 'HoverStyle').single;
     expect(
-        _named(style, 'borderRadius').toSource(), 'BorderRadius.circular(4)');
+      _named(style, 'borderRadius').toSource(),
+      'BorderRadius.circular(4)',
+    );
     final region = _calls(build, 'MouseRegion').single;
-    expect(_named(region, 'onEnter').toSource(),
-        '(_) => setState(() => isHovering = true)');
-    expect(_named(region, 'onExit').toSource(),
-        '(_) => setState(() => isHovering = false)');
     expect(
-        _named(_calls(build, 'MediaActionReveal').single, 'visible').toSource(),
-        'isHovering');
+      _named(region, 'onEnter').toSource(),
+      '(_) => setState(() => isHovering = true)',
+    );
+    expect(
+      _named(region, 'onExit').toSource(),
+      '(_) => setState(() => isHovering = false)',
+    );
+    expect(
+      _named(_calls(build, 'MediaActionReveal').single, 'visible').toSource(),
+      'isHovering',
+    );
     expect(_calls(build, 'ReorderableDragStartListener'), hasLength(1));
     expect(
-        _named(_calls(build, 'AppFlowyPopover').single, 'controller')
-            .toSource(),
-        'controller');
+      _named(_calls(build, 'AppFlowyPopover').single, 'controller').toSource(),
+      'controller',
+    );
     _noDirectAliasFill(build);
   });
 
   test('relation option keeps focus ownership, linked-row actions and geometry',
       () {
     final build = _build(
-        _class('$_cellEditors/relation_cell_editor.dart', '_RowListItem'));
+      _class('$_cellEditors/relation_cell_editor.dart', '_RowListItem'),
+    );
     final hover = _hover(build, 'isHovered', 'lightGreyHover');
     final focused = _nodes<VariableDeclaration>(build)
         .singleWhere((node) => node.name.lexeme == 'isHovered');
-    expect(focused.initializer!.toSource(),
-        'context.watch<RelationRowSearchBloc>().state.focusedRowId == row.rowId');
+    expect(
+      focused.initializer!.toSource(),
+      'context.watch<RelationRowSearchBloc>().state.focusedRowId == row.rowId',
+    );
     final container = _calls(build, 'Container').single;
     expect((_named(container, 'height') as IntegerLiteral).value, 28);
-    expect(_named(container, 'margin').toSource(),
-        'const EdgeInsets.symmetric(horizontal: 6.0, vertical: 2.0)');
+    expect(
+      _named(container, 'margin').toSource(),
+      'const EdgeInsets.symmetric(horizontal: 6.0, vertical: 2.0)',
+    );
     expect(_calls(_named(hover, 'child'), 'GestureDetector'), hasLength(1));
     final region = _calls(build, 'MouseRegion').single;
-    expect(_named(region, 'onHover').toSource(),
-        '(_) => context.read<RelationRowSearchBloc>().add(RelationRowSearchEvent.updateFocusedOption(row.rowId))');
     expect(
-        region.arguments
-            .whereType<NamedExpression>()
-            .any((arg) => arg.name.label.name == 'onExit'),
-        isFalse);
+      _named(region, 'onHover').toSource(),
+      '(_) => context.read<RelationRowSearchBloc>().add(RelationRowSearchEvent.updateFocusedOption(row.rowId))',
+    );
+    expect(
+      region.arguments
+          .whereType<NamedExpression>()
+          .any((arg) => arg.name.label.name == 'onExit'),
+      isFalse,
+    );
     final tap = _named(_calls(build, 'GestureDetector').single, 'onTap');
     expect(_nodes<IfStatement>(tap).single.expression.toSource(), 'isSelected');
     expect(_calls(tap, 'showRelatedRowDetailPage'), hasLength(1));
@@ -71,14 +87,18 @@ void main() {
       () {
     final build = _build(_class(_notification, '_NotificationItemState'));
     final hover = _hover(
-        build, '_isHovering && widget.onAction != null', 'lightGreyHover');
+      build,
+      '_isHovering && widget.onAction != null',
+      'lightGreyHover',
+    );
     final style = _calls(_named(hover, 'style'), 'HoverStyle').single;
     expect(_named(style, 'borderRadius').toSource(), 'BorderRadius.zero');
     expect(
-        style.arguments
-            .whereType<NamedExpression>()
-            .any((arg) => arg.name.label.name == 'border'),
-        isFalse);
+      style.arguments
+          .whereType<NamedExpression>()
+          .any((arg) => arg.name.label.name == 'border'),
+      isFalse,
+    );
     final decorated = _named(hover, 'child');
     final decoration = _calls(decorated, 'DecoratedBox').first;
     final box =
@@ -87,30 +107,42 @@ void main() {
     expect(border.condition.toSource(), 'widget.isRead || widget.readOnly');
     expect(border.thenExpression, isA<NullLiteral>());
     final stripe = _calls(border.elseExpression, 'BorderSide').single;
-    expect(_named(stripe, 'width').toSource(),
-        'UniversalPlatform.isMobile ? 4 : 2');
-    expect(_named(stripe, 'color').toSource(),
-        'Theme.of(context).colorScheme.primary');
-    expect(_named(_calls(build, 'Opacity').single, 'opacity').toSource(),
-        'widget.isRead && !widget.readOnly ? 0.5 : 1');
+    expect(
+      _named(stripe, 'width').toSource(),
+      'UniversalPlatform.isMobile ? 4 : 2',
+    );
+    expect(
+      _named(stripe, 'color').toSource(),
+      'Theme.of(context).colorScheme.primary',
+    );
+    expect(
+      _named(_calls(build, 'Opacity').single, 'opacity').toSource(),
+      'widget.isRead && !widget.readOnly ? 0.5 : 1',
+    );
     _noDirectAliasFill(build);
 
     // This same alias is still a border on the actions, not a hover fill.
     final actions = _build(_class(_notification, 'NotificationItemActions'));
-    expect(_named(_calls(actions, 'Border.all').single, 'color').toSource(),
-        'AFThemeExtension.of(context).lightGreyHover');
+    expect(
+      _named(_calls(actions, 'Border.all').single, 'color').toSource(),
+      'AFThemeExtension.of(context).lightGreyHover',
+    );
   });
 
   test('email rail forwards all-inbox identity to the existing central mapping',
       () {
     const path = 'lib/plugins/collection/views/email/email_toolbar.dart';
     final rail = _build(_class(path, 'EmailSenderRail'));
-    expect(_named(_calls(rail, '_RailRow').first, 'icon').toSource(),
-        'Icons.all_inbox_rounded');
-    final build = _build(_class(
-      path,
-      '_RailRow',
-    ));
+    expect(
+      _named(_calls(rail, '_RailRow').first, 'icon').toSource(),
+      'Icons.all_inbox_rounded',
+    );
+    final build = _build(
+      _class(
+        path,
+        '_RailRow',
+      ),
+    );
     final glyph = _calls(build, 'WorkspaceGlyph').single;
     final icon = glyph.arguments.first as PostfixExpression;
     expect(icon.operand.toSource(), 'icon');
@@ -122,8 +154,11 @@ void main() {
 
 ClassDeclaration _class(String path, String name) {
   final file = File(path);
-  expect(file.existsSync(), isTrue,
-      reason: 'Run from frontend/appflowy_flutter: $path');
+  expect(
+    file.existsSync(),
+    isTrue,
+    reason: 'Run from frontend/appflowy_flutter: $path',
+  );
   final parsed =
       parseString(content: file.readAsStringSync(), throwIfDiagnostics: false);
   expect(parsed.errors, isEmpty, reason: path);
@@ -167,18 +202,22 @@ ArgumentList _hover(AstNode build, String condition, String alias) {
   final hover = _calls(build, 'FlowyHoverContainer').single;
   expect(_named(hover, 'applyStyle').toSource(), condition);
   final style = _calls(_named(hover, 'style'), 'HoverStyle').single;
-  expect(_named(style, 'hoverColor').toSource(),
-      'AFThemeExtension.of(context).$alias');
   expect(
-      style.arguments
-          .whereType<NamedExpression>()
-          .any((arg) => arg.name.label.name == 'backgroundColor'),
-      isFalse);
+    _named(style, 'hoverColor').toSource(),
+    'AFThemeExtension.of(context).$alias',
+  );
   expect(
-      hover.arguments
-          .whereType<NamedExpression>()
-          .any((arg) => arg.name.label.name == 'isSelected'),
-      isFalse);
+    style.arguments
+        .whereType<NamedExpression>()
+        .any((arg) => arg.name.label.name == 'backgroundColor'),
+    isFalse,
+  );
+  expect(
+    hover.arguments
+        .whereType<NamedExpression>()
+        .any((arg) => arg.name.label.name == 'isSelected'),
+    isFalse,
+  );
   return hover;
 }
 

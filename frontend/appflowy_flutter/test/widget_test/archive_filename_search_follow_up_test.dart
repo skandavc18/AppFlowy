@@ -48,9 +48,9 @@ void main() {
       var commandeeredKeys = 0;
       try {
         await mountFileControls(
-            tester,
-            ContextualFindScope(
-                child: CallbackShortcuts(
+          tester,
+          ContextualFindScope(
+            child: CallbackShortcuts(
               bindings: {
                 const SingleActivator(LogicalKeyboardKey.backspace): () =>
                     commandeeredKeys++,
@@ -62,12 +62,13 @@ void main() {
                 metadata: FileBrowserViewSettings.withMode(const {}, mode),
                 onChanged: () => writes++,
               ),
-            )),
-            mode: 'paper',
-            width: 780,
-            height: 640,
-            accessible: true,
-            reduced: true);
+            ),
+          ),
+          mode: 'paper',
+          height: 640,
+          accessible: true,
+          reduced: true,
+        );
         await _loaded(tester);
         // Invoke the real header navigation callback, not a separate test model.
         tester
@@ -91,9 +92,14 @@ void main() {
         expect(input.focusNode!.hasFocus, isTrue);
         // Editing must stay in the search field, not in a shell/editor ancestor.
         await _command(
-            tester, LogicalKeyboardKey.keyA, PhysicalKeyboardKey.keyA);
-        await tester.sendKeyEvent(LogicalKeyboardKey.backspace,
-            physicalKey: PhysicalKeyboardKey.backspace);
+          tester,
+          LogicalKeyboardKey.keyA,
+          PhysicalKeyboardKey.keyA,
+        );
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.backspace,
+          physicalKey: PhysicalKeyboardKey.backspace,
+        );
         await tester.pump(const Duration(milliseconds: 181));
         await _loaded(tester);
         expect(input.controller!.text, isEmpty);
@@ -129,8 +135,10 @@ void main() {
       () {
     final document = ArchiveDocument.fromBytes(Uint8List.fromList(original));
     final before = document.encode();
-    expect(document.search('unique report').map((entry) => entry.path),
-        ['elsewhere/deep/Unique Report.bin']);
+    expect(
+      document.search('unique report').map((entry) => entry.path),
+      ['elsewhere/deep/Unique Report.bin'],
+    );
     expect(document.search('deep/ordinary').single.name, 'ordinary.bin');
     expect(document.search('"Unique Report"'), isEmpty);
     expect(document.search('filename:Unique'), isEmpty);
@@ -146,28 +154,46 @@ void main() {
       late BuildContext launcher;
       var completed = 0;
       try {
-        await mountFileControls(tester, Builder(builder: (context) {
-          launcher = context;
-          return const Text('Underlying page');
-        }), mode: appearance, width: 320, textScale: 2, reduced: true);
+        await mountFileControls(
+          tester,
+          Builder(
+            builder: (context) {
+              launcher = context;
+              return const Text('Underlying page');
+            },
+          ),
+          mode: appearance,
+          width: 320,
+          textScale: 2,
+          reduced: true,
+        );
         await tester.binding.setSurfaceSize(const Size(360, 900));
         await tester.pump();
-        unawaited(showArchiveFullscreen(launcher,
-                file: archive,
-                name: 'fixture.zip',
-                editable: false,
-                mediaActions: actions)
-            .then((_) => completed++));
+        unawaited(
+          showArchiveFullscreen(
+            launcher,
+            file: archive,
+            name: 'fixture.zip',
+            editable: false,
+            mediaActions: actions,
+          ).then((_) => completed++),
+        );
         await tester.pump();
         final close = find.byKey(const ValueKey('archive-fullscreen-close'));
-        expect(close.hitTestable(), findsOneWidget,
-            reason: 'Close exists before decoding finishes');
+        expect(
+          close.hitTestable(),
+          findsOneWidget,
+          reason: 'Close exists before decoding finishes',
+        );
         await _loaded(tester);
         expect(find.byType(MediaActionButtons), findsOneWidget);
         expect(
-            find.ancestor(
-                of: close, matching: find.byType(SingleChildScrollView)),
-            findsNothing);
+          find.ancestor(
+            of: close,
+            matching: find.byType(SingleChildScrollView),
+          ),
+          findsNothing,
+        );
         await _find(tester);
         final field = find.byKey(const ValueKey('archive-search-field'));
         await tester.enterText(field, 'Unique Report');
@@ -179,9 +205,12 @@ void main() {
             tester.widget<WorkspaceControlButton>(close).onPressed!;
         final routeContext =
             tester.element(find.byKey(const ValueKey('archive-fullscreen')));
-        unawaited(showDialog<void>(
+        unawaited(
+          showDialog<void>(
             context: routeContext,
-            builder: (_) => const AlertDialog(title: Text('Newer dialog'))));
+            builder: (_) => const AlertDialog(title: Text('Newer dialog')),
+          ),
+        );
         await settleFileControls(tester);
         callback();
         await tester.pump();
@@ -197,13 +226,15 @@ void main() {
         expect(find.text('Underlying page'), findsOneWidget);
         expect(actions.copies, isEmpty);
         expect(actions.shares, isEmpty);
-        unawaited(showArchiveFullscreen(
-          launcher,
-          file: archive,
-          name: 'fixture.zip',
-          editable: false,
-          mediaActions: actions,
-        ));
+        unawaited(
+          showArchiveFullscreen(
+            launcher,
+            file: archive,
+            name: 'fixture.zip',
+            editable: false,
+            mediaActions: actions,
+          ),
+        );
         await _loaded(tester);
         await tester.sendKeyEvent(
           LogicalKeyboardKey.f11,
@@ -256,11 +287,18 @@ Future<void> _find(WidgetTester tester) async {
   expect(find.byKey(const ValueKey('archive-search-field')), findsOneWidget);
 }
 
-Future<void> _command(WidgetTester tester, LogicalKeyboardKey logical,
-    PhysicalKeyboardKey physical) async {
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
+Future<void> _command(
+  WidgetTester tester,
+  LogicalKeyboardKey logical,
+  PhysicalKeyboardKey physical,
+) async {
+  await tester.sendKeyDownEvent(
+    LogicalKeyboardKey.controlLeft,
+    physicalKey: PhysicalKeyboardKey.controlLeft,
+  );
   await tester.sendKeyEvent(logical, physicalKey: physical);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
+  await tester.sendKeyUpEvent(
+    LogicalKeyboardKey.controlLeft,
+    physicalKey: PhysicalKeyboardKey.controlLeft,
+  );
 }

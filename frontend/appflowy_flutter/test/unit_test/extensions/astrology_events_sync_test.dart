@@ -166,7 +166,10 @@ class _Backend implements AstrologyEventsBackend {
 
   @override
   Future<DateCellDataPB> date(
-          String viewId, String fieldId, String rowId) async =>
+    String viewId,
+    String fieldId,
+    String rowId,
+  ) async =>
       dates[rowId] ?? DateCellDataPB();
 
   @override

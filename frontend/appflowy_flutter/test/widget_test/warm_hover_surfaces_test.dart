@@ -40,61 +40,78 @@ void main() {
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         try {
           await mouse.addPointer(location: _outside);
-          final context =
-              await _mount(tester, mode, reduced: reduced, builder: (context) {
-            final sidebar = SidebarPalette.of(context);
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const WindowTitleBar(
-                  key: ValueKey('caption'),
-                  showCaptionButtons: false,
-                  height: 40,
-                ),
-                ColoredBox(
-                  key: const ValueKey('sidebar-surface'),
-                  color: SidebarStyle.background(context),
-                  child: SizedBox(
-                    width: 320,
-                    child: SidebarRow(
-                      key: const ValueKey('row'),
-                      icon: Icon(Icons.folder_outlined,
-                          key: const ValueKey('row-icon'), color: sidebar.icon),
-                      label: Text('Open entry',
+          final context = await _mount(
+            tester,
+            mode,
+            reduced: reduced,
+            builder: (context) {
+              final sidebar = SidebarPalette.of(context);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const WindowTitleBar(
+                    key: ValueKey('caption'),
+                    showCaptionButtons: false,
+                    height: 40,
+                  ),
+                  ColoredBox(
+                    key: const ValueKey('sidebar-surface'),
+                    color: SidebarStyle.background(context),
+                    child: SizedBox(
+                      width: 320,
+                      child: SidebarRow(
+                        key: const ValueKey('row'),
+                        icon: Icon(
+                          Icons.folder_outlined,
+                          key: const ValueKey('row-icon'),
+                          color: sidebar.icon,
+                        ),
+                        label: Text(
+                          'Open entry',
                           key: const ValueKey('row-label'),
-                          style: TextStyle(color: sidebar.textPrimary)),
-                      onTap: () {},
-                      trailingSlots: 1,
-                      trailingBuilder: (_) => [
-                        const SizedBox.square(
-                            dimension: 24, child: Icon(Icons.more_horiz))
-                      ],
+                          style: TextStyle(color: sidebar.textPrimary),
+                        ),
+                        onTap: () {},
+                        trailingSlots: 1,
+                        trailingBuilder: (_) => [
+                          const SizedBox.square(
+                            dimension: 24,
+                            child: Icon(Icons.more_horiz),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                TextField(
-                  key: const ValueKey('draft'),
-                  controller: controller,
-                  decoration: const InputDecoration(border: InputBorder.none),
-                ),
-              ],
-            );
-          });
+                  TextField(
+                    key: const ValueKey('draft'),
+                    controller: controller,
+                    decoration: const InputDecoration(border: InputBorder.none),
+                  ),
+                ],
+              );
+            },
+          );
           final palette = PremiumThemeExtension.of(context);
           final sidebar = SidebarPalette.of(context);
           final caption = tester.widget<ColoredBox>(
             find
                 .descendant(
-                    of: _key('caption'), matching: find.byType(ColoredBox))
+                  of: _key('caption'),
+                  matching: find.byType(ColoredBox),
+                )
                 .first,
           );
           expect(caption.color, sidebar.background);
           expect(caption.color, WorkspacePalette.of(context).chrome);
-          expect(tester.widget<ColoredBox>(_key('sidebar-surface')).color,
-              caption.color);
-          expect(caption.color,
-              mode == 'paper' ? PaperTheme.chromeBackground : palette.sidebar);
+          expect(
+            tester.widget<ColoredBox>(_key('sidebar-surface')).color,
+            caption.color,
+          );
+          expect(
+            caption.color,
+            mode == 'paper' ? PaperTheme.chromeBackground : palette.sidebar,
+          );
 
           final rowRect = tester.getRect(_key('row'));
           final labelRect = tester.getRect(_key('row-label'));
@@ -110,33 +127,45 @@ void main() {
           await tester.pump(const Duration(milliseconds: 70));
           final mid = _fill(tester, _key('row'));
           expect(
-              mid.a,
-              reduced
-                  ? closeTo(sidebar.hover.a, 1e-6)
-                  : inExclusiveRange(0.0, sidebar.hover.a));
+            mid.a,
+            reduced
+                ? closeTo(sidebar.hover.a, 1e-6)
+                : inExclusiveRange(0.0, sidebar.hover.a),
+          );
           _sameRgb(mid, sidebar.hover);
           expect(tester.getRect(_key('row')), rowRect);
           expect(tester.getRect(_key('row-label')), labelRect);
           expect(tester.getRect(_key('row-icon')), iconRect);
           expect(tester.widget<Icon>(_key('row-icon')).color, iconInk);
           expect(
-              find.descendant(
-                  of: _key('row'), matching: find.byType(SlideTransition)),
-              findsNothing);
+            find.descendant(
+              of: _key('row'),
+              matching: find.byType(SlideTransition),
+            ),
+            findsNothing,
+          );
 
           await tester.pump(_settle);
           expect(_fill(tester, _key('row')), sidebar.hover);
           final painted = Color.alphaBlend(sidebar.hover, sidebar.background);
-          expect(_difference(painted, sidebar.background),
-              inExclusiveRange(0.003, 0.055));
           expect(
-              _contrast(sidebar.textPrimary, painted), greaterThanOrEqualTo(7));
+            _difference(painted, sidebar.background),
+            inExclusiveRange(0.003, 0.055),
+          );
+          expect(
+            _contrast(sidebar.textPrimary, painted),
+            greaterThanOrEqualTo(7),
+          );
           for (final animation in tester.widgetList<AnimatedContainer>(
             find.descendant(
-                of: _key('row'), matching: find.byType(AnimatedContainer)),
+              of: _key('row'),
+              matching: find.byType(AnimatedContainer),
+            ),
           )) {
-            expect(animation.duration,
-                reduced ? Duration.zero : WorkspaceTokens.hoverDuration);
+            expect(
+              animation.duration,
+              reduced ? Duration.zero : WorkspaceTokens.hoverDuration,
+            );
             expect(animation.curve, WorkspaceTokens.curve);
           }
 
@@ -145,8 +174,10 @@ void main() {
           await tester.pump(_settle);
           expect(_fill(tester, _key('row')), idle);
           expect(controller.text, 'Keep this draft');
-          expect(tester.state<EditableTextState>(find.byType(EditableText)),
-              same(field));
+          expect(
+            tester.state<EditableTextState>(find.byType(EditableText)),
+            same(field),
+          );
           await tester.tap(_key('draft'));
           await tester.pump();
           final decoration = tester
@@ -172,63 +203,72 @@ void main() {
         void activate(String name) =>
             calls.update(name, (count) => count + 1, ifAbsent: () => 1);
         try {
-          final context = await _mount(tester, mode,
-              reduced: reduced,
-              builder: (context) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SidebarRow(
-                          key: const ValueKey('row'),
-                          label: const Text('Open entry'),
-                          selected: true,
-                          onTap: () => activate('row')),
-                      DocumentViewportButton(
-                          key: const ValueKey('document'),
-                          icon: Icons.refresh,
-                          tooltip: 'Document action',
-                          selected: true,
-                          onPressed: () => activate('document')),
-                      WorkspaceControlButton(
-                        key: const ValueKey('shared'),
-                        icon: Icons.check,
-                        tooltip: 'Shared action',
-                        selected: true,
-                        onPressed: () => activate('shared'),
-                      ),
-                      CollectionWorkspaceAction(
-                          key: const ValueKey('collection'),
-                          icon: Icons.check,
-                          tooltip: 'Collection action',
-                          label: 'Collection action',
-                          selected: true,
-                          onPressed: () => activate('collection')),
-                      DocumentViewportFitButton(
-                        key: const ValueKey('fit'),
-                        onPressed: () => activate('fit'),
-                      ),
-                      const DocumentViewportButton(
-                        key: ValueKey('document-disabled'),
-                        icon: Icons.refresh,
-                        tooltip: 'Unavailable document action',
-                        onPressed: null,
-                      ),
-                      const CollectionWorkspaceAction(
-                          key: ValueKey('disabled'),
-                          icon: Icons.close,
-                          tooltip: 'Unavailable'),
-                      AFGhostButton.normal(
-                          key: const ValueKey('ghost'),
-                          onTap: () => activate('ghost'),
-                          builder: (_, __, ___) => const Text('Ghost action')),
-                      CollectionWorkspaceAction(
-                          key: const ValueKey('danger'),
-                          icon: Icons.delete_rounded,
-                          tooltip: 'Delete',
-                          color: Theme.of(context).colorScheme.error,
-                          onPressed: () => activate('danger')),
-                    ],
-                  ));
+          final context = await _mount(
+            tester,
+            mode,
+            reduced: reduced,
+            builder: (context) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SidebarRow(
+                  key: const ValueKey('row'),
+                  label: const Text('Open entry'),
+                  selected: true,
+                  onTap: () => activate('row'),
+                ),
+                DocumentViewportButton(
+                  key: const ValueKey('document'),
+                  icon: Icons.refresh,
+                  tooltip: 'Document action',
+                  selected: true,
+                  onPressed: () => activate('document'),
+                ),
+                WorkspaceControlButton(
+                  key: const ValueKey('shared'),
+                  icon: Icons.check,
+                  tooltip: 'Shared action',
+                  selected: true,
+                  onPressed: () => activate('shared'),
+                ),
+                CollectionWorkspaceAction(
+                  key: const ValueKey('collection'),
+                  icon: Icons.check,
+                  tooltip: 'Collection action',
+                  label: 'Collection action',
+                  selected: true,
+                  onPressed: () => activate('collection'),
+                ),
+                DocumentViewportFitButton(
+                  key: const ValueKey('fit'),
+                  onPressed: () => activate('fit'),
+                ),
+                const DocumentViewportButton(
+                  key: ValueKey('document-disabled'),
+                  icon: Icons.refresh,
+                  tooltip: 'Unavailable document action',
+                  onPressed: null,
+                ),
+                const CollectionWorkspaceAction(
+                  key: ValueKey('disabled'),
+                  icon: Icons.close,
+                  tooltip: 'Unavailable',
+                ),
+                AFGhostButton.normal(
+                  key: const ValueKey('ghost'),
+                  onTap: () => activate('ghost'),
+                  builder: (_, __, ___) => const Text('Ghost action'),
+                ),
+                CollectionWorkspaceAction(
+                  key: const ValueKey('danger'),
+                  icon: Icons.delete_rounded,
+                  tooltip: 'Delete',
+                  color: Theme.of(context).colorScheme.error,
+                  onPressed: () => activate('danger'),
+                ),
+              ],
+            ),
+          );
           final palette = PremiumThemeExtension.of(context);
           final document = DocumentViewportStyle.of(context);
           final sidebar = SidebarPalette.of(context);
@@ -245,8 +285,10 @@ void main() {
                   1.5,
             ),
           );
-          expect(_contrast(document.accent, documentSelected),
-              greaterThanOrEqualTo(3));
+          expect(
+            _contrast(document.accent, documentSelected),
+            greaterThanOrEqualTo(3),
+          );
 
           for (final name in ['shared', 'collection']) {
             final style = _button(tester, name).style!;
@@ -259,23 +301,29 @@ void main() {
             expect(hovered, Color.alphaBlend(palette.subtleHover, selected));
             expect(pressed, Color.alphaBlend(palette.subtlePressed, selected));
             expect(style.overlayColor!.resolve({WidgetState.hovered})!.a, 0);
-            expect(style.animationDuration,
-                reduced ? Duration.zero : WorkspaceTokens.hoverDuration);
+            expect(
+              style.animationDuration,
+              reduced ? Duration.zero : WorkspaceTokens.hoverDuration,
+            );
             expect(
               _difference(
-                  Color.alphaBlend(selected, palette.canvas), palette.canvas),
+                Color.alphaBlend(selected, palette.canvas),
+                palette.canvas,
+              ),
               greaterThan(
-                  _difference(palette.hoverOn(palette.canvas), palette.canvas) *
-                      1.5),
+                _difference(palette.hoverOn(palette.canvas), palette.canvas) *
+                    1.5,
+              ),
             );
           }
 
           final disabled = _button(tester, 'disabled');
           expect(disabled.onPressed, isNull);
           expect(
-              disabled.style!.backgroundColor!
-                  .resolve({WidgetState.disabled, WidgetState.hovered})!.a,
-              0);
+            disabled.style!.backgroundColor!
+                .resolve({WidgetState.disabled, WidgetState.hovered})!.a,
+            0,
+          );
           expect(
             tester
                 .widget<DocumentViewportButton>(_key('document-disabled'))
@@ -287,20 +335,27 @@ void main() {
           expect(disabledSemantics, findsOneWidget);
           final disabledNode = tester.getSemantics(disabledSemantics);
           expect(disabledNode.attached, isTrue);
-          expect(disabledNode.getSemanticsData().label,
-              'Unavailable document action');
+          expect(
+            disabledNode.getSemanticsData().label,
+            'Unavailable document action',
+          );
           expect(
             disabledNode.getSemanticsData().hasFlag(ui.SemanticsFlag.isEnabled),
             isFalse,
           );
           expect(
-              disabledNode.getSemanticsData().hasAction(ui.SemanticsAction.tap),
-              isFalse);
+            disabledNode.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+            isFalse,
+          );
           final danger = _button(tester, 'danger').style!;
-          expect(danger.foregroundColor!.resolve({WidgetState.hovered}),
-              Theme.of(context).colorScheme.error);
-          expect(danger.foregroundColor!.resolve({}),
-              danger.foregroundColor!.resolve({WidgetState.hovered}));
+          expect(
+            danger.foregroundColor!.resolve({WidgetState.hovered}),
+            Theme.of(context).colorScheme.error,
+          );
+          expect(
+            danger.foregroundColor!.resolve({}),
+            danger.foregroundColor!.resolve({WidgetState.hovered}),
+          );
 
           // Tab skips both disabled controls. Inspect the actual button
           // boundary: a keyed outer Tooltip can return the route's semantics.
@@ -315,8 +370,10 @@ void main() {
           }.entries) {
             final name = entry.key;
             final rect = tester.getRect(_key(name));
-            await tester.sendKeyEvent(LogicalKeyboardKey.tab,
-                physicalKey: PhysicalKeyboardKey.tab);
+            await tester.sendKeyEvent(
+              LogicalKeyboardKey.tab,
+              physicalKey: PhysicalKeyboardKey.tab,
+            );
             await tester.pump();
             await tester.pump(_settle);
             final target = _buttonSemantics(name);
@@ -331,21 +388,31 @@ void main() {
               reason: '$name; primary=${FocusManager.instance.primaryFocus}; '
                   '${node.toStringDeep()}',
             );
-            expect(data.hasFlag(ui.SemanticsFlag.isButton), isTrue,
-                reason: name);
-            expect(data.hasAction(ui.SemanticsAction.tap), isTrue,
-                reason: name);
+            expect(
+              data.hasFlag(ui.SemanticsFlag.isButton),
+              isTrue,
+              reason: name,
+            );
+            expect(
+              data.hasAction(ui.SemanticsAction.tap),
+              isTrue,
+              reason: name,
+            );
             if (name != 'ghost' && name != 'fit') {
-              expect(data.hasFlag(ui.SemanticsFlag.isSelected), isTrue,
-                  reason: name);
+              expect(
+                data.hasFlag(ui.SemanticsFlag.isSelected),
+                isTrue,
+                reason: name,
+              );
             }
             if (name == 'row') {
               final decoration = tester
                   .widget<AnimatedContainer>(
                     find
                         .descendant(
-                            of: _key(name),
-                            matching: find.byType(AnimatedContainer))
+                          of: _key(name),
+                          matching: find.byType(AnimatedContainer),
+                        )
                         .first,
                   )
                   .foregroundDecoration! as BoxDecoration;
@@ -361,34 +428,43 @@ void main() {
               expect(decoration.border!.top.color, document.accent);
               expect(decoration.border!.top.color.a, 1);
               expect(_fill(tester, _key(name)), document.controlActive);
-              expect(container.duration,
-                  reduced ? Duration.zero : WorkspaceTokens.hoverDuration);
+              expect(
+                container.duration,
+                reduced ? Duration.zero : WorkspaceTokens.hoverDuration,
+              );
             } else if (name == 'ghost') {
               final decoration = tester
                   .widget<AnimatedContainer>(
                     find
                         .descendant(
-                            of: _key(name),
-                            matching: find.byType(AnimatedContainer))
+                          of: _key(name),
+                          matching: find.byType(AnimatedContainer),
+                        )
                         .first,
                   )
                   .decoration! as BoxDecoration;
               expect(decoration.border!.top.color, palette.accent);
             } else {
               expect(
-                  _button(tester, name)
-                      .style!
-                      .side!
-                      .resolve({WidgetState.focused})!.color,
-                  palette.accent);
+                _button(tester, name)
+                    .style!
+                    .side!
+                    .resolve({WidgetState.focused})!.color,
+                palette.accent,
+              );
             }
             expect(
-                _contrast(palette.accent, palette.selectedOn(palette.canvas)),
-                greaterThanOrEqualTo(3));
-            await tester.sendKeyEvent(LogicalKeyboardKey.enter,
-                physicalKey: PhysicalKeyboardKey.enter);
-            await tester.sendKeyEvent(LogicalKeyboardKey.space,
-                physicalKey: PhysicalKeyboardKey.space);
+              _contrast(palette.accent, palette.selectedOn(palette.canvas)),
+              greaterThanOrEqualTo(3),
+            );
+            await tester.sendKeyEvent(
+              LogicalKeyboardKey.enter,
+              physicalKey: PhysicalKeyboardKey.enter,
+            );
+            await tester.sendKeyEvent(
+              LogicalKeyboardKey.space,
+              physicalKey: PhysicalKeyboardKey.space,
+            );
             await tester.pump();
             await tester.pump(_settle);
             expect(calls[name], 2, reason: name);
@@ -408,67 +484,90 @@ void main() {
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         try {
           await mouse.addPointer(location: _outside);
-          final context =
-              await _mount(tester, mode, reduced: reduced, builder: (context) {
-            final palette = PremiumThemeExtension.of(context);
-            final legacy = AFThemeExtension.of(context);
-            Widget row(String name, Color color,
-                    {bool selected = false, Color? background}) =>
-                FlowyHover(
-                  key: ValueKey(name),
-                  resetHoverOnRebuild: false,
-                  isSelected: () => selected,
-                  style: HoverStyle(
+          final context = await _mount(
+            tester,
+            mode,
+            reduced: reduced,
+            builder: (context) {
+              final palette = PremiumThemeExtension.of(context);
+              final legacy = AFThemeExtension.of(context);
+              Widget row(
+                String name,
+                Color color, {
+                bool selected = false,
+                Color? background,
+              }) =>
+                  FlowyHover(
+                    key: ValueKey(name),
+                    resetHoverOnRebuild: false,
+                    isSelected: () => selected,
+                    style: HoverStyle(
                       hoverColor: color,
-                      backgroundColor: background ?? Colors.transparent),
-                  child: SizedBox(
-                    height: 32,
-                    child: Builder(
-                        builder: (context) => Row(children: [
-                              Icon(Icons.folder_outlined,
-                                  key: ValueKey('$name-icon')),
-                              Text(name,
-                                  key: ValueKey('$name-label'),
-                                  style:
-                                      Theme.of(context).textTheme.bodyMedium),
-                            ])),
-                  ),
-                );
-            return Theme(
-              data: Theme.of(context).copyWith(
+                      backgroundColor: background ?? Colors.transparent,
+                    ),
+                    child: SizedBox(
+                      height: 32,
+                      child: Builder(
+                        builder: (context) => Row(
+                          children: [
+                            Icon(
+                              Icons.folder_outlined,
+                              key: ValueKey('$name-icon'),
+                            ),
+                            Text(
+                              name,
+                              key: ValueKey('$name-label'),
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+              return Theme(
+                data: Theme.of(context).copyWith(
                   textTheme: Theme.of(context).textTheme.copyWith(
                         bodyMedium: Theme.of(context)
                             .textTheme
                             .bodyMedium!
                             .copyWith(color: palette.textSecondary),
-                      )),
-              child: IconTheme(
-                data: IconThemeData(color: palette.accent),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    row('grey', legacy.greyHover),
-                    row('light-grey', legacy.lightGreyHover),
-                    row('toolbar', legacy.toolbarHoverColor),
-                    row('selected', legacy.greyHover, selected: true),
-                    row('custom', const Color(0x084B83A4)),
-                    row('surface', const Color(0x084B83A4),
-                        background: palette.mutedSurface),
-                    AFGhostButton.normal(
+                      ),
+                ),
+                child: IconTheme(
+                  data: IconThemeData(color: palette.accent),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      row('grey', legacy.greyHover),
+                      row('light-grey', legacy.lightGreyHover),
+                      row('toolbar', legacy.toolbarHoverColor),
+                      row('selected', legacy.greyHover, selected: true),
+                      row('custom', const Color(0x084B83A4)),
+                      row(
+                        'surface',
+                        const Color(0x084B83A4),
+                        background: palette.mutedSurface,
+                      ),
+                      AFGhostButton.normal(
                         key: const ValueKey('af'),
                         onTap: () {},
-                        builder: (_, __, ___) => const Text('AF ghost')),
-                  ],
+                        builder: (_, __, ___) => const Text('AF ghost'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          });
+              );
+            },
+          );
           final palette = PremiumThemeExtension.of(context);
           final legacy = AFThemeExtension.of(context);
           final hover = palette.subtleHover;
-          expect(legacy.greyHover.a, 1,
-              reason: 'Mixed editor surface roles stay opaque.');
+          expect(
+            legacy.greyHover.a,
+            1,
+            reason: 'Mixed editor surface roles stay opaque.',
+          );
           expect(legacy.lightGreyHover.a, 1);
           expect(_fill(tester, _key('selected')), legacy.greyHover);
 
@@ -478,7 +577,7 @@ void main() {
             'toolbar',
             'custom',
             'surface',
-            'af'
+            'af',
           ]) {
             final wash = name == 'custom' || name == 'surface'
                 ? const Color(0x084B83A4)
@@ -493,10 +592,14 @@ void main() {
             final labelRect =
                 name == 'af' ? null : tester.getRect(_key('$name-label'));
             if (name != 'af') {
-              expect(IconTheme.of(tester.element(_key('$name-icon'))).color,
-                  palette.accent);
-              expect(tester.widget<Text>(_key('$name-label')).style!.color,
-                  palette.textSecondary);
+              expect(
+                IconTheme.of(tester.element(_key('$name-icon'))).color,
+                palette.accent,
+              );
+              expect(
+                tester.widget<Text>(_key('$name-label')).style!.color,
+                palette.textSecondary,
+              );
             }
             await mouse.moveTo(tester.getCenter(_key(name)));
             await tester.pump();
@@ -504,8 +607,10 @@ void main() {
             final mid = _fill(tester, _key(name));
             if (name == 'surface') {
               expect(mid.a, 1);
-              expect(_difference(rest, mid),
-                  lessThanOrEqualTo(_difference(rest, target) + 1e-6));
+              expect(
+                _difference(rest, mid),
+                lessThanOrEqualTo(_difference(rest, target) + 1e-6),
+              );
             } else {
               expect(mid.a, inInclusiveRange(0.0, wash.a));
               _sameRgb(mid, wash);
@@ -516,17 +621,25 @@ void main() {
             expect(tester.getRect(_key(name)), rect);
             if (name != 'af') {
               expect(tester.getRect(_key('$name-label')), labelRect);
-              expect(IconTheme.of(tester.element(_key('$name-icon'))).color,
-                  palette.accent);
-              expect(tester.widget<Text>(_key('$name-label')).style!.color,
-                  palette.textSecondary);
+              expect(
+                IconTheme.of(tester.element(_key('$name-icon'))).color,
+                palette.accent,
+              );
+              expect(
+                tester.widget<Text>(_key('$name-label')).style!.color,
+                palette.textSecondary,
+              );
             }
             for (final animation in tester.widgetList<AnimatedContainer>(
               find.descendant(
-                  of: _key(name), matching: find.byType(AnimatedContainer)),
+                of: _key(name),
+                matching: find.byType(AnimatedContainer),
+              ),
             )) {
-              expect(animation.duration.inMilliseconds,
-                  reduced ? 0 : inInclusiveRange(120, 180));
+              expect(
+                animation.duration.inMilliseconds,
+                reduced ? 0 : inInclusiveRange(120, 180),
+              );
             }
             await mouse.moveTo(_outside);
             await tester.pump();
@@ -550,32 +663,35 @@ void main() {
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         try {
           await mouse.addPointer(location: _outside);
-          final context = await _mount(tester, mode,
-              reduced: reduced,
-              builder: (context) => ColoredBox(
-                    key: const ValueKey('control-surface'),
-                    color: PremiumThemeExtension.of(context).mutedSurface,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        DocumentViewportButton(
-                          key: const ValueKey('viewport'),
-                          icon: Icons.refresh,
-                          tooltip: 'Refresh document',
-                          onPressed: () {},
-                        ),
-                        DocumentViewportFitButton(
-                          key: const ValueKey('fit'),
-                          onPressed: () {},
-                        ),
-                        const DocumentViewportFitButton(
-                          key: ValueKey('fit-disabled'),
-                          onPressed: null,
-                        ),
-                      ],
-                    ),
-                  ));
+          final context = await _mount(
+            tester,
+            mode,
+            reduced: reduced,
+            builder: (context) => ColoredBox(
+              key: const ValueKey('control-surface'),
+              color: PremiumThemeExtension.of(context).mutedSurface,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DocumentViewportButton(
+                    key: const ValueKey('viewport'),
+                    icon: Icons.refresh,
+                    tooltip: 'Refresh document',
+                    onPressed: () {},
+                  ),
+                  DocumentViewportFitButton(
+                    key: const ValueKey('fit'),
+                    onPressed: () {},
+                  ),
+                  const DocumentViewportFitButton(
+                    key: ValueKey('fit-disabled'),
+                    onPressed: null,
+                  ),
+                ],
+              ),
+            ),
+          );
           final palette = PremiumThemeExtension.of(context);
           final document = DocumentViewportStyle.of(context);
           final surface =
@@ -583,17 +699,27 @@ void main() {
           final style = _button(tester, 'fit').style!;
           final rest = palette.subtleHover.withValues(alpha: 0);
           expect(style.backgroundColor!.resolve({}), rest);
-          expect(style.backgroundColor!.resolve({WidgetState.hovered}),
-              document.controlHover);
-          expect(style.backgroundColor!.resolve({WidgetState.pressed}),
-              palette.subtlePressed);
+          expect(
+            style.backgroundColor!.resolve({WidgetState.hovered}),
+            document.controlHover,
+          );
+          expect(
+            style.backgroundColor!.resolve({WidgetState.pressed}),
+            palette.subtlePressed,
+          );
           expect(style.overlayColor!.resolve({WidgetState.hovered})!.a, 0);
-          expect(style.foregroundColor!.resolve({WidgetState.hovered}),
-              style.foregroundColor!.resolve({}));
-          expect(style.iconColor!.resolve({WidgetState.hovered}),
-              style.iconColor!.resolve({}));
-          expect(style.animationDuration,
-              reduced ? Duration.zero : WorkspaceTokens.hoverDuration);
+          expect(
+            style.foregroundColor!.resolve({WidgetState.hovered}),
+            style.foregroundColor!.resolve({}),
+          );
+          expect(
+            style.iconColor!.resolve({WidgetState.hovered}),
+            style.iconColor!.resolve({}),
+          );
+          expect(
+            style.animationDuration,
+            reduced ? Duration.zero : WorkspaceTokens.hoverDuration,
+          );
 
           for (final name in ['viewport', 'fit']) {
             Color fill() => name == 'viewport'
@@ -630,9 +756,13 @@ void main() {
             final painted = Color.alphaBlend(fill(), surface);
             expect(painted, palette.hoverOn(surface));
             expect(
-                _difference(painted, surface), inExclusiveRange(0.003, 0.055));
+              _difference(painted, surface),
+              inExclusiveRange(0.003, 0.055),
+            );
             expect(
-                _contrast(document.icon, painted), greaterThanOrEqualTo(4.5));
+              _contrast(document.icon, painted),
+              greaterThanOrEqualTo(4.5),
+            );
             expect(tester.getRect(control), rect);
             await mouse.moveTo(_outside);
             await tester.pump();
@@ -642,8 +772,9 @@ void main() {
           final disabled = _button(tester, 'fit-disabled');
           expect(disabled.onPressed, isNull);
           expect(
-              disabled.style!.foregroundColor!.resolve({WidgetState.disabled}),
-              document.iconMuted);
+            disabled.style!.foregroundColor!.resolve({WidgetState.disabled}),
+            document.iconMuted,
+          );
           await mouse.moveTo(tester.getCenter(_key('fit-disabled')));
           await tester.pump();
           await tester.pump(_settle);
@@ -664,45 +795,59 @@ void main() {
       const customSelected = Color(0xFFDABF92);
       try {
         await mouse.addPointer(location: _outside);
-        await _mount(tester, mode, builder: (context) {
-          final inherited = Theme.of(context);
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Theme(
-                data: inherited.copyWith(extensions: [
-                  ...inherited.extensions.values,
-                  AFThemeExtension.of(context).copyWith(greyHover: customWash),
-                ]),
-                child: const FlowyHover(
-                  key: ValueKey('custom-alias'),
-                  style: HoverStyle(hoverColor: customWash),
-                  child: SizedBox(
-                      width: 160, height: 32, child: Text('Custom wash')),
-                ),
-              ),
-              Theme(
-                data: inherited.copyWith(extensions: [
-                  ...inherited.extensions.values,
-                  PremiumThemeExtension.of(context).copyWith(
-                    hoverOverlay: customWash,
-                    selectedOverlay: customSelected,
+        await _mount(
+          tester,
+          mode,
+          builder: (context) {
+            final inherited = Theme.of(context);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Theme(
+                  data: inherited.copyWith(
+                    extensions: [
+                      ...inherited.extensions.values,
+                      AFThemeExtension.of(context)
+                          .copyWith(greyHover: customWash),
+                    ],
                   ),
-                ]),
-                child: WorkspaceControlButton(
-                  key: const ValueKey('custom-shared'),
-                  icon: Icons.check,
-                  tooltip: 'Custom selected',
-                  selected: true,
-                  onPressed: () {},
+                  child: const FlowyHover(
+                    key: ValueKey('custom-alias'),
+                    style: HoverStyle(hoverColor: customWash),
+                    child: SizedBox(
+                      width: 160,
+                      height: 32,
+                      child: Text('Custom wash'),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          );
-        });
-        expect(_fill(tester, _key('custom-alias')),
-            customWash.withValues(alpha: 0));
+                Theme(
+                  data: inherited.copyWith(
+                    extensions: [
+                      ...inherited.extensions.values,
+                      PremiumThemeExtension.of(context).copyWith(
+                        hoverOverlay: customWash,
+                        selectedOverlay: customSelected,
+                      ),
+                    ],
+                  ),
+                  child: WorkspaceControlButton(
+                    key: const ValueKey('custom-shared'),
+                    icon: Icons.check,
+                    tooltip: 'Custom selected',
+                    selected: true,
+                    onPressed: () {},
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+        expect(
+          _fill(tester, _key('custom-alias')),
+          customWash.withValues(alpha: 0),
+        );
         await mouse.moveTo(tester.getCenter(_key('custom-alias')));
         await tester.pump();
         await tester.pump(_settle);
@@ -710,18 +855,23 @@ void main() {
         final style = _button(tester, 'custom-shared').style!;
         final wash = customWash.withValues(alpha: customWash.a * 0.65);
         expect(style.backgroundColor!.resolve({}), customSelected);
-        expect(style.backgroundColor!.resolve({WidgetState.hovered}),
-            Color.alphaBlend(wash, customSelected));
+        expect(
+          style.backgroundColor!.resolve({WidgetState.hovered}),
+          Color.alphaBlend(wash, customSelected),
+        );
         expect(style.overlayColor!.resolve({WidgetState.hovered})!.a, 0);
         expect(_nativeFill(tester, 'custom-shared'), customSelected);
         await mouse.moveTo(tester.getCenter(_key('custom-shared')));
         await tester.pump();
         await tester.pump(_settle);
-        expect(_nativeFill(tester, 'custom-shared'),
-            Color.alphaBlend(wash, customSelected));
         expect(
-            _difference(_nativeFill(tester, 'custom-shared'), customSelected),
-            lessThan(0.055));
+          _nativeFill(tester, 'custom-shared'),
+          Color.alphaBlend(wash, customSelected),
+        );
+        expect(
+          _difference(_nativeFill(tester, 'custom-shared'), customSelected),
+          lessThan(0.055),
+        );
         expect(tester.takeException(), isNull);
       } finally {
         await mouse.removePointer();
@@ -732,29 +882,39 @@ void main() {
     testWidgets('$mode: accessible navigation disables shared hover motion too',
         (tester) async {
       try {
-        final context = await _mount(tester, mode,
-            accessible: true,
-            builder: (_) => Column(children: [
-                  SidebarRow(
-                      key: const ValueKey('row'),
-                      label: const Text('Entry'),
-                      onTap: () {}),
-                  DocumentViewportButton(
-                      key: const ValueKey('document'),
-                      icon: Icons.refresh,
-                      tooltip: 'Refresh',
-                      onPressed: () {}),
-                  DocumentViewportFitButton(
-                    key: const ValueKey('fit'),
-                    onPressed: () {},
-                  ),
-                  const FlowyHover(child: Text('Legacy control')),
-                  AFGhostButton.normal(
-                      onTap: () {},
-                      builder: (_, __, ___) => const Text('AF control')),
-                ]));
-        expect(WorkspaceChrome.controlStyle(context).animationDuration,
-            Duration.zero);
+        final context = await _mount(
+          tester,
+          mode,
+          accessible: true,
+          builder: (_) => Column(
+            children: [
+              SidebarRow(
+                key: const ValueKey('row'),
+                label: const Text('Entry'),
+                onTap: () {},
+              ),
+              DocumentViewportButton(
+                key: const ValueKey('document'),
+                icon: Icons.refresh,
+                tooltip: 'Refresh',
+                onPressed: () {},
+              ),
+              DocumentViewportFitButton(
+                key: const ValueKey('fit'),
+                onPressed: () {},
+              ),
+              const FlowyHover(child: Text('Legacy control')),
+              AFGhostButton.normal(
+                onTap: () {},
+                builder: (_, __, ___) => const Text('AF control'),
+              ),
+            ],
+          ),
+        );
+        expect(
+          WorkspaceChrome.controlStyle(context).animationDuration,
+          Duration.zero,
+        );
         expect(_button(tester, 'fit').style!.animationDuration, Duration.zero);
         for (final animation in tester
             .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))) {
@@ -773,16 +933,21 @@ void main() {
         late Color canvas;
         late Color chrome;
         late Color sidebar;
-        final context = await _mount(tester, mode,
-            builder: (_) => EditorCanvasScope(
-                  color: const Color(0xFF734D39),
-                  child: Builder(builder: (context) {
-                    canvas = EditorSurfaceStyle.canvasBackground(context);
-                    chrome = EditorSurfaceStyle.chromeBackground(context);
-                    sidebar = SidebarStyle.background(context);
-                    return const WindowTitleBar(showCaptionButtons: false);
-                  }),
-                ));
+        final context = await _mount(
+          tester,
+          mode,
+          builder: (_) => EditorCanvasScope(
+            color: const Color(0xFF734D39),
+            child: Builder(
+              builder: (context) {
+                canvas = EditorSurfaceStyle.canvasBackground(context);
+                chrome = EditorSurfaceStyle.chromeBackground(context);
+                sidebar = SidebarStyle.background(context);
+                return const WindowTitleBar(showCaptionButtons: false);
+              },
+            ),
+          ),
+        );
         expect(canvas, const Color(0xFF734D39));
         expect(chrome, PremiumThemeExtension.of(context).sidebar);
         expect(sidebar, chrome);
@@ -856,31 +1021,40 @@ Future<BuildContext> _mount(
       .copyWith(platform: TargetPlatform.windows);
   final defaults = AppFlowyDefaultTheme();
   late BuildContext sample;
-  await tester.pumpWidget(MaterialApp(
-    theme: theme,
-    themeAnimationDuration: Duration.zero,
-    home: MediaQuery(
-      data: MediaQueryData(
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: theme,
+      themeAnimationDuration: Duration.zero,
+      home: MediaQuery(
+        data: MediaQueryData(
           size: const Size(800, 600),
           disableAnimations: reduced,
-          accessibleNavigation: accessible),
-      child: AppFlowyTheme(
-        data: PremiumTheme.appFlowyTheme(
+          accessibleNavigation: accessible,
+        ),
+        child: AppFlowyTheme(
+          data: PremiumTheme.appFlowyTheme(
             base: mode == 'dark' ? defaults.dark() : defaults.light(),
             palette: theme.extension<PremiumThemeExtension>()!,
-            brightness: brightness),
-        child: Scaffold(
+            brightness: brightness,
+          ),
+          child: Scaffold(
             body: Align(
-                alignment: Alignment.topLeft,
-                child: SizedBox(
-                    width: 640,
-                    child: Builder(builder: (context) {
-                      sample = context;
-                      return builder(context);
-                    })))),
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 640,
+                child: Builder(
+                  builder: (context) {
+                    sample = context;
+                    return builder(context);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
   return sample;
 }

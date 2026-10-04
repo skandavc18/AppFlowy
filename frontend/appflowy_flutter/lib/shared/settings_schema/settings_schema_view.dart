@@ -286,8 +286,10 @@ class _SettingsNumberBoxState extends State<_SettingsNumberBox> {
     }
     final field = widget.field;
     final clamped = parsed
-        .clamp(field.minimum ?? double.negativeInfinity,
-            field.maximum ?? double.infinity)
+        .clamp(
+          field.minimum ?? double.negativeInfinity,
+          field.maximum ?? double.infinity,
+        )
         .toDouble();
     field.onChanged(clamped);
   }

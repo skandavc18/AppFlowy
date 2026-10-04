@@ -126,7 +126,9 @@ Future<void> showInteractiveOptionPicker({
       anchor: anchor,
       width: width,
       capturedThemes: InheritedTheme.capture(
-          from: context, to: Navigator.of(context).context),
+        from: context,
+        to: Navigator.of(context).context,
+      ),
       builder: (context) => _OptionPicker(
         options: options,
         selected: selected,
@@ -236,7 +238,9 @@ class _OptionPickerLayout extends SingleChildLayoutDelegate {
     return Offset(
       dx.toDouble(),
       dy.clamp(
-          _margin, math.max(_margin, size.height - childSize.height - _margin)),
+        _margin,
+        math.max(_margin, size.height - childSize.height - _margin),
+      ),
     );
   }
 

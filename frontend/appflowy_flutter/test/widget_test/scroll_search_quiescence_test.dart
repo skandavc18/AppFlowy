@@ -22,41 +22,54 @@ void main() {
         (tester) async {
       final lookups = ValueNotifier(0);
       final specs = List.generate(
-          count,
-          (i) =>
-              DashboardWidgetSpec(id: 'card-$i', type: 'unsupported-fixture'));
-      final document = _CountedDocument(lookups, sections: [
-        DashboardSection(id: 's', widgets: specs),
-      ]);
+        count,
+        (i) => DashboardWidgetSpec(id: 'card-$i', type: 'unsupported-fixture'),
+      );
+      final document = _CountedDocument(
+        lookups,
+        sections: [
+          DashboardSection(id: 's', widgets: specs),
+        ],
+      );
       final dashboard = DashboardController(viewId: '', document: document);
       final controller = DashboardFindController(dashboard, title: () => '');
       var notifications = 0;
       controller.addListener(() => notifications++);
       try {
-        await tester.pumpWidget(surfaceFindTestApp(SurfaceFindHost(
-          controller: controller,
-          child: SingleChildScrollView(
-              child: Column(children: [
-            for (final spec in specs)
-              SizedBox(
-                  height: 200,
-                  child: Builder(
-                      builder: (context) => DashboardCard(
+        await tester.pumpWidget(
+          surfaceFindTestApp(
+            SurfaceFindHost(
+              controller: controller,
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final spec in specs)
+                      SizedBox(
+                        height: 200,
+                        child: Builder(
+                          builder: (context) => DashboardCard(
                             controller: dashboard,
                             spec: spec,
                             palette: DashboardPalette.of(context),
                             selected: false,
                             dragging: false,
-                          ))),
-          ])),
-        )));
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
         await pumpSurfaceFind(tester);
         lookups.value = 0;
         notifications = 0;
         dashboard.refresh();
         await pumpSurfaceFind(tester);
-        print(
-            'SCROLL_SEARCH closed N=$count notifications=$notifications lookups=${lookups.value}');
+        debugPrint(
+          'SCROLL_SEARCH closed N=$count notifications=$notifications lookups=${lookups.value}',
+        );
         expect(notifications, 0);
         expect(lookups.value, 0);
         for (var i = 0; i < 120; i++) {
@@ -81,39 +94,55 @@ void main() {
         (tester) async {
       final reads = DatabaseFindReads();
       const spec = DashboardWidgetSpec(
-          id: 'embed',
-          type: 'database',
-          source: DashboardDataSource(
-              kind: DashboardSourceKind.database, viewId: databaseFindViewId));
+        id: 'embed',
+        type: 'database',
+        source: DashboardDataSource(
+          kind: DashboardSourceKind.database,
+          viewId: databaseFindViewId,
+        ),
+      );
       final dashboard = DashboardController(
-          viewId: '',
-          document: const DashboardDocument(
-            sections: [
-              DashboardSection(id: 's', widgets: [spec])
-            ],
-          ));
-      final controller = DashboardFindController(dashboard,
-          title: () => '', readProvider: reads.provider());
+        viewId: '',
+        document: const DashboardDocument(
+          sections: [
+            DashboardSection(id: 's', widgets: [spec]),
+          ],
+        ),
+      );
+      final controller = DashboardFindController(
+        dashboard,
+        title: () => '',
+        readProvider: reads.provider(),
+      );
       var notifications = 0;
       controller.addListener(() => notifications++);
       try {
-        await tester.pumpWidget(surfaceFindTestApp(SurfaceFindHost(
-          controller: controller,
-          child: DashboardFindEmbed(
-              dashboard: dashboard,
-              spec: spec,
-              child: const DatabaseFindAnchor(
-                  target: DatabaseFindTarget.cell(databaseFindViewId,
-                      databaseFindRowId, databaseFindFieldId),
-                  child: Text('needle'))),
-        )));
+        await tester.pumpWidget(
+          surfaceFindTestApp(
+            SurfaceFindHost(
+              controller: controller,
+              child: DashboardFindEmbed(
+                dashboard: dashboard,
+                spec: spec,
+                child: const DatabaseFindAnchor(
+                  target: DatabaseFindTarget.cell(
+                    databaseFindViewId,
+                    databaseFindRowId,
+                    databaseFindFieldId,
+                  ),
+                  child: Text('needle'),
+                ),
+              ),
+            ),
+          ),
+        );
         await pumpSurfaceFind(tester);
         controller.open();
         if (!empty) controller.setQuery('needle');
         await pumpSurfaceFind(tester);
         await pumpSurfaceFind(tester);
         if (empty) {
-          print('SCROLL_SEARCH open-empty reads=${reads.calls.length}');
+          debugPrint('SCROLL_SEARCH open-empty reads=${reads.calls.length}');
           expect(reads.calls, isEmpty);
         } else {
           expect(controller.matches, hasLength(1));
@@ -124,8 +153,9 @@ void main() {
           reads.changes.add('unrelated-id');
           reads.access.value++;
           await pumpSurfaceFind(tester);
-          print(
-              'SCROLL_SEARCH closed-event notifications=$notifications reads=${reads.calls.length} subscribed=${reads.changes.hasListener}');
+          debugPrint(
+            'SCROLL_SEARCH closed-event notifications=$notifications reads=${reads.calls.length} subscribed=${reads.changes.hasListener}',
+          );
           expect(notifications, 0);
           expect(reads.changes.hasListener, isFalse);
           expect(reads.calls, isEmpty);
@@ -144,24 +174,34 @@ void main() {
       (tester) async {
     const text = 'native documentation abcdefghijklmnopqrstuvwxyzabcdef';
     final controller = SurfaceFindController(
-        search: (q, options) => searchSurfaceEntries(
-            const [SurfaceFindEntry('a', text), SurfaceFindEntry('b', text)],
-            q,
-            options));
+      search: (q, options) => searchSurfaceEntries(
+        const [SurfaceFindEntry('a', text), SurfaceFindEntry('b', text)],
+        q,
+        options,
+      ),
+    );
     try {
-      await tester.pumpWidget(surfaceFindTestApp(SurfaceFindHost(
-        controller: controller,
-        child: const Stack(children: [
-          Positioned(
-              top: 16,
-              right: 20,
-              child: SurfaceFindTarget(id: 'a', child: Text(text))),
-          Positioned(
-              bottom: 16,
-              right: 20,
-              child: SurfaceFindTarget(id: 'b', child: Text(text))),
-        ]),
-      )));
+      await tester.pumpWidget(
+        surfaceFindTestApp(
+          SurfaceFindHost(
+            controller: controller,
+            child: const Stack(
+              children: [
+                Positioned(
+                  top: 16,
+                  right: 20,
+                  child: SurfaceFindTarget(id: 'a', child: Text(text)),
+                ),
+                Positioned(
+                  bottom: 16,
+                  right: 20,
+                  child: SurfaceFindTarget(id: 'b', child: Text(text)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
       await pumpSurfaceFind(tester);
       await openSurfaceFind(tester);
       final field = find.byType(EditableText);
@@ -170,19 +210,27 @@ void main() {
       final focus = state.widget.focusNode;
       for (final query in [
         'native documentation',
-        'abcdefghijklmnopqrstuvwxyzabcdef'
+        'abcdefghijklmnopqrstuvwxyzabcdef',
       ]) {
-        tester.testTextInput.updateEditingValue(const TextEditingValue(
-            text: '', selection: TextSelection.collapsed(offset: 0)));
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            selection: TextSelection.collapsed(offset: 0),
+          ),
+        );
         await tester.pump();
         for (var i = 1; i <= query.length; i++) {
           expect(focus.hasPrimaryFocus, isTrue);
           expect(tester.testTextInput.hasAnyClients, isTrue);
-          expect(controller.queryController.selection,
-              TextSelection.collapsed(offset: i - 1));
-          tester.testTextInput.updateEditingValue(TextEditingValue(
+          expect(
+            controller.queryController.selection,
+            TextSelection.collapsed(offset: i - 1),
+          );
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
               text: query.substring(0, i),
-              selection: TextSelection.collapsed(offset: i)));
+              selection: TextSelection.collapsed(offset: i),
+            ),
+          );
           if (i == 3 || i == 4 || i == 10) controller.step(1);
           await pumpSurfaceFind(tester);
           expect(tester.element(field), same(element));
@@ -190,8 +238,10 @@ void main() {
           expect(state.widget.focusNode, same(focus));
           expect(state.widget.controller, same(controller.queryController));
           expect(controller.query, query.substring(0, i));
-          expect(controller.queryController.selection,
-              TextSelection.collapsed(offset: i));
+          expect(
+            controller.queryController.selection,
+            TextSelection.collapsed(offset: i),
+          );
           expect(controller.queryController.value.composing, TextRange.empty);
         }
         expect(controller.matches, hasLength(2));

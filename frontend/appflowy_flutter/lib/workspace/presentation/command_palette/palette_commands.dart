@@ -245,7 +245,8 @@ List<PaletteCommand> buildPaletteCommands(BuildContext context) {
         getIt<MenuSharedState>().latestOpenView = null;
         getIt<TabsBloc>().add(
           TabsEvent.openPlugin(
-              plugin: makePlugin(pluginType: PluginType.trash)),
+            plugin: makePlugin(pluginType: PluginType.trash),
+          ),
         );
       },
     ),

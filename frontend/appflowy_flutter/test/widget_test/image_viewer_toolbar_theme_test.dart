@@ -54,42 +54,57 @@ void main() {
               .widget<InteractiveViewer>(renderer)
               .transformationController;
           final tools = tester.widget<InteractiveImageToolbar>(
-              find.byType(InteractiveImageToolbar));
+            find.byType(InteractiveImageToolbar),
+          );
           expect(tools.imageName, 'first original.png');
           expect(_buttons(tester).onDarkSurface, isFalse);
           expect(_buttons(tester).decorated, isFalse);
           final context = tester.element(find.byType(InteractiveImageToolbar));
           expect(PaperTheme.isEnabled(context), mode == 'paper');
           final chrome = tester.widget<DocumentViewportBar>(
-              find.byKey(const ValueKey('photo-fullscreen-chrome')));
+            find.byKey(const ValueKey('photo-fullscreen-chrome')),
+          );
           expect(chrome.background, DocumentViewportStyle.of(context).canvas);
           expect(
-              tester.getRect(find.byKey(_scroll)).top,
-              greaterThanOrEqualTo(tester
+            tester.getRect(find.byKey(_scroll)).top,
+            greaterThanOrEqualTo(
+              tester
                   .getRect(find.byKey(const ValueKey('photo-fullscreen-title')))
-                  .bottom));
-          expect(tester.getRect(find.byKey(_scroll)).bottom,
-              lessThanOrEqualTo(tester.getRect(renderer).top));
+                  .bottom,
+            ),
+          );
           expect(
-              find.ancestor(
-                  of: find.byKey(_close),
-                  matching: find.byType(SingleChildScrollView)),
-              findsNothing);
+            tester.getRect(find.byKey(_scroll)).bottom,
+            lessThanOrEqualTo(tester.getRect(renderer).top),
+          );
+          expect(
+            find.ancestor(
+              of: find.byKey(_close),
+              matching: find.byType(SingleChildScrollView),
+            ),
+            findsNothing,
+          );
           expect(find.byKey(_close).hitTestable(), findsOneWidget);
           await tester.pump(const Duration(seconds: 5));
           for (final key in [_copy, _share]) {
             expect(find.byKey(key).hitTestable(), findsOneWidget);
             _expectSemantics(tester, key, key == _copy ? 'Copy' : 'Share');
             final style = _button(tester, key).style!;
-            expect(style.animationDuration,
-                WorkspaceChrome.controlStyle(context).animationDuration);
-            expect(style.shape!.resolve({}),
-                WorkspaceChrome.controlStyle(context).shape!.resolve({}));
+            expect(
+              style.animationDuration,
+              WorkspaceChrome.controlStyle(context).animationDuration,
+            );
+            expect(
+              style.shape!.resolve({}),
+              WorkspaceChrome.controlStyle(context).shape!.resolve({}),
+            );
           }
           await mouse.moveTo(tester.getCenter(find.byKey(_copy)));
           await settleFileControls(tester);
-          expect(_material(tester, _copy).color,
-              WorkspaceChrome.hoverColor(context));
+          expect(
+            _material(tester, _copy).color,
+            WorkspaceChrome.hoverColor(context),
+          );
           await mouse.moveTo(const Offset(-20, -20));
           await settleFileControls(tester);
           expect(find.byKey(_copy).hitTestable(), findsOneWidget);
@@ -97,16 +112,16 @@ void main() {
           _expectSemantics(tester, _copy, 'Copy');
           final shape = _material(tester, _copy).shape! as OutlinedBorder;
           expect(
-              shape.side,
-              WorkspaceChrome.controlStyle(context)
-                  .side!
-                  .resolve({WidgetState.focused}));
+            shape.side,
+            WorkspaceChrome.controlStyle(context)
+                .side!
+                .resolve({WidgetState.focused}),
+          );
           expect(tester.state(renderer), same(state));
           expect(
-              tester
-                  .widget<InteractiveViewer>(renderer)
-                  .transformationController,
-              same(matrix));
+            tester.widget<InteractiveViewer>(renderer).transformationController,
+            same(matrix),
+          );
           expect(actions.calls, isEmpty);
           expect(tester.takeException(), isNull);
         } finally {
@@ -131,8 +146,10 @@ void main() {
         );
         final state = tester.state(find.byType(MediaActionButtons));
         await _tabTo(tester, _button(tester, _copy).focusNode!);
-        await tester.sendKeyEvent(LogicalKeyboardKey.enter,
-            physicalKey: PhysicalKeyboardKey.enter);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.enter,
+          physicalKey: PhysicalKeyboardKey.enter,
+        );
         await settleFileControls(tester);
         final copy = actions.calls.single;
         expect(copy.source.source, photos.files.first.url);
@@ -149,35 +166,52 @@ void main() {
         expect(_button(tester, _copy).focusNode!.hasFocus, isTrue);
         final badge = tester.getRect(find.byKey(_copied));
         expect(badge.bottom, lessThan(tester.getRect(find.byKey(_copy)).top));
-        expect(tester.getRect(find.byKey(_scroll)).contains(badge.topLeft),
-            isTrue);
-        expect(tester.getRect(find.byKey(_scroll)).contains(badge.bottomRight),
-            isTrue);
+        expect(
+          tester.getRect(find.byKey(_scroll)).contains(badge.topLeft),
+          isTrue,
+        );
+        expect(
+          tester.getRect(find.byKey(_scroll)).contains(badge.bottomRight),
+          isTrue,
+        );
         await tester.pump(const Duration(milliseconds: 1600));
         await settleFileControls(tester);
         expect(find.byKey(_copied), findsNothing);
-        await tester.sendKeyEvent(LogicalKeyboardKey.enter,
-            physicalKey: PhysicalKeyboardKey.enter);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.enter,
+          physicalKey: PhysicalKeyboardKey.enter,
+        );
         await tester.pump();
         actions.calls.last.done
             .completeError(StateError('private-fixture-error'));
         await settleFileControls(tester);
-        _expectSemantics(tester, _copy, LocaleKeys.message_copy_fail.tr(),
-            live: true);
+        _expectSemantics(
+          tester,
+          _copy,
+          LocaleKeys.message_copy_fail.tr(),
+          live: true,
+        );
         await _tabTo(tester, _button(tester, _share).focusNode!);
         final anchor = tester.getRect(find.byKey(_share));
-        await tester.sendKeyEvent(LogicalKeyboardKey.space,
-            physicalKey: PhysicalKeyboardKey.space);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.space,
+          physicalKey: PhysicalKeyboardKey.space,
+        );
         await tester.pump();
         expect(actions.calls.last.origin, anchor);
         actions.calls.last.done
             .completeError(StateError('private-fixture-error'));
         await settleFileControls(tester);
         _expectSemantics(
-            tester, _share, LocaleKeys.mediaActions_shareFailed.tr(),
-            live: true);
-        await tester.sendKeyEvent(LogicalKeyboardKey.space,
-            physicalKey: PhysicalKeyboardKey.space);
+          tester,
+          _share,
+          LocaleKeys.mediaActions_shareFailed.tr(),
+          live: true,
+        );
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.space,
+          physicalKey: PhysicalKeyboardKey.space,
+        );
         await tester.pump();
         actions.calls.last.done.complete();
         await settleFileControls(tester);
@@ -219,14 +253,17 @@ void main() {
         await tester.tap(fit);
         await tester.pump();
         expect(
-            tester.widget<InteractiveViewer>(renderer).transformationController,
-            same(controller));
+          tester.widget<InteractiveViewer>(renderer).transformationController,
+          same(controller),
+        );
         if (reduced) {
           expect(controller.value.isIdentity(), isTrue);
         } else {
           await tester.pump(const Duration(milliseconds: 100));
           expect(
-              controller.value.getMaxScaleOnAxis(), inExclusiveRange(1.0, 2.0));
+            controller.value.getMaxScaleOnAxis(),
+            inExclusiveRange(1.0, 2.0),
+          );
           await tester.pump(const Duration(milliseconds: 101));
           expect(controller.value.isIdentity(), isTrue);
         }
@@ -260,8 +297,10 @@ void main() {
         await tester.tap(find.byKey(_copy));
         await tester.pump();
         final pending = actions.calls.single;
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight,
-            physicalKey: PhysicalKeyboardKey.arrowRight);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.arrowRight,
+          physicalKey: PhysicalKeyboardKey.arrowRight,
+        );
         await settleFileControls(tester);
         expect(find.byKey(const ValueKey('photo-second')), findsOneWidget);
         expect(_buttons(tester).source.source, photos.files.last.url);
@@ -282,8 +321,10 @@ void main() {
         expect(actions.calls.last.source.name, photos.files.last.name);
         actions.calls.last.done.complete();
         await settleFileControls(tester);
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft,
-            physicalKey: PhysicalKeyboardKey.arrowLeft);
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.arrowLeft,
+          physicalKey: PhysicalKeyboardKey.arrowLeft,
+        );
         await settleFileControls(tester);
         stale();
         expect(actions.calls, hasLength(2));
@@ -300,23 +341,30 @@ void main() {
 // focus, transformations and OCR region remain the production implementations.
 class _Photos extends MediaFileImageProvider {
   _Photos()
-      : super(initialFileId: 'first', files: [
-          for (final id in ['first', 'second'])
-            MediaFilePB(
-              id: id,
-              name: '$id original.png',
-              url: 'synthetic/$id.png',
-              fileType: MediaFileTypePB.Image,
-              uploadType: FileUploadTypePB.LocalFile,
-            ),
-        ]);
+      : super(
+          initialFileId: 'first',
+          files: [
+            for (final id in ['first', 'second'])
+              MediaFilePB(
+                id: id,
+                name: '$id original.png',
+                url: 'synthetic/$id.png',
+                fileType: MediaFileTypePB.Image,
+                uploadType: FileUploadTypePB.LocalFile,
+              ),
+          ],
+        );
 
   @override
-  Widget renderImage(BuildContext context, int index,
-          [UserProfilePB? userProfile]) =>
+  Widget renderImage(
+    BuildContext context,
+    int index, [
+    UserProfilePB? userProfile,
+  ]) =>
       ColoredBox(
-          key: ValueKey('photo-${files[index].id}'),
-          color: const Color(0xFFB77950));
+        key: ValueKey('photo-${files[index].id}'),
+        color: const Color(0xFFB77950),
+      );
 }
 
 class _Actions extends MediaActionService {
@@ -348,8 +396,13 @@ Material _material(WidgetTester tester, Key key) => tester.widget(
       find.descendant(of: find.byKey(key), matching: find.byType(Material)),
     );
 
-void _expectSemantics(WidgetTester tester, Key key, String label,
-    {bool enabled = true, bool live = false}) {
+void _expectSemantics(
+  WidgetTester tester,
+  Key key,
+  String label, {
+  bool enabled = true,
+  bool live = false,
+}) {
   final node = tester.getSemantics(find.byKey(key));
   expect(node.attached, isTrue);
   expect(node.label, label);
@@ -363,8 +416,10 @@ void _expectSemantics(WidgetTester tester, Key key, String label,
 
 Future<void> _tabTo(WidgetTester tester, FocusNode node) async {
   for (var i = 0; i < 30 && !node.hasFocus; i++) {
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab,
-        physicalKey: PhysicalKeyboardKey.tab);
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.tab,
+      physicalKey: PhysicalKeyboardKey.tab,
+    );
     await settleFileControls(tester);
   }
   expect(node.hasFocus, isTrue);

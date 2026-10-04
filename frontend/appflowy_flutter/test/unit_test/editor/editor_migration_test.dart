@@ -77,11 +77,12 @@ void main() {
         final saved = backend.views[stale.id]!;
         expect(saved.name, 'Newer title');
         expect(
-            saved.cover,
-            const PageStyleCover(
-              type: PageStyleCoverImageType.builtInImage,
-              value: '1',
-            ));
+          saved.cover,
+          const PageStyleCover(
+            type: PageStyleCoverImageType.builtInImage,
+            value: '1',
+          ),
+        );
         expect(ViewCoverCodec.decodeExtra(saved.extra), {
           'font': 'serif',
           'future': {'retained': true},
@@ -114,7 +115,9 @@ void main() {
     for (final cover in [
       const PageStyleCover.none(),
       const PageStyleCover(
-          type: PageStyleCoverImageType.pureColor, value: '#C0A080'),
+        type: PageStyleCoverImageType.pureColor,
+        value: '#C0A080',
+      ),
     ]) {
       test('fresh ${cover.type} overrides legacy despite a stale absent cover',
           () async {
@@ -150,7 +153,7 @@ void main() {
       'locked',
       'replacement',
       'layout',
-      'malformed'
+      'malformed',
     ]) {
       test('$unavailable fresh view refuses cover migration', () async {
         final stale = ViewPB(id: 'migration-$unavailable');

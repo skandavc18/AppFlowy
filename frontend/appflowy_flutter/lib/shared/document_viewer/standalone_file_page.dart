@@ -11,11 +11,12 @@ import 'standalone_file_scope.dart';
 /// vertical lists use the nested primary controller. Controller/matrix-owned
 /// renderers opt into [StandaloneFileScrollRegion] at their input boundary.
 class StandaloneFilePage extends StatefulWidget {
-  const StandaloneFilePage(
-      {super.key,
-      required this.header,
-      required this.body,
-      this.nativeBodyGestures = false});
+  const StandaloneFilePage({
+    super.key,
+    required this.header,
+    required this.body,
+    this.nativeBodyGestures = false,
+  });
 
   final Widget header;
   final Widget body;
@@ -102,8 +103,12 @@ class StandaloneFilePageScroll extends InheritedWidget {
     final boundary = context
         .dependOnInheritedWidgetOfExactType<StandaloneFilePageBoundary>();
     if (boundary?.enabled == false ||
-        !identical(page?.chrome, StandaloneFileScope.maybeOf(context)?.chrome))
+        !identical(
+          page?.chrome,
+          StandaloneFileScope.maybeOf(context)?.chrome,
+        )) {
       return null;
+    }
     return page;
   }
 
@@ -195,9 +200,7 @@ class StandaloneFileScrollRegion extends StatefulWidget {
 class _StandaloneFileScrollRegionState extends State<StandaloneFileScrollRegion>
     with TickerProviderStateMixin {
   final _trackpad = _FileVerticalTrackpad();
-  final _motion = PremiumKineticScrollModel(
-    config: const PremiumScrollPhysicsConfig(),
-  );
+  final _motion = PremiumKineticScrollModel();
   Ticker? _ticker;
   Duration? _lastFrame;
   bool _smooth = false;
@@ -222,9 +225,11 @@ class _StandaloneFileScrollRegionState extends State<StandaloneFileScrollRegion>
     _page = StandaloneFilePageScroll.maybeOf(context);
     final behavior = ScrollConfiguration.of(context);
     _stop();
-    _motion.configure(behavior is PremiumScrollBehavior
-        ? behavior.config
-        : const PremiumScrollPhysicsConfig());
+    _motion.configure(
+      behavior is PremiumScrollBehavior
+          ? behavior.config
+          : const PremiumScrollPhysicsConfig(),
+    );
     _smooth = !MediaQuery.disableAnimationsOf(context) &&
         !MediaQuery.accessibleNavigationOf(context) &&
         (behavior is! PremiumScrollBehavior || behavior.kineticEnabled);
@@ -249,8 +254,9 @@ class _StandaloneFileScrollRegionState extends State<StandaloneFileScrollRegion>
       controller.jumpTo(controller.offset);
     }
     final outer = _page?.outer;
-    if (outer != null && outer.positions.length == 1)
+    if (outer != null && outer.positions.length == 1) {
       outer.jumpTo(outer.offset);
+    }
   }
 
   void _startMotion() {
@@ -469,13 +475,14 @@ class _FileVerticalTrackpad extends OneSequenceGestureRecognizer {
 }
 
 class _FileInputBoundary extends SingleChildRenderObjectWidget {
-  const _FileInputBoundary(
-      {required this.enabled,
-      required this.onSignal,
-      required this.onPanStart,
-      required this.onPointerDown,
-      required this.onCancel,
-      required super.child});
+  const _FileInputBoundary({
+    required this.enabled,
+    required this.onSignal,
+    required this.onPanStart,
+    required this.onPointerDown,
+    required this.onCancel,
+    required super.child,
+  });
   final bool enabled;
   final PointerSignalEventListener onSignal;
   final PointerPanZoomStartEventListener onPanStart;
@@ -484,10 +491,17 @@ class _FileInputBoundary extends SingleChildRenderObjectWidget {
 
   @override
   RenderObject createRenderObject(BuildContext context) => _FileInputRenderBox(
-      enabled, onSignal, onPanStart, onPointerDown, onCancel);
+        enabled,
+        onSignal,
+        onPanStart,
+        onPointerDown,
+        onCancel,
+      );
   @override
   void updateRenderObject(
-      BuildContext context, _FileInputRenderBox renderObject) {
+    BuildContext context,
+    _FileInputRenderBox renderObject,
+  ) {
     renderObject.enabled = enabled;
     renderObject.onSignal = onSignal;
     renderObject.onPanStart = onPanStart;
@@ -497,8 +511,13 @@ class _FileInputBoundary extends SingleChildRenderObjectWidget {
 }
 
 class _FileInputRenderBox extends RenderProxyBox {
-  _FileInputRenderBox(this.enabled, this.onSignal, this.onPanStart,
-      this.onPointerDown, this.onCancel);
+  _FileInputRenderBox(
+    this.enabled,
+    this.onSignal,
+    this.onPanStart,
+    this.onPointerDown,
+    this.onCancel,
+  );
   bool enabled;
   PointerSignalEventListener onSignal;
   PointerPanZoomStartEventListener onPanStart;
@@ -515,8 +534,10 @@ class _FileInputRenderBox extends RenderProxyBox {
     }
     // Drop our marker as it is added, before transforms are attached. Sharing
     // the result retains original Box/Sliver/custom entry subtypes verbatim.
-    super.hitTestChildren(_FileHitTestResult(result, child!),
-        position: position);
+    super.hitTestChildren(
+      _FileHitTestResult(result, child!),
+      position: position,
+    );
     return true;
   }
 
@@ -530,7 +551,7 @@ class _FileInputRenderBox extends RenderProxyBox {
 }
 
 class _FileHitTestResult extends BoxHitTestResult {
-  _FileHitTestResult(BoxHitTestResult result, this.marker) : super.wrap(result);
+  _FileHitTestResult(BoxHitTestResult super.result, this.marker) : super.wrap();
 
   final HitTestTarget marker;
 

@@ -322,8 +322,10 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
               Widget itemBuilder(BuildContext context, int index) =>
                   _row(ordered[index], ordered);
               final width = widget.details
-                  ? math.max(constraints.maxWidth,
-                      640.0 * scale + 2 * widget.horizontalPadding)
+                  ? math.max(
+                      constraints.maxWidth,
+                      640.0 * scale + 2 * widget.horizontalPadding,
+                    )
                   : constraints.maxWidth;
               return Scrollbar(
                 controller: _horizontal,
@@ -345,8 +347,9 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
                           : Align(
                               alignment: AlignmentDirectional.topStart,
                               child: SizedBox(
-                                  width: constraints.maxWidth,
-                                  child: widget.header),
+                                width: constraints.maxWidth,
+                                child: widget.header,
+                              ),
                             ),
                       footer: widget.footer,
                       slivers: [
@@ -355,7 +358,8 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
                         if (widget.draft != null)
                           SliverToBoxAdapter(child: widget.draft),
                         SliverToBoxAdapter(
-                            child: SizedBox(key: _contentOrigin)),
+                          child: SizedBox(key: _contentOrigin),
+                        ),
                         if (ordered.isEmpty)
                           SliverFillRemaining(
                             hasScrollBody: false,

@@ -45,8 +45,10 @@ void main() {
     expect(find.matches, hasLength(7));
     expect(find.matches.first.id, dashboardFindTitle);
     expect(find.matches.first.entry.replaceable, isFalse);
-    expect(find.matches.map((hit) => hit.id),
-        contains(dashboardFindWidget('button', 'label')));
+    expect(
+      find.matches.map((hit) => hit.id),
+      contains(dashboardFindWidget('button', 'label')),
+    );
     find.setQuery('private_token');
     expect(find.matches, isEmpty);
     expect(dashboard.document, same(_document));
@@ -65,17 +67,23 @@ void main() {
     find.replacementController.text = 'thread';
     find.replaceAll();
     expect(dashboard.document.subtitle, 'thread subtitle');
-    expect(dashboard.document.widgetById('note')!.setting('text'),
-        'thread thread');
-    expect(dashboard.document.widgetById('note')!.setting('token'),
-        'private_token');
+    expect(
+      dashboard.document.widgetById('note')!.setting('text'),
+      'thread thread',
+    );
+    expect(
+      dashboard.document.widgetById('note')!.setting('token'),
+      'private_token',
+    );
     expect(find.matches.single.id, dashboardFindTitle);
     dashboard.undo();
     expect(dashboard.document, _document);
     expect(dashboard.canUndo, isFalse);
     dashboard.redo();
-    expect(dashboard.document.widgetById('note')!.setting('text'),
-        'thread thread');
+    expect(
+      dashboard.document.widgetById('note')!.setting('text'),
+      'thread thread',
+    );
     dashboard.setReadOnly(true, notify: false);
     final before = dashboard.document;
     find.setQuery('thread');
@@ -117,10 +125,11 @@ void main() {
     find.open();
     find.setQuery('needle');
     expect(
-        find.matches
-            .where((hit) => hit.id == id)
-            .every((hit) => !hit.entry.replaceable),
-        isTrue);
+      find.matches
+          .where((hit) => hit.id == id)
+          .every((hit) => !hit.entry.replaceable),
+      isTrue,
+    );
     find.close();
     find.unwatchDraft(id, enlarged);
     find.open();
@@ -131,9 +140,11 @@ void main() {
 
   test('presentation can find collapsed text without changing the document',
       () {
-    final document = _document.copyWith(sections: [
-      _document.sections.single.copyWith(collapsed: true),
-    ]);
+    final document = _document.copyWith(
+      sections: [
+        _document.sections.single.copyWith(collapsed: true),
+      ],
+    );
     final dashboard = DashboardController(
       viewId: '',
       document: document,

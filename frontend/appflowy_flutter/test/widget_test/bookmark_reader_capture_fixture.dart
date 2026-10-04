@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_reading_session.dart';
-import 'package:appflowy/workspace/application/collections/bookmark/bookmark_service.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_snapshot.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -43,8 +42,7 @@ class BookmarkReaderCaptureFixture {
 /// Records work start, publishes busy changes and rechecks the supplied live
 /// guard after the save gate before returning a receipt. No metadata/disk IO.
 class ReaderCaptureTestController extends BookmarkController {
-  ReaderCaptureTestController({required BookmarkService service})
-      : super(service: service);
+  ReaderCaptureTestController({required super.service});
 
   final refreshes = <String>[];
   final captureSaves = <String>[];

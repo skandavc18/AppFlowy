@@ -264,8 +264,13 @@ abstract final class Rough {
       final clipped = _clipToPath(shape, a, b);
       for (final segment in clipped) {
         result.addPath(
-          line(segment.$1, segment.$2, random,
-              roughness: roughness * 0.6, passes: 1),
+          line(
+            segment.$1,
+            segment.$2,
+            random,
+            roughness: roughness * 0.6,
+            passes: 1,
+          ),
           Offset.zero,
         );
       }

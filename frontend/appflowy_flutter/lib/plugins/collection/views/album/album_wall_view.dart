@@ -44,72 +44,74 @@ class AlbumWallView extends StatelessWidget {
     return AlbumHost(
       collection: collection,
       builder: (context, controller, palette) => _background(
-          context,
-          controller,
-          palette,
-          AlbumScaffold(
-            sliverBody: true,
-            scrollKey: PageStorageKey(
-                'album-wall-${collection.collectionView.id}-${layout.name}'),
+        context,
+        controller,
+        palette,
+        AlbumScaffold(
+          sliverBody: true,
+          scrollKey: PageStorageKey(
+            'album-wall-${collection.collectionView.id}-${layout.name}',
+          ),
+          controller: controller,
+          palette: palette,
+          leading: albumArrangementControls(
+            context: context,
             controller: controller,
             palette: palette,
-            leading: albumArrangementControls(
-              context: context,
-              controller: controller,
-              palette: palette,
-              showGrouping: layout == AlbumWallLayout.timeline,
-            ),
-            trailing: [
-              if (controller.isReadingMetadata)
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: palette.textMuted,
-                    ),
+            showGrouping: layout == AlbumWallLayout.timeline,
+          ),
+          trailing: [
+            if (controller.isReadingMetadata)
+              Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: palette.textMuted,
                   ),
                 ),
-              AlbumToolbarButton(
-                palette: palette,
-                icon: Icons.title_rounded,
-                tooltip: LocaleKeys.collections_album_showNames.tr(),
-                selected: controller.settings.showNames,
-                onPressed: () => controller.updateSettings(
-                  controller.settings
-                      .copyWith(showNames: !controller.settings.showNames),
-                ),
               ),
-              AlbumToolbarButton(
-                palette: palette,
-                icon: Icons.slideshow_rounded,
-                tooltip: LocaleKeys.collections_album_playSlideshow.tr(),
-                onPressed: controller.visual.isEmpty
-                    ? null
-                    : () => _open(
-                          context,
-                          controller,
-                          palette,
-                          controller.visual.first.id,
-                          slideshow: true,
-                        ),
+            AlbumToolbarButton(
+              palette: palette,
+              icon: Icons.title_rounded,
+              tooltip: LocaleKeys.collections_album_showNames.tr(),
+              selected: controller.settings.showNames,
+              onPressed: () => controller.updateSettings(
+                controller.settings
+                    .copyWith(showNames: !controller.settings.showNames),
               ),
-            ],
-            child: controller.isEmpty
-                ? SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: AlbumEmptyState(
-                      palette: palette,
-                      icon: Icons.photo_library_rounded,
-                      title: LocaleKeys.collections_album_emptyTitle.tr(),
-                      description:
-                          LocaleKeys.collections_album_emptyDescription.tr(),
-                    ),
-                  )
-                : _buildWall(context, controller, palette),
-          )),
+            ),
+            AlbumToolbarButton(
+              palette: palette,
+              icon: Icons.slideshow_rounded,
+              tooltip: LocaleKeys.collections_album_playSlideshow.tr(),
+              onPressed: controller.visual.isEmpty
+                  ? null
+                  : () => _open(
+                        context,
+                        controller,
+                        palette,
+                        controller.visual.first.id,
+                        slideshow: true,
+                      ),
+            ),
+          ],
+          child: controller.isEmpty
+              ? SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AlbumEmptyState(
+                    palette: palette,
+                    icon: Icons.photo_library_rounded,
+                    title: LocaleKeys.collections_album_emptyTitle.tr(),
+                    description:
+                        LocaleKeys.collections_album_emptyDescription.tr(),
+                  ),
+                )
+              : _buildWall(context, controller, palette),
+        ),
+      ),
     );
   }
 
@@ -309,7 +311,8 @@ class _AlbumMasonry extends StatelessWidget {
             columns;
         return SliverMasonryGrid(
           gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns),
+            crossAxisCount: columns,
+          ),
           mainAxisSpacing: AlbumMetrics.spacing,
           crossAxisSpacing: AlbumMetrics.spacing,
           delegate: SliverChildBuilderDelegate(

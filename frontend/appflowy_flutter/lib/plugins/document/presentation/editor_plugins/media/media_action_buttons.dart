@@ -87,10 +87,12 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
           ancestor = ancestor.parent) {
         if (ancestor is RenderAbstractViewport && ancestor is RenderBox) {
           final viewport = ancestor as RenderBox;
-          visible = visible.intersect(MatrixUtils.transformRect(
-            viewport.getTransformTo(null),
-            Offset.zero & viewport.size,
-          ));
+          visible = visible.intersect(
+            MatrixUtils.transformRect(
+              viewport.getTransformTo(null),
+              Offset.zero & viewport.size,
+            ),
+          );
           if (visible.isEmpty) return;
         }
       }
@@ -563,10 +565,12 @@ class _MediaFeedbackRenderBox extends RenderProxyBox {
       rect = MatrixUtils.transformRect(
         target.getTransformTo(this),
         rect ?? target.paintBounds,
-      ).expandToInclude(MatrixUtils.transformRect(
-        badge.getTransformTo(this),
-        badge.paintBounds,
-      ));
+      ).expandToInclude(
+        MatrixUtils.transformRect(
+          badge.getTransformTo(this),
+          badge.paintBounds,
+        ),
+      );
       descendant = this;
     }
     super.showOnScreen(

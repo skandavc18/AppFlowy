@@ -222,9 +222,9 @@ Future<({double distance, Rect viewport})> _runSample(
     expect(
       pagePosition.physics.applyPhysicsToUserOffset(pagePosition, 100),
       closeTo(
-          100 *
-              const PremiumScrollPhysicsConfig().desktopDirectManipulationScale,
-          0.001),
+        100 * const PremiumScrollPhysicsConfig().desktopDirectManipulationScale,
+        0.001,
+      ),
       reason: 'FlowyOverlay must retain the production premium scroll policy.',
     );
     expect(counts.csvMounts, greaterThan(0));
@@ -322,7 +322,9 @@ Future<({double distance, Rect viewport})> _runSample(
     );
     if (defer) {
       expect(
-          afterIdle['total_mounts']!, greaterThan(beforeIdle['total_mounts']!));
+        afterIdle['total_mounts']!,
+        greaterThan(beforeIdle['total_mounts']!),
+      );
     }
     for (final key in [reportKey, '${reportKey}_mount', '${reportKey}_idle']) {
       final timings = binding.reportData![key] as Map<String, dynamic>;
@@ -539,11 +541,12 @@ Future<Map<String, dynamic>> _checkCoarseTrackpadCadence(
         expect(
           distance,
           closeTo(
-              updates *
-                  delta *
-                  const PremiumScrollPhysicsConfig()
-                      .desktopDirectManipulationScale,
-              0.1),
+            updates *
+                delta *
+                const PremiumScrollPhysicsConfig()
+                    .desktopDirectManipulationScale,
+            0.1,
+          ),
         );
         expect(counts.totalMounts, mounts);
         expect(position.isScrollingNotifier.value, isFalse);
@@ -673,9 +676,11 @@ Future<Map<String, dynamic>> _checkNativeCoast(
         expect(observedCoast, isTrue);
         expect(distance, greaterThan(100));
         expect(
-            distance,
-            lessThanOrEqualTo(
-                expectedVelocity / config.desktopCoastFriction + 0.1));
+          distance,
+          lessThanOrEqualTo(
+            expectedVelocity / config.desktopCoastFriction + 0.1,
+          ),
+        );
         expect(counts.totalMounts, mounts);
         result
           ..['direct_distance'] = releasedAt - start
@@ -953,7 +958,9 @@ class _PaintProbe extends SingleChildRenderObjectWidget {
 
   @override
   void updateRenderObject(
-      BuildContext context, _RenderPaintProbe renderObject) {
+    BuildContext context,
+    _RenderPaintProbe renderObject,
+  ) {
     renderObject
       ..counts = counts
       ..id = id;
@@ -1006,7 +1013,9 @@ Rect _checkGeometry(_Counts counts, {required bool defer}) {
       defer,
     );
     expect(
-        context.findAncestorWidgetOfExactType<PageEmbedLoadScope>(), isNotNull);
+      context.findAncestorWidgetOfExactType<PageEmbedLoadScope>(),
+      isNotNull,
+    );
     expect(
       context.findAncestorWidgetOfExactType<ScrollGestureGate>()?.blocked,
       isTrue,
@@ -1028,7 +1037,8 @@ Future<void> _settlePreviews(
     final remaining = deadline.difference(DateTime.now());
     if (remaining <= Duration.zero) {
       throw TimeoutException(
-          'Preview admission/native loading did not settle.');
+        'Preview admission/native loading did not settle.',
+      );
     }
     await tester.pumpAndSettle(
       _settleInterval,

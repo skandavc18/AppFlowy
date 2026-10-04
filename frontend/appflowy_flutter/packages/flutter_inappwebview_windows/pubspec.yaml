@@ -1,6 +1,8 @@
 name: flutter_inappwebview_windows
 description: Windows implementation of the flutter_inappwebview plugin.
 version: 0.6.0
+# Vendored copy with a path dependency; it is never published.
+publish_to: none
 homepage: https://inappwebview.dev/
 repository: https://github.com/pichillilorenzo/flutter_inappwebview/tree/master/flutter_inappwebview_windows
 issue_tracker: https://github.com/pichillilorenzo/flutter_inappwebview/issues

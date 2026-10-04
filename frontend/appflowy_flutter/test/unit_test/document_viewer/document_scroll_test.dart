@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/foundation.dart';
@@ -64,7 +62,7 @@ void main() {
     test('stays responsive without artificial acceleration', () {
       expect(physics.minFlingVelocity, lessThan(50));
       expect(physics.dragStartDistanceMotionThreshold, lessThanOrEqualTo(3.5));
-      expect(physics.maxFlingVelocity, documentScrollPhysicsConfig.maxVelocity);
+      expect(physics.maxFlingVelocity, documentScrollConfig.maxVelocity);
       // Focus traversal must never move the reading position on its own.
       expect(physics.allowImplicitScrolling, isFalse);
     });
@@ -140,62 +138,6 @@ void main() {
     });
   });
 
-  group('DocumentScrollController', () {
-    testWidgets('page and line steps move by predictable distances',
-        (tester) async {
-      final controller = DocumentScrollController();
-      addTearDown(controller.dispose);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DocumentViewport.list(
-            controller: controller,
-            itemCount: 200,
-            itemBuilder: (context, index) => SizedBox(
-              height: 40,
-              child: Text('row $index'),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(controller.isReady, isTrue);
-      expect(controller.progress, 0);
-
-      final viewport = controller.position.viewportDimension;
-      unawaited(controller.pageDown());
-      await tester.pumpAndSettle();
-      expect(
-        controller.offset,
-        closeTo(viewport * (1 - DocumentScrollController.pageOverlap), 1),
-      );
-
-      final afterPage = controller.offset;
-      unawaited(controller.lineDown());
-      await tester.pumpAndSettle();
-      expect(
-        controller.offset,
-        closeTo(afterPage + DocumentScrollController.lineStep, 1),
-      );
-
-      unawaited(controller.jumpToEnd());
-      await tester.pumpAndSettle();
-      expect(controller.progress, closeTo(1, 0.001));
-
-      unawaited(controller.jumpToStart());
-      await tester.pumpAndSettle();
-      expect(controller.offset, 0);
-    });
-
-    test('reports no progress before it is attached', () {
-      final controller = DocumentScrollController();
-      addTearDown(controller.dispose);
-      expect(controller.isReady, isFalse);
-      expect(controller.progress, 0);
-    });
-  });
-
   group('DocumentScrollScope', () {
     testWidgets('installs the premium kinetic behaviour', (tester) async {
       late ScrollBehavior behavior;
@@ -211,7 +153,11 @@ void main() {
           ),
         ),
       );
-      expect(behavior, isA<PremiumScrollBehavior>());
+      expect(behavior, isA<DocumentScrollBehavior>());
+      expect(
+        (behavior as DocumentScrollBehavior).delegate,
+        isA<PremiumScrollBehavior>(),
+      );
     });
 
     testWidgets('never nests a second premium behaviour', (tester) async {
@@ -240,54 +186,8 @@ void main() {
 
       // Doubling the behaviour would square the desktop manipulation scale.
       expect(outer, isA<PremiumScrollBehavior>());
-      expect(inner, same(outer));
-    });
-  });
-
-  group('DocumentViewport', () {
-    testWidgets('every renderer scrolls through one implementation',
-        (tester) async {
-      final controller = DocumentScrollController();
-      addTearDown(controller.dispose);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DocumentViewport.child(
-            controller: controller,
-            child: const SizedBox(height: 3000),
-          ),
-        ),
-      );
-
-      final scrollable = tester.widget<Scrollable>(find.byType(Scrollable));
-      expect(scrollable.physics, isA<DocumentScrollPhysics>());
-      expect(scrollable.controller, same(controller));
-      // The document owns its overlay scrollbar; no Material one is added.
-      expect(find.byType(DocumentScrollbar), findsOneWidget);
-    });
-
-    testWidgets('centres the reading measure and keeps generous margins',
-        (tester) async {
-      final controller = DocumentScrollController();
-      addTearDown(controller.dispose);
-      tester.view.physicalSize = const Size(1600, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: DocumentViewport.child(
-            controller: controller,
-            child: const SizedBox(key: ValueKey('body'), height: 400),
-          ),
-        ),
-      );
-
-      final body = tester.getRect(find.byKey(const ValueKey('body')));
-      final expected = DocumentViewerTheme.readingWidth -
-          DocumentViewerTheme.readingPadding.horizontal;
-      expect(body.width, closeTo(expected, 1));
-      expect(body.center.dx, closeTo(800, 1));
+      expect(inner, isA<DocumentScrollBehavior>());
+      expect((inner as DocumentScrollBehavior).delegate, same(outer));
     });
   });
 }

@@ -30,11 +30,12 @@ import 'dashboard_find.dart';
 /// Default previews lend only typed, painted body values, never their title,
 /// cover, loading face or the unseen remainder of their target document.
 class DashboardFindEmbed extends StatefulWidget {
-  const DashboardFindEmbed(
-      {super.key,
-      required this.dashboard,
-      required this.spec,
-      required this.child});
+  const DashboardFindEmbed({
+    super.key,
+    required this.dashboard,
+    required this.spec,
+    required this.child,
+  });
   final DashboardController dashboard;
   final DashboardWidgetSpec spec;
   final Widget child;
@@ -120,8 +121,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
             (hit.id as DashboardEmbedFindId, hit.range.start, hit.range.end),
       ]);
     if (!_queryActive &&
-        (_provider != null || _authorized || _loading || _failed))
+        (_provider != null || _authorized || _loading || _failed)) {
       _invalidate();
+    }
     _observe();
   }
 
@@ -236,8 +238,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
     _publishedRanges.clear();
     _beginValidation();
     _stamp = const [];
-    if (hadData)
+    if (hadData) {
       _render?.configure('', const FindOptions(), -1, true, _brightness);
+    }
     // Access changes must remove snippets immediately. Build-time changes are
     // deferred only for notification, never for the revoked delegate entries.
     if (hadData) _find?.revokeEmbed(widgetId);
@@ -287,7 +290,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
       }
       if (child is DatabaseFindAnchor ||
           child is AppChart ||
-          child is SurfaceFindExclude) return;
+          child is SurfaceFindExclude) {
+        return;
+      }
       if (child is FolderGalleryFindScope) {
         tokens.add((element, child.snapshotToken));
         return;
@@ -327,8 +332,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
       try {
         final beforeOwner =
             owner.isEmpty ? null : await _allowed(owner, generation);
-        if (!_live(generation) || (owner.isNotEmpty && beforeOwner == null))
+        if (!_live(generation) || (owner.isNotEmpty && beforeOwner == null)) {
           return;
+        }
         final before = await _allowed(source, generation);
         if (!_live(generation) ||
             before == null ||
@@ -339,8 +345,10 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
               ViewLayoutPB.Document,
               ViewLayoutPB.Grid,
               ViewLayoutPB.Board,
-              ViewLayoutPB.Calendar
-            ].contains(before.layout)) return;
+              ViewLayoutPB.Calendar,
+            ].contains(before.layout)) {
+          return;
+        }
         // No secondary text I/O: the existing renderer supplies its real draft
         // and visible membership. A second gate rejects revocation/revision
         // changes while authorization was outstanding.
@@ -351,7 +359,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
             !_same(before, after) ||
             (owner.isNotEmpty && !_same(beforeOwner, afterOwner)) ||
             !identical(document, widget.dashboard.document) ||
-            revision != widget.dashboard.refreshToken) return;
+            revision != widget.dashboard.refreshToken) {
+          return;
+        }
         _allowedView = folderGalleryFindViewToken(before);
         _authorized = true;
         _syncDocuments();
@@ -402,19 +412,20 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
     void visit(Element element) {
       if (--remaining < 0) return;
       final child = element.widget;
-      if (child is SurfaceFindExclude || child is FolderGalleryFindScope)
+      if (child is SurfaceFindExclude || child is FolderGalleryFindScope) {
         return;
+      }
       if (child is AppFlowyEditor) {
         final editor = child.editorState;
         if (editor.isDisposed) return;
         final session = _documents.putIfAbsent(
+          editor,
+          () => DocumentFindSession(
             editor,
-            () => DocumentFindSession(
-                  editor,
-                  readOnlyProjection: true,
-                  isOwnerActive: () =>
-                      _authorized && _eligible && _snapshotCurrent,
-                )..addListener(_documentChanged));
+            readOnlyProjection: true,
+            isOwnerActive: () => _authorized && _eligible && _snapshotCurrent,
+          )..addListener(_documentChanged),
+        );
         session.search(_find!.query, _find!.options);
         return;
       }
@@ -426,7 +437,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
 
   bool _documentOwnsMatch(SurfaceFindTextRun run, RegExpMatch match) {
     final owned = _documentRuns.putIfAbsent(
-        (run.render, run.text, run.start), () => _rangesForRun(run));
+      (run.render, run.text, run.start),
+      () => _rangesForRun(run),
+    );
     return owned?.contains((run.start + match.start, run.start + match.end)) ??
         false;
   }
@@ -452,7 +465,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
       final session = entry.value;
       if (!session.isActive ||
           session.query != _find?.query ||
-          session.options != _find?.options) continue;
+          session.options != _find?.options) {
+        continue;
+      }
       final roots = <Object, RenderObject?>{};
       for (final result in session.matches) {
         SurfaceFindWork.record('documentMatchCheck');
@@ -469,7 +484,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
         final root = roots[node];
         if (root != null) {
           final owned = ranges.putIfAbsent(
-              root, () => (result.match.input, <(int, int)>{}));
+            root,
+            () => (result.match.input, <(int, int)>{}),
+          );
           owned.$2.add((result.match.start, result.match.end));
         }
       }
@@ -488,12 +505,16 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
       if (child is SurfaceFindExclude ||
           child is AppFlowyEditor ||
           child is DatabaseFindAnchor ||
-          child is FolderGalleryFindScope) return;
+          child is FolderGalleryFindScope) {
+        return;
+      }
       if (child is FolderGalleryFindText) {
         final render = element.findRenderObject();
         if (child.enabled &&
             render != null &&
-            surfaceFindRenderAvailable(render)) roots.add(render);
+            surfaceFindRenderAvailable(render)) {
+          roots.add(render);
+        }
         return;
       }
       element.visitChildElements(previewText);
@@ -520,8 +541,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
           (widget.spec.type == 'chart' && child is AppChart);
       if (owns) {
         final render = element.findRenderObject();
-        if (render != null && surfaceFindRenderAvailable(render))
+        if (render != null && surfaceFindRenderAvailable(render)) {
           roots.add(render);
+        }
         return;
       }
       element.visitChildElements(visit);
@@ -535,12 +557,19 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
       RegExp(r'\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+', caseSensitive: false);
 
   bool _acceptMatch(SurfaceFindTextRun run, RegExpMatch match) {
-    if (!_authorized || !_eligible || !surfaceFindRenderAvailable(run.render))
+    if (!_authorized || !_eligible || !surfaceFindRenderAvailable(run.render)) {
       return false;
+    }
     if (!_validRuns.putIfAbsent(
-        (run.render, run.text, run.start), () => _acceptRun(run))) return false;
-    final urls = _runUrls.putIfAbsent((run.render, run.text, run.start),
-        () => _urls.allMatches(run.text).toList());
+      (run.render, run.text, run.start),
+      () => _acceptRun(run),
+    )) {
+      return false;
+    }
+    final urls = _runUrls.putIfAbsent(
+      (run.render, run.text, run.start),
+      () => _urls.allMatches(run.text).toList(),
+    );
     var lo = 0;
     var hi = urls.length;
     while (lo < hi) {
@@ -566,7 +595,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
     if (run.start + run.text.length > liveText.length ||
         liveText.substring(run.start, run.start + run.text.length) !=
             run.text ||
-        looksSealed(run.text.trimLeft())) return false;
+        looksSealed(run.text.trimLeft())) {
+      return false;
+    }
     return true;
   }
 
@@ -590,8 +621,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
         run.start != 0 ||
         match.start < projection.contentStart ||
         projection.contentStart > run.text.length ||
-        looksSealed(run.text.substring(projection.contentStart).trimLeft()))
+        looksSealed(run.text.substring(projection.contentStart).trimLeft())) {
       return false;
+    }
 
     // RenderParagraph can return just the visible prefix of a long selection.
     // Require every non-whitespace grapheme to have native boxes; this also
@@ -599,8 +631,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
     var offset = match.start;
     for (final cluster in match.group(0)!.characters) {
       final end = offset + cluster.length;
-      if (cluster.trim().isNotEmpty && run.boxes(offset, end).isEmpty)
+      if (cluster.trim().isNotEmpty && run.boxes(offset, end).isEmpty) {
         return false;
+      }
       offset = end;
     }
     final boxes = run.boxes(match.start, match.end);
@@ -609,7 +642,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
     var hasVisibleBox = false;
     for (final box in boxes) {
       final actual = MatrixUtils.transformRect(
-          run.render.getTransformTo(host), box.toRect());
+        run.render.getTransformTo(host),
+        box.toRect(),
+      );
       if (!actual.isFinite || actual.isEmpty) continue;
       hasVisibleBox = true;
       var visible = actual.intersect(Offset.zero & host.size);
@@ -620,7 +655,8 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
         final clip = parent.describeApproximatePaintClip(child);
         if (clip != null) {
           visible = visible.intersect(
-              MatrixUtils.transformRect(parent.getTransformTo(host), clip));
+            MatrixUtils.transformRect(parent.getTransformTo(host), clip),
+          );
         }
         child = parent;
       }
@@ -628,7 +664,9 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
           visible.left > actual.left + 0.1 ||
           visible.top > actual.top + 0.1 ||
           visible.right < actual.right - 0.1 ||
-          visible.bottom < actual.bottom - 0.1) return false;
+          visible.bottom < actual.bottom - 0.1) {
+        return false;
+      }
     }
     return hasVisibleBox;
   }
@@ -649,10 +687,17 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
       if (looksSealed(run.text.trimLeft())) continue;
       if (entries.length >= limits.maxEntries ||
           run.text.length > limits.maxBytes ||
-          (bytes += utf8.encode(run.text).length) > limits.maxBytes) break;
+          (bytes += utf8.encode(run.text).length) > limits.maxBytes) {
+        break;
+      }
       final id = DashboardEmbedFindId(widgetId, run.render, run.start);
-      entries.add(DashboardEmbedFindEntry(
-          id, run.text, (match) => _acceptMatch(run, match)));
+      entries.add(
+        DashboardEmbedFindEntry(
+          id,
+          run.text,
+          (match) => _acceptMatch(run, match),
+        ),
+      );
       stamp.addAll([id, run.text]);
       if (pattern != null) {
         for (final match in matchesOfPattern(run.text, pattern)) {
@@ -664,8 +709,11 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
     _entries = entries;
     _entryText
       ..clear()
-      ..addEntries(entries.map(
-          (entry) => MapEntry(entry.id as DashboardEmbedFindId, entry.text)));
+      ..addEntries(
+        entries.map(
+          (entry) => MapEntry(entry.id as DashboardEmbedFindId, entry.text),
+        ),
+      );
     _stamp = stamp;
     _find?.embedChanged();
   }
@@ -715,9 +763,11 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
         ? -1
         : controller.matches
             .take(controller.currentIndex)
-            .where((match) =>
-                match.id is DashboardEmbedFindId &&
-                (match.id as DashboardEmbedFindId).widgetId == widgetId)
+            .where(
+              (match) =>
+                  match.id is DashboardEmbedFindId &&
+                  (match.id as DashboardEmbedFindId).widgetId == widgetId,
+            )
             .length;
     return SurfaceFindHighlight(
       key: _key,
@@ -733,11 +783,13 @@ class _DashboardFindEmbedState extends State<DashboardFindEmbed>
               run.text,
       canHighlightMatch: (run, match) =>
           _acceptMatch(run, match) &&
-          _publishedRanges.contains((
-            DashboardEmbedFindId(widgetId, run.render, run.start),
-            match.start,
-            match.end
-          )),
+          _publishedRanges.contains(
+            (
+              DashboardEmbedFindId(widgetId, run.render, run.start),
+              match.start,
+              match.end
+            ),
+          ),
       child: NotificationListener<ScrollNotification>(
         onNotification: (_) {
           if (_queryActive) {

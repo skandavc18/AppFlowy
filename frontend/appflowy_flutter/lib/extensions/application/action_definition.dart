@@ -181,7 +181,10 @@ sealed class ActionStep {
     }
     if (values['document'] is Map) {
       return DocumentStep.fromJson(
-          id: id, when: when, values: body('document'));
+        id: id,
+        when: when,
+        values: body('document'),
+      );
     }
     if (values['script'] is Map) {
       final script = body('script');

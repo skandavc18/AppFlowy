@@ -549,7 +549,8 @@ class _AstrologyPlaceDropdownState extends State<AstrologyPlaceDropdown>
                                   if (onManualEntry != null)
                                     TextButton.icon(
                                       key: const ValueKey(
-                                          'astrology-place-manual'),
+                                        'astrology-place-manual',
+                                      ),
                                       onPressed: () {
                                         if (mounted &&
                                             _attached &&
@@ -571,7 +572,8 @@ class _AstrologyPlaceDropdownState extends State<AstrologyPlaceDropdown>
                                         color: palette.accent,
                                       ),
                                       label: const Text(
-                                          'Enter coordinates manually'),
+                                        'Enter coordinates manually',
+                                      ),
                                     ),
                                 ],
                               ),

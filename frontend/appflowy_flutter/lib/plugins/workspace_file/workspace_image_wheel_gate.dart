@@ -38,11 +38,13 @@ class _ImageWheelGate extends RenderProxyBox {
           } else if (entry is BoxHitTestEntry) {
             result.add(BoxHitTestEntry(entry.target, entry.localPosition));
           } else if (entry is SliverHitTestEntry) {
-            result.add(SliverHitTestEntry(
-              entry.target,
-              mainAxisPosition: entry.mainAxisPosition,
-              crossAxisPosition: entry.crossAxisPosition,
-            ));
+            result.add(
+              SliverHitTestEntry(
+                entry.target,
+                mainAxisPosition: entry.mainAxisPosition,
+                crossAxisPosition: entry.crossAxisPosition,
+              ),
+            );
           } else {
             result.add(HitTestEntry(entry.target));
           }
