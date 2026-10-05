@@ -791,7 +791,10 @@ class _TrendPainter extends CustomPainter {
         final point = Offset(x, geometry.y(value));
         canvas
           ..drawCircle(
-              point, 7, Paint()..color = line.color.withValues(alpha: 0.2))
+            point,
+            7,
+            Paint()..color = line.color.withValues(alpha: 0.2),
+          )
           ..drawCircle(point, 4.2, Paint()..color = palette.surface)
           ..drawCircle(point, 3, Paint()..color = line.color);
       }
@@ -1198,7 +1201,9 @@ List<Rect> squarify(List<double> values, Rect bounds) {
     }
     final square = side * side;
     return math.max(
-        square * largest / (sum * sum), sum * sum / (square * smallest));
+      square * largest / (sum * sum),
+      sum * sum / (square * smallest),
+    );
   }
 
   while (start < values.length) {
@@ -1346,7 +1351,10 @@ class _TreemapCell extends StatelessWidget {
                   end: Alignment.bottomRight,
                   colors: [
                     Color.lerp(
-                        item.color, Colors.white, hovered ? 0.16 : 0.08)!,
+                      item.color,
+                      Colors.white,
+                      hovered ? 0.16 : 0.08,
+                    )!,
                     item.color,
                   ],
                 ),
@@ -1862,7 +1870,9 @@ class _PayoffPainter extends CustomPainter {
     final points = [
       for (var index = 0; index < samples.prices.length; index++)
         Offset(
-            samples.x(samples.prices[index]), grown(samples.atExpiry[index])),
+          samples.x(samples.prices[index]),
+          grown(samples.atExpiry[index]),
+        ),
     ];
     final line = Path()..moveTo(points.first.dx, points.first.dy);
     for (final point in points.skip(1)) {
@@ -1980,7 +1990,10 @@ class _PayoffPainter extends CustomPainter {
       final point = Offset(samples.x(breakeven), zero);
       canvas
         ..drawCircle(
-            point, chart.compact ? 3 : 4.5, Paint()..color = palette.surface)
+          point,
+          chart.compact ? 3 : 4.5,
+          Paint()..color = palette.surface,
+        )
         ..drawCircle(
           point,
           chart.compact ? 3 : 4.5,

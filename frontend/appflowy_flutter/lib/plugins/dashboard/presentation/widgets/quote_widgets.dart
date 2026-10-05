@@ -636,7 +636,7 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                             alignment: Alignment.topLeft,
                             children: [
                               ...previous,
-                              if (current != null) current
+                              if (current != null) current,
                             ],
                           ),
                           transitionBuilder: (child, animation) =>
@@ -652,7 +652,8 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                           ),
                           child: _FittedQuote(
                             key: ValueKey(
-                                '${quote.rowId}|$index|${quote.text.hashCode}'),
+                              '${quote.rowId}|$index|${quote.text.hashCode}',
+                            ),
                             quote: quote,
                             color: data.tone.ink,
                             hue: hue,

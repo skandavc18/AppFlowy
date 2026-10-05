@@ -94,8 +94,11 @@ class FinanceColors {
   }
 
   /// A soft coloured lift under something in [color].
-  List<BoxShadow> glow(Color color,
-      {double strength = 1, bool lifted = false}) {
+  List<BoxShadow> glow(
+    Color color, {
+    double strength = 1,
+    bool lifted = false,
+  }) {
     if (isDark) {
       return [
         BoxShadow(

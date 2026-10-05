@@ -180,7 +180,7 @@ void main() {
       expect(
         () => parseNseChain(
           {
-            'records': {'data': []}
+            'records': {'data': []},
           },
           underlying: 'NIFTY',
           expiry: DateTime(2026, 10, 6),
@@ -256,7 +256,7 @@ void main() {
         symbols: const {},
         chains: {
           ChainRequest('nifty'),
-          ChainRequest('NIFTY', DateTime(2026, 10, 13))
+          ChainRequest('NIFTY', DateTime(2026, 10, 13)),
         },
       );
       await provider.refresh();

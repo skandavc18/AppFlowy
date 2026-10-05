@@ -166,7 +166,10 @@ class _Trend extends StatelessWidget {
       builder: (context, feed) {
         if (!feed.bound) {
           return _pickTable(
-              data, FinanceGhostShape.line, Icons.show_chart_rounded);
+            data,
+            FinanceGhostShape.line,
+            Icons.show_chart_rounded,
+          );
         }
         if (feed.loading) {
           return _loading(data, context);
@@ -180,7 +183,10 @@ class _Trend extends StatelessWidget {
         );
         if (series.length < 2) {
           return _pickTable(
-              data, FinanceGhostShape.line, Icons.show_chart_rounded);
+            data,
+            FinanceGhostShape.line,
+            Icons.show_chart_rounded,
+          );
         }
         final span = _rangeSpan(_rangeOf(data));
         // A history shown whole is counted from its start; a range only
@@ -199,7 +205,7 @@ class _Trend extends StatelessWidget {
         final roles = [
           SeriesRoles.date,
           SeriesRoles.value,
-          SeriesRoles.baseline
+          SeriesRoles.baseline,
         ];
         final valueName =
             _columnName(feed.table, roles, SeriesRoles.value, settings);
@@ -928,7 +934,10 @@ class _PnlCalendarState extends State<_PnlCalendar> {
       builder: (context, feed) {
         if (!feed.bound) {
           return _pickTable(
-              data, FinanceGhostShape.grid, Icons.calendar_month_rounded);
+            data,
+            FinanceGhostShape.grid,
+            Icons.calendar_month_rounded,
+          );
         }
         if (feed.loading) {
           return _loading(data, context);
@@ -936,7 +945,10 @@ class _PnlCalendarState extends State<_PnlCalendar> {
         final daily = _dailyPnl(feed.table, data.spec.settings);
         if (daily.isEmpty) {
           return _pickTable(
-              data, FinanceGhostShape.grid, Icons.calendar_month_rounded);
+            data,
+            FinanceGhostShape.grid,
+            Icons.calendar_month_rounded,
+          );
         }
         final money = financeMoney(data);
         final latest = daily.last!.time;
@@ -1130,7 +1142,10 @@ class _PnlStats extends StatelessWidget {
       builder: (context, feed) {
         if (!feed.bound) {
           return _pickTable(
-              data, FinanceGhostShape.bars, Icons.insights_rounded);
+            data,
+            FinanceGhostShape.bars,
+            Icons.insights_rounded,
+          );
         }
         if (feed.loading) {
           return _loading(data, context);
@@ -1138,7 +1153,10 @@ class _PnlStats extends StatelessWidget {
         final stats = PnlStats.of(_dailyPnl(feed.table, data.spec.settings));
         if (stats.isEmpty) {
           return _pickTable(
-              data, FinanceGhostShape.bars, Icons.insights_rounded);
+            data,
+            FinanceGhostShape.bars,
+            Icons.insights_rounded,
+          );
         }
         final money = financeMoney(data);
         final winRate = stats.winRate ?? 0;
@@ -1215,8 +1233,11 @@ class _PnlStats extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              formatPercent(winRate,
-                                  decimals: 0, signed: false),
+                              formatPercent(
+                                winRate,
+                                decimals: 0,
+                                signed: false,
+                              ),
                               style: financeNumber(
                                 palette.textPrimary,
                                 size: 22,

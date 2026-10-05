@@ -140,7 +140,9 @@ void main() {
       expect(slices.length, 4);
       expect(slices.last.isOther, isTrue);
       expect(
-          slices.fold<double>(0, (sum, s) => sum + s.share), closeTo(1, 1e-9));
+        slices.fold<double>(0, (sum, s) => sum + s.share),
+        closeTo(1, 1e-9),
+      );
     });
 
     test('annualises a return from dated cash flows', () {
@@ -322,7 +324,7 @@ void main() {
         '',
         day(expiry),
         'Open',
-        '110000'
+        '110000',
       ],
       [
         'Condor',
@@ -336,7 +338,7 @@ void main() {
         '',
         day(expiry),
         'Open',
-        ''
+        '',
       ],
       [
         'Condor',
@@ -350,7 +352,7 @@ void main() {
         '',
         day(expiry),
         'Open',
-        ''
+        '',
       ],
       [
         'Condor',
@@ -364,7 +366,7 @@ void main() {
         '',
         day(expiry),
         'Open',
-        ''
+        '',
       ],
       [
         'Straddle',
@@ -378,7 +380,7 @@ void main() {
         '64',
         day(expiry),
         'Closed',
-        ''
+        '',
       ],
       [
         'Straddle',
@@ -392,7 +394,7 @@ void main() {
         '131',
         day(expiry),
         'Closed',
-        ''
+        '',
       ],
       ['Half typed', 'NIFTY', '', 'Buy', '', '', '', '', '', '', '', ''],
     ]);
@@ -523,7 +525,7 @@ void main() {
         'Invested',
         'Borrowed',
         'Rate %',
-        'EMI'
+        'EMI',
       ],
       ['SGB 2028', 'Asset', '', '285000', '168000', '', '2.5', ''],
       ['Apartment', 'Asset', 'Real estate', '9500000', '6200000', '', '', ''],
@@ -538,7 +540,7 @@ void main() {
         '',
         '6000000',
         '8.5',
-        '52068'
+        '52068',
       ],
       ['Card', 'Liability', 'Credit card', '38000', '', '', '42', ''],
     ]);
@@ -567,7 +569,9 @@ void main() {
       expect(summary.monthlyEmi, 52068);
       expect(summary.debtRatio, closeTo(4888000 / 12425000 * 100, 1e-9));
       expect(
-          summary.assetCategories.first.category, BalanceCategory.realEstate);
+        summary.assetCategories.first.category,
+        BalanceCategory.realEstate,
+      );
     });
 
     test('works out when a loan ends', () {
@@ -598,7 +602,7 @@ void main() {
             'Thoreau',
             'Walden',
             'Life, Stillness',
-            'Yes'
+            'Yes',
           ],
           ['', 'Nobody', '', '', 'No'],
         ]),

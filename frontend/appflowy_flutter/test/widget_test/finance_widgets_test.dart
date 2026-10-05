@@ -49,7 +49,7 @@ final _tables = <String, ChartTable>{
       '40',
       '1185.5',
       '1167.7',
-      '2025-04-01'
+      '2025-04-01',
     ],
     [
       'HDFC Bank',
@@ -58,7 +58,7 @@ final _tables = <String, ChartTable>{
       '120',
       '612.4',
       '721.2',
-      '2024-10-01'
+      '2024-10-01',
     ],
     ['Infosys', 'INFY.NS', 'Technology', '60', '1420', '1035', '2025-01-15'],
     [
@@ -68,7 +68,7 @@ final _tables = <String, ChartTable>{
       '400',
       '236.8',
       '257.25',
-      '2024-04-01'
+      '2024-04-01',
     ],
   ]),
   'history': _table([
@@ -94,7 +94,7 @@ final _tables = <String, ChartTable>{
       'Exit',
       'Expiry',
       'Status',
-      'Margin'
+      'Margin',
     ],
     [
       'NIFTY condor',
@@ -108,7 +108,7 @@ final _tables = <String, ChartTable>{
       '',
       _day(_expiry),
       'Open',
-      '110000'
+      '110000',
     ],
     [
       'NIFTY condor',
@@ -122,7 +122,7 @@ final _tables = <String, ChartTable>{
       '',
       _day(_expiry),
       'Open',
-      ''
+      '',
     ],
     [
       'NIFTY condor',
@@ -136,7 +136,7 @@ final _tables = <String, ChartTable>{
       '',
       _day(_expiry),
       'Open',
-      ''
+      '',
     ],
     [
       'NIFTY condor',
@@ -150,7 +150,7 @@ final _tables = <String, ChartTable>{
       '',
       _day(_expiry),
       'Open',
-      ''
+      '',
     ],
     [
       'NIFTY straddle',
@@ -164,7 +164,7 @@ final _tables = <String, ChartTable>{
       '64',
       _day(_expiry),
       'Closed',
-      ''
+      '',
     ],
     [
       'NIFTY straddle',
@@ -178,7 +178,7 @@ final _tables = <String, ChartTable>{
       '131',
       _day(_expiry),
       'Closed',
-      ''
+      '',
     ],
   ]),
   'journal': _table([
@@ -201,7 +201,7 @@ final _tables = <String, ChartTable>{
       'Invested',
       'Borrowed',
       'Rate %',
-      'EMI'
+      'EMI',
     ],
     ['Gold jewellery', 'Asset', 'Gold', '620000', '410000', '', '', ''],
     ['Apartment', 'Asset', 'Real estate', '9500000', '6200000', '', '', ''],
@@ -216,7 +216,7 @@ final _tables = <String, ChartTable>{
       '',
       '6000000',
       '8.5',
-      '52068'
+      '52068',
     ],
     [
       'Car loan',
@@ -226,7 +226,7 @@ final _tables = <String, ChartTable>{
       '',
       '800000',
       '9.2',
-      '16700'
+      '16700',
     ],
   ]),
   'quotes': _table([
@@ -250,7 +250,7 @@ final _tables = <String, ChartTable>{
       'Seneca',
       'Letters',
       'Courage',
-      'No'
+      'No',
     ],
     ['Simplify, simplify.', 'Thoreau', 'Walden', 'Stillness', 'No'],
     [
@@ -258,7 +258,7 @@ final _tables = <String, ChartTable>{
       'Benjamin Franklin',
       '',
       'Work',
-      'No'
+      'No',
     ],
   ]),
 };
@@ -317,7 +317,7 @@ class _FakeMarket extends ChangeNotifier implements MarketDataProvider {
         price: price,
         previousClose: close,
         closes: [
-          for (var day = 0; day < 20; day++) close * (1 + (day % 5 - 2) / 100)
+          for (var day = 0; day < 20; day++) close * (1 + (day % 5 - 2) / 100),
         ],
         updatedAt: now,
       );
@@ -425,7 +425,7 @@ Future<void> _mount(
     viewId: '',
     document: DashboardDocument(
       sections: [
-        DashboardSection(id: 'section', widgets: [spec])
+        DashboardSection(id: 'section', widgets: [spec]),
       ],
     ),
     mode: DashboardMode.focus,
@@ -578,7 +578,11 @@ void main() {
     tester.view.physicalSize = const Size(1400, 1100);
     addTearDown(tester.view.reset);
     await _mount(
-        tester, 'paper', _spec('quote_wall', 'quotes'), _cells(12, 12));
+      tester,
+      'paper',
+      _spec('quote_wall', 'quotes'),
+      _cells(12, 12),
+    );
     expect(find.text('Seneca'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'simplify');
     await tester.pump(const Duration(seconds: 1));
@@ -602,7 +606,7 @@ void main() {
       'Henry David Thoreau',
       'Seneca',
       'Thoreau',
-      'Benjamin Franklin'
+      'Benjamin Franklin',
     ];
     String shown() => authors.firstWhere(
           (author) => find.text(author).evaluate().isNotEmpty,
@@ -624,7 +628,11 @@ void main() {
     addTearDown(tester.view.reset);
     MarketData.attach(market);
     await _mount(
-        tester, 'light', _spec('option_chain', 'legs'), _cells(12, 10));
+      tester,
+      'light',
+      _spec('option_chain', 'legs'),
+      _cells(12, 10),
+    );
     expect(
       find.textContaining(LocaleKeys.dashboard_money_spot.tr()),
       findsWidgets,
@@ -641,7 +649,11 @@ void main() {
     tester.view.physicalSize = const Size(1400, 1100);
     addTearDown(tester.view.reset);
     await _mount(
-        tester, 'light', _spec('option_chain', 'legs'), _cells(12, 10));
+      tester,
+      'light',
+      _spec('option_chain', 'legs'),
+      _cells(12, 10),
+    );
     expect(
       find.text(LocaleKeys.dashboard_money_chainNeedsExtension.tr()),
       findsOneWidget,

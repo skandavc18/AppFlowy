@@ -259,7 +259,9 @@ double? parseMoney(String? raw) {
       .replaceAll(financeMinus, '-')
       .replaceAll('\u2013', '-')
       .replaceAll(
-          RegExp(r'(?:rs\.?|inr|usd|eur|gbp)', caseSensitive: false), '')
+        RegExp(r'(?:rs\.?|inr|usd|eur|gbp)', caseSensitive: false),
+        '',
+      )
       .replaceAll(RegExp(r'[₹$€£¥%\s\u00a0]'), '');
   if (text.isEmpty) {
     return null;

@@ -267,7 +267,7 @@ DashboardDocument _stocksBoard(TemplateContext created) {
               '^BSESN',
               '^CNXIT',
               'GC=F',
-              'INR=X'
+              'INR=X',
             ],
           },
         ),
@@ -484,7 +484,7 @@ TemplateTable _legsTable() {
         open,
         '110000',
         _ago(4),
-        ''
+        '',
       ],
       [
         condor,
@@ -500,7 +500,7 @@ TemplateTable _legsTable() {
         open,
         '',
         _ago(4),
-        ''
+        '',
       ],
       [
         condor,
@@ -516,7 +516,7 @@ TemplateTable _legsTable() {
         open,
         '',
         _ago(4),
-        ''
+        '',
       ],
       [
         condor,
@@ -532,7 +532,7 @@ TemplateTable _legsTable() {
         open,
         '',
         _ago(4),
-        ''
+        '',
       ],
       [
         putSpread,
@@ -548,7 +548,7 @@ TemplateTable _legsTable() {
         open,
         '95000',
         _ago(6),
-        ''
+        '',
       ],
       [
         putSpread,
@@ -564,7 +564,7 @@ TemplateTable _legsTable() {
         open,
         '',
         _ago(6),
-        ''
+        '',
       ],
       [
         callSpread,
@@ -580,7 +580,7 @@ TemplateTable _legsTable() {
         open,
         '62000',
         _ago(2),
-        ''
+        '',
       ],
       [
         callSpread,
@@ -596,7 +596,7 @@ TemplateTable _legsTable() {
         open,
         '',
         _ago(2),
-        ''
+        '',
       ],
       [
         straddle,
@@ -612,7 +612,7 @@ TemplateTable _legsTable() {
         closed,
         '',
         _ago(9),
-        ''
+        '',
       ],
       [
         straddle,
@@ -628,7 +628,7 @@ TemplateTable _legsTable() {
         closed,
         '',
         _ago(9),
-        ''
+        '',
       ],
     ],
   );
@@ -904,7 +904,7 @@ TemplateTable _balanceSheetTable() {
         '',
         '',
         _ago(12),
-        '22 carat, 52 g'
+        '22 carat, 52 g',
       ],
       [
         'Sovereign Gold Bonds',
@@ -916,7 +916,7 @@ TemplateTable _balanceSheetTable() {
         '2.5',
         '',
         _ago(12),
-        'Tax-free at maturity'
+        'Tax-free at maturity',
       ],
       [
         'Apartment in Pune',
@@ -928,7 +928,7 @@ TemplateTable _balanceSheetTable() {
         '',
         '',
         _ago(40),
-        '2 BHK, self-occupied'
+        '2 BHK, self-occupied',
       ],
       [
         'Employee Provident Fund',
@@ -940,7 +940,7 @@ TemplateTable _balanceSheetTable() {
         '8.25',
         '',
         _ago(20),
-        ''
+        '',
       ],
       [
         'Public Provident Fund',
@@ -952,7 +952,7 @@ TemplateTable _balanceSheetTable() {
         '7.1',
         '',
         _ago(20),
-        'Matures in 2031'
+        'Matures in 2031',
       ],
       [
         'NPS Tier I',
@@ -964,7 +964,7 @@ TemplateTable _balanceSheetTable() {
         '',
         '',
         _ago(9),
-        '75% equity'
+        '75% equity',
       ],
       [
         'Flexi-cap mutual funds',
@@ -976,7 +976,7 @@ TemplateTable _balanceSheetTable() {
         '',
         '',
         _ago(3),
-        'Monthly SIP'
+        'Monthly SIP',
       ],
       [
         'Direct equity',
@@ -988,7 +988,7 @@ TemplateTable _balanceSheetTable() {
         '',
         '',
         _ago(1),
-        ''
+        '',
       ],
       [
         'Fixed deposits',
@@ -1000,7 +1000,7 @@ TemplateTable _balanceSheetTable() {
         '7.25',
         '',
         _ago(30),
-        ''
+        '',
       ],
       [
         'Savings account',
@@ -1012,7 +1012,7 @@ TemplateTable _balanceSheetTable() {
         '3',
         '',
         _ago(1),
-        'Emergency fund'
+        'Emergency fund',
       ],
       [
         'Home loan',
@@ -1024,7 +1024,7 @@ TemplateTable _balanceSheetTable() {
         '8.5',
         '52068',
         _ago(5),
-        ''
+        '',
       ],
       [
         'Car loan',
@@ -1036,7 +1036,7 @@ TemplateTable _balanceSheetTable() {
         '9.2',
         '16700',
         _ago(5),
-        ''
+        '',
       ],
       [
         'Credit card',
@@ -1048,7 +1048,7 @@ TemplateTable _balanceSheetTable() {
         '42',
         '',
         _ago(2),
-        'Due on the 18th'
+        'Due on the 18th',
       ],
     ],
   );

@@ -1333,8 +1333,11 @@ class _LoanCard extends StatelessWidget {
                     child: Text(
                       repaid == null
                           ? '—'
-                          : formatPercent(repaid * 100,
-                              decimals: 0, signed: false),
+                          : formatPercent(
+                              repaid * 100,
+                              decimals: 0,
+                              signed: false,
+                            ),
                       style: financeNumber(palette.textPrimary),
                     ),
                   ),
@@ -1391,7 +1394,7 @@ class _LoanCard extends StatelessWidget {
                         Text(
                           LocaleKeys.dashboard_money_paidOffBy.tr(
                             args: [
-                              DateFormat.yMMM().format(outlook.payoffDate!)
+                              DateFormat.yMMM().format(outlook.payoffDate!),
                             ],
                           ),
                           maxLines: 1,

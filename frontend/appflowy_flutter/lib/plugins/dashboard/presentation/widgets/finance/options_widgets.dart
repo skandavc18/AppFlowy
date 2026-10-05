@@ -1646,8 +1646,10 @@ final _chain = DashboardWidgetDefinition(
       maximum: 30,
       onChanged: (value) => data.setSettings({_keyAround: value.round()}),
     ),
-    financeTableField(data,
-        label: LocaleKeys.dashboard_money_yourPosition.tr()),
+    financeTableField(
+      data,
+      label: LocaleKeys.dashboard_money_yourPosition.tr(),
+    ),
   ],
 );
 

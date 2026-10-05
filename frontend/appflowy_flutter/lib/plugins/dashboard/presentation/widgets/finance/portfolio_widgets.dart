@@ -67,12 +67,20 @@ Widget _reading(DashboardPalette palette, bool still) => Padding(
           FinanceShimmer(palette: palette, width: 120, still: still),
           const SizedBox(height: 14),
           FinanceShimmer(
-              palette: palette, width: 220, height: 30, still: still),
+            palette: palette,
+            width: 220,
+            height: 30,
+            still: still,
+          ),
           const SizedBox(height: 14),
           FinanceShimmer(palette: palette, height: 10, still: still),
           const SizedBox(height: 8),
           FinanceShimmer(
-              palette: palette, width: 180, height: 10, still: still),
+            palette: palette,
+            width: 180,
+            height: 10,
+            still: still,
+          ),
         ],
       ),
     );
