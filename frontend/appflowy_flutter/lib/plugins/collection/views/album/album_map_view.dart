@@ -8,6 +8,8 @@ import 'package:appflowy/plugins/collection/views/album/album_context_menu.dart'
 import 'package:appflowy/plugins/collection/views/album/album_host.dart';
 import 'package:appflowy/plugins/collection/views/album/album_lightbox.dart';
 import 'package:appflowy/plugins/collection/views/album/album_thumbnail.dart';
+import 'package:appflowy/shared/maps/map_geo.dart';
+import 'package:appflowy/shared/maps/map_links.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_places.dart';
@@ -15,7 +17,6 @@ import 'package:appflowy/workspace/application/collections/collection_registry.d
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Where the album was made, read from the GPS each camera wrote into the
 /// picture.
@@ -309,17 +310,8 @@ class _PlacesState extends State<_Places> {
     }
   }
 
-  Future<void> _openInMaps(AlbumPlace place) async {
-    final latitude = place.latitude;
-    final longitude = place.longitude;
-    await launchUrl(
-      Uri.parse(
-        'https://www.openstreetmap.org/?mlat=$latitude&mlon=$longitude'
-        '#map=13/$latitude/$longitude',
-      ),
-      mode: LaunchMode.externalApplication,
-    );
-  }
+  Future<void> _openInMaps(AlbumPlace place) =>
+      openInMaps(LatLng(place.latitude, place.longitude), zoom: 13);
 }
 
 class _WorldPlot extends StatelessWidget {

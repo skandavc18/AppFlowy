@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/database/application/cell/cell_controller.dart'
 import 'package:appflowy/plugins/database/application/cell/cell_data_loader.dart';
 import 'package:appflowy/plugins/database/domain/cell_service.dart';
 import 'package:appflowy/plugins/database/domain/database_view_service.dart';
+import 'package:appflowy/plugins/database/domain/field_settings_service.dart';
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/util/int64_extension.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
@@ -156,6 +157,15 @@ class FolderGalleryPreview {
       );
 }
 
+/// One select option as a table cell shows it: a tinted tag.
+@immutable
+class FolderGalleryTableOption {
+  const FolderGalleryTableOption({required this.name, required this.color});
+
+  final String name;
+  final SelectOptionColorPB color;
+}
+
 @immutable
 class FolderGalleryDatabaseSnapshot {
   const FolderGalleryDatabaseSnapshot({
@@ -163,6 +173,8 @@ class FolderGalleryDatabaseSnapshot {
     required this.rows,
     required this.totalRowCount,
     this.fieldTypes = const [],
+    this.widths = const [],
+    this.options = const {},
   });
 
   final List<String> columns;
@@ -172,6 +184,25 @@ class FolderGalleryDatabaseSnapshot {
   /// Native types for the displayed columns. Missing type information is not
   /// authority to index a cell (in particular a URL or opaque provider value).
   final List<FieldType> fieldTypes;
+
+  /// The widths the table's own view saved for the displayed columns. Zero or
+  /// missing means the column was never resized.
+  final List<double> widths;
+
+  /// Select options by (row, column), for cells drawn as tags. [rows] still
+  /// holds their joined names, so every reader sees the same cell text.
+  final Map<(int, int), List<FolderGalleryTableOption>> options;
+
+  FieldType? typeAt(int column) =>
+      column < fieldTypes.length ? fieldTypes[column] : null;
+
+  double? widthAt(int column) {
+    final width = column < widths.length ? widths[column] : 0.0;
+    return width > 0 ? width : null;
+  }
+
+  List<FolderGalleryTableOption> optionsAt(int row, int column) =>
+      options[(row, column)] ?? const [];
 }
 
 class FolderGalleryPreviewLoader {
@@ -632,10 +663,18 @@ List<FolderGalleryTextRun> _htmlInlineRuns(html_dom.Element element) {
 }
 
 class FolderGalleryDatabasePreviewLoader {
-  const FolderGalleryDatabasePreviewLoader();
+  const FolderGalleryDatabasePreviewLoader({
+    this.columnLimit = maximumColumns,
+    this.rowLimit = maximumRows,
+  });
 
-  static const maximumColumns = 3;
-  static const maximumRows = 4;
+  /// Enough of a table to fill a tall gallery card: the first columns as the
+  /// view lays them out, and the first rows. Bigger previews ask for more.
+  static const maximumColumns = 5;
+  static const maximumRows = 8;
+
+  final int columnLimit;
+  final int rowLimit;
 
   Future<FolderGalleryPreview> load({required ViewPB view}) async {
     final service = DatabaseViewBackendService(viewId: view.id);
@@ -660,15 +699,27 @@ class FolderGalleryDatabasePreviewLoader {
     required DatabasePB database,
     required DatabaseViewBackendService service,
   }) async {
-    final requestedFields =
-        database.fields.take(maximumColumns).toList(growable: false);
+    // A column hidden in the view stays hidden in its preview. Settings only
+    // shape the drawing: without them every column keeps its default width.
+    final settings = await _fieldSettings(view.id);
+    final requestedFields = database.fields
+        .where(
+          (field) =>
+              settings[field.fieldId]?.visibility !=
+              FieldVisibility.AlwaysHidden,
+        )
+        .take(columnLimit)
+        .toList(growable: false);
     final fieldsResult = await service.getFields(fieldIds: requestedFields);
     return fieldsResult.fold(
       (fields) async {
-        final visibleFields =
-            fields.take(maximumColumns).toList(growable: false);
+        final byId = {for (final field in fields) field.id: field};
+        final visibleFields = [
+          for (final requested in requestedFields)
+            if (byId[requested.fieldId] case final FieldPB field) field,
+        ];
         final visibleRows =
-            database.rows.take(maximumRows).toList(growable: false);
+            database.rows.take(rowLimit).toList(growable: false);
         final rows = await Future.wait(
           visibleRows.map(
             (row) => Future.wait(
@@ -682,6 +733,13 @@ class FolderGalleryDatabasePreviewLoader {
             ),
           ),
         );
+        final options = <(int, int), List<FolderGalleryTableOption>>{};
+        for (var row = 0; row < rows.length; row++) {
+          for (var column = 0; column < rows[row].length; column++) {
+            final tags = rows[row][column].options;
+            if (tags.isNotEmpty) options[(row, column)] = tags;
+          }
+        }
         return FolderGalleryPreview(
           kind: FolderGalleryPreviewKind.database,
           blocks: const [],
@@ -696,12 +754,22 @@ class FolderGalleryDatabasePreviewLoader {
               ),
             ),
             rows: List.unmodifiable(
-              rows.map((row) => List<String>.unmodifiable(row)),
+              rows.map(
+                (row) => List<String>.unmodifiable(
+                  row.map((cell) => cell.text),
+                ),
+              ),
             ),
             totalRowCount: database.rows.length,
             fieldTypes: List.unmodifiable(
               visibleFields.map((field) => field.fieldType),
             ),
+            widths: List.unmodifiable(
+              visibleFields.map(
+                (field) => (settings[field.id]?.width ?? 0).toDouble(),
+              ),
+            ),
+            options: Map.unmodifiable(options),
           ),
         );
       },
@@ -715,7 +783,19 @@ class FolderGalleryDatabasePreviewLoader {
     );
   }
 
-  Future<String> _loadCell({
+  Future<Map<String, FieldSettingsPB>> _fieldSettings(String viewId) async {
+    final result =
+        await FieldSettingsBackendService(viewId: viewId).getAllFieldSettings();
+    return result.fold(
+      (settings) => {for (final setting in settings) setting.fieldId: setting},
+      (error) {
+        Log.warn('Unable to load gallery preview field settings: $error');
+        return const {};
+      },
+    );
+  }
+
+  Future<({String text, List<FolderGalleryTableOption> options})> _loadCell({
     required String viewId,
     required String rowId,
     required FieldPB field,
@@ -725,7 +805,10 @@ class FolderGalleryDatabasePreviewLoader {
       cellContext: CellContext(fieldId: field.id, rowId: rowId),
     );
     return result.fold(
-      (cell) => _displayValue(cell.data, field.fieldType),
+      (cell) => (
+        text: _displayValue(cell.data, field.fieldType),
+        options: _selectOptions(cell.data, field.fieldType),
+      ),
       (error) {
         Log.warn(
           'Unable to load gallery cell $rowId/${field.id}: $error',
@@ -733,6 +816,28 @@ class FolderGalleryDatabasePreviewLoader {
         // An unread cell must not become a fabricated empty value in a table.
         throw StateError('Unable to read gallery cell');
       },
+    );
+  }
+
+  List<FolderGalleryTableOption> _selectOptions(
+    List<int> data,
+    FieldType fieldType,
+  ) {
+    if (data.isEmpty ||
+        (fieldType != FieldType.SingleSelect &&
+            fieldType != FieldType.MultiSelect)) {
+      return const [];
+    }
+    final options =
+        SelectOptionCellDataParser().parserData(data)?.selectOptions;
+    if (options == null) return const [];
+    return List.unmodifiable(
+      options.where((option) => option.name.isNotEmpty).map(
+            (option) => FolderGalleryTableOption(
+              name: option.name,
+              color: option.color,
+            ),
+          ),
     );
   }
 

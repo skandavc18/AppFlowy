@@ -146,7 +146,12 @@ void main() {
     });
 
     test('reports the right kind', () {
-      expect(TemplateRegistry.forId('stocks')?.kind, TemplateKind.dashboard);
+      expect(
+        TemplateRegistry.forId('news_weather')?.kind,
+        TemplateKind.dashboard,
+      );
+      expect(TemplateRegistry.forId('stocks')?.kind, TemplateKind.bundle);
+      expect(TemplateRegistry.forId('options')?.kind, TemplateKind.bundle);
       expect(TemplateRegistry.forId('landing')?.kind, TemplateKind.page);
       expect(
         TemplateRegistry.forId('subscriptions')?.kind,
@@ -210,7 +215,11 @@ void main() {
     test('a template that needs nothing declares nothing', () {
       expect(TemplateRegistry.forId('assets')?.requires, isEmpty);
       expect(TemplateRegistry.forId('stocks')?.requires, contains('stock'));
-      expect(TemplateRegistry.forId('news_weather')?.requires, contains('news'));
+      expect(TemplateRegistry.forId('options')?.requires, contains('stock'));
+      expect(
+        TemplateRegistry.forId('news_weather')?.requires,
+        contains('news'),
+      );
     });
   });
 
@@ -323,7 +332,7 @@ void main() {
     tearDown(TemplateRegistry.reset);
 
     test('a dashboard template fits a dashboard and nothing else', () {
-      final template = TemplateRegistry.forId('stocks')!;
+      final template = TemplateRegistry.forId('news_weather')!;
       expect(
         template.appliesTo(_view(extra: DashboardMetadata.newExtra())),
         isTrue,
@@ -346,16 +355,28 @@ void main() {
 
     test('a canvas template fits a canvas', () {
       final template = TemplateRegistry.forId('canvas_swot')!;
-      expect(template.appliesTo(_view(extra: CanvasMetadata.newExtra())), isTrue);
+      expect(
+        template.appliesTo(_view(extra: CanvasMetadata.newExtra())),
+        isTrue,
+      );
       expect(template.appliesTo(_view()), isFalse);
     });
 
-    test('a template of several parts fits nothing that already exists', () {
+    test('a board and its tables fit a dashboard, and nothing else', () {
       final template = TemplateRegistry.forId('assets')!;
+      expect(template.isBoardBundle, isTrue);
       expect(template.appliesTo(_view()), isFalse);
       expect(
         template.appliesTo(_view(extra: DashboardMetadata.newExtra())),
+        isTrue,
+      );
+      expect(
+        template.appliesTo(_view(extra: CanvasMetadata.newExtra())),
         isFalse,
+      );
+      expect(
+        TemplateRegistry.boards().map((board) => board.id),
+        containsAll(['stocks', 'options', 'assets', 'quotes']),
       );
     });
 

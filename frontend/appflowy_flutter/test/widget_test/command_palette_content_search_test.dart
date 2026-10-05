@@ -577,7 +577,12 @@ void main() {
       'cached',
     );
     expect(find.text('Quarterly Roadmap', findRichText: true), findsWidgets);
-    expect(reads.calls.where((call) => call.startsWith('document:')), isEmpty);
+    // Only the selected result's preview reads a page; titles never do.
+    expect(
+      reads.calls.where((call) => call.startsWith('document:')),
+      ['document:cached'],
+    );
+    expect(find.byType(SearchMatchContext), findsNothing);
     final input = tester.widget<EditableText>(find.byType(EditableText));
     final focus = input.focusNode;
     await tester
@@ -612,6 +617,46 @@ void main() {
     await tester.pump();
     expect(find.byType(SearchResultCell), findsNothing);
     expect(find.byType(CommandPaletteModal), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await harness.dispose(tester);
+  });
+
+  testWidgets(
+      'a title result previews the page itself, not a flattened content match',
+      (tester) async {
+    final reads = WorkspaceSearchReads()
+      ..page(
+        'ledger',
+        'Opening balance carried forward',
+        name: 'Quarterly ledger',
+      );
+    final harness = _ModalHarness(reads);
+    await harness.mount(tester);
+    await tester.enterText(find.byType(EditableText), 'quarterly led');
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+
+    expect(find.byType(SearchResultCell), findsOneWidget);
+    final preview = tester.widget<PagePreview>(find.byType(PagePreview));
+    expect(preview.view.id, 'ledger');
+    expect(preview.contentSearch, isFalse);
+    expect(find.byType(SearchMatchContext), findsNothing);
+    expect(
+      find.byKey(const ValueKey('command-palette-match-excerpt')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PagePreview),
+        matching: find.textContaining(
+          'Opening balance carried forward',
+          findRichText: true,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(reads.counts['document:ledger'], 1);
     expect(tester.takeException(), isNull);
     await harness.dispose(tester);
   });
@@ -725,7 +770,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CommandPaletteModal), findsNothing);
     expect(navigation.ids, ['native-view-id']);
-    expect(reads.calls.where((call) => call.startsWith('document:')), isEmpty);
+    expect(
+      reads.calls.where((call) => call.startsWith('document:')),
+      ['document:native-view-id'],
+    );
     await harness.dispose(tester);
   });
 

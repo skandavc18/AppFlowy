@@ -11,6 +11,7 @@ import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/maps/map_tile_cache.dart';
 import 'package:appflowy/shared/maps/map_tile_layer.dart';
 import 'package:appflowy/shared/maps/map_tile_provider.dart';
+import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -64,7 +65,7 @@ class AppMapView extends StatefulWidget {
     this.pins = const [],
     this.controller,
     this.provider = MapProviderKind.google,
-    this.apiKey = '',
+    this.apiKey,
     this.style,
     this.clustering = true,
     this.initialCenter,
@@ -78,6 +79,7 @@ class AppMapView extends StatefulWidget {
     this.onPointTap,
     this.onSearch,
     this.onSuggestPins,
+    this.onSuggestionPicked,
     this.showControls = true,
     this.showSearch = false,
     this.showPopup = true,
@@ -93,7 +95,9 @@ class AppMapView extends StatefulWidget {
   final List<AppMapPin> pins;
   final AppMapController? controller;
   final MapProviderKind provider;
-  final String apiKey;
+
+  /// Null uses the key configured in Settings, and follows it as it changes.
+  final String? apiKey;
 
   /// The basemap to draw. Null follows the application's appearance.
   final MapStyleName? style;
@@ -118,6 +122,9 @@ class AppMapView extends StatefulWidget {
 
   /// Rows already on the map that match what is being typed in the search box.
   final List<MapSuggestion> Function(String query)? onSuggestPins;
+
+  /// A place chosen from the search box's list, after the map has gone there.
+  final ValueChanged<MapSuggestion>? onSuggestionPicked;
 
   final bool showControls;
   final bool showSearch;
@@ -184,6 +191,13 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     widget.controller?._view = this;
+    MapsSettings.instance.addListener(_onSettingsChanged);
+  }
+
+  void _onSettingsChanged() {
+    if (mounted && widget.apiKey == null) {
+      setState(() => _provider = null);
+    }
   }
 
   @override
@@ -208,6 +222,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    MapsSettings.instance.removeListener(_onSettingsChanged);
     widget.controller?._view = null;
     _hoverOut?.cancel();
     _flyController?.dispose();
@@ -384,7 +399,9 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    // Keys typed into the search box (0, -, the arrows) are not the map's.
+    if (!node.hasPrimaryFocus ||
+        (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
       return KeyEventResult.ignored;
     }
     const step = 90.0;
@@ -475,6 +492,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
         ? math.max(_camera.zoom, 14.0)
         : (_camera.zoom < 11 ? 13.0 : _camera.zoom);
     _moveTo(suggestion.point, zoom: zoom);
+    widget.onSuggestionPicked?.call(suggestion);
   }
 
   // ------------------------------------------------------------------ layout
@@ -486,7 +504,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
     _provider ??= resolveMapProvider(
       preferred: widget.provider,
       style: _style,
-      apiKey: widget.apiKey,
+      apiKey: widget.apiKey ?? MapsSettings.instance.apiKey,
     );
     final provider = _provider!;
 

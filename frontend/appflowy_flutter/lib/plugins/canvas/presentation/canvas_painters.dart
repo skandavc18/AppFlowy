@@ -125,6 +125,57 @@ class CanvasEdgeDrawing {
   final bool hovered;
 }
 
+/// Paint work a canvas's connections carry from one frame to the next.
+///
+/// The painter is rebuilt on every frame of a pan, so anything it worked out
+/// for itself — a label laid out, a dashed line cut up — was thrown away and
+/// redone sixty times a second. Labels only change when a connection does, and
+/// dashes when it or the zoom does, so they are kept here, by the board.
+class CanvasEdgePaintCache {
+  static const int _limit = 600;
+
+  final Map<String, TextPainter> _labels = <String, TextPainter>{};
+  final Map<String, (Object, Path)> _dashes = <String, (Object, Path)>{};
+
+  TextPainter label(String key, TextPainter Function() build) {
+    final known = _labels[key];
+    if (known != null) {
+      return known;
+    }
+    if (_labels.length >= _limit) {
+      _clearLabels();
+    }
+    return _labels[key] = build();
+  }
+
+  /// The dashed version of a connection, rebuilt only when [signature] — its
+  /// geometry, style and zoom — is not what it was cut for.
+  Path dashed(String key, Object signature, Path Function() build) {
+    final known = _dashes[key];
+    if (known != null && known.$1 == signature) {
+      return known.$2;
+    }
+    if (_dashes.length >= _limit) {
+      _dashes.clear();
+    }
+    final path = build();
+    _dashes[key] = (signature, path);
+    return path;
+  }
+
+  void _clearLabels() {
+    for (final painter in _labels.values) {
+      painter.dispose();
+    }
+    _labels.clear();
+  }
+
+  void dispose() {
+    _clearLabels();
+    _dashes.clear();
+  }
+}
+
 /// The connections between cards.
 class CanvasEdgePainter extends CustomPainter {
   CanvasEdgePainter({
@@ -136,7 +187,8 @@ class CanvasEdgePainter extends CustomPainter {
     this.findQuery = '',
     this.findOptions = const FindOptions(),
     this.currentFind,
-  });
+    CanvasEdgePaintCache? cache,
+  }) : _cache = cache;
 
   final CanvasCamera camera;
   final CanvasPalette palette;
@@ -158,6 +210,7 @@ class CanvasEdgePainter extends CustomPainter {
   /// Exact active-word geometry for the native camera reveal.
   Rect? get currentFindRect => _currentFindRect;
 
+  final CanvasEdgePaintCache? _cache;
   final Map<String, TextPainter> _labels = <String, TextPainter>{};
 
   @override
@@ -223,9 +276,9 @@ class CanvasEdgePainter extends CustomPainter {
       case CanvasEdgeStyle.solid:
         break;
       case CanvasEdgeStyle.dashed:
-        path = _dash(path, 9 / camera.zoom, 6 / camera.zoom);
+        path = _dashFor(drawing, path, 9 / camera.zoom, 6 / camera.zoom);
       case CanvasEdgeStyle.dotted:
-        path = _dash(path, 1.6 / camera.zoom, 5 / camera.zoom);
+        path = _dashFor(drawing, path, 1.6 / camera.zoom, 5 / camera.zoom);
     }
 
     if (drawing.selected) {
@@ -321,23 +374,23 @@ class CanvasEdgePainter extends CustomPainter {
           CanvasSearchField.relation
         ),
     ];
-    final painter = _labels.putIfAbsent(
-      '${drawing.edge.id}|$label',
-      () => TextPainter(
-        text: TextSpan(
-          text: label,
-          style: (labelStyle ?? const TextStyle()).copyWith(
-            fontSize: 12,
-            height: 1.1,
-            color: palette.textSecondary,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        textDirection: ui.TextDirection.ltr,
-        maxLines: matches.isEmpty ? 1 : null,
-        ellipsis: matches.isEmpty ? '…' : null,
-      )..layout(maxWidth: 190),
+    final style = (labelStyle ?? const TextStyle()).copyWith(
+      fontSize: 12,
+      height: 1.1,
+      color: palette.textSecondary,
+      fontWeight: FontWeight.w500,
     );
+    TextPainter layOut() => TextPainter(
+          text: TextSpan(text: label, style: style),
+          textDirection: ui.TextDirection.ltr,
+          maxLines: matches.isEmpty ? 1 : null,
+          ellipsis: matches.isEmpty ? '…' : null,
+        )..layout(maxWidth: 190);
+    final key = '${drawing.edge.id}|$label|${matches.isEmpty}';
+    final cache = _cache;
+    final painter = cache == null
+        ? _labels.putIfAbsent(key, layOut)
+        : cache.label('$key|${style.hashCode}', layOut);
 
     // The label is drawn at a fixed reading size whatever the zoom, so it does
     // not become a smudge when the canvas is taken out.
@@ -401,6 +454,26 @@ class CanvasEdgePainter extends CustomPainter {
     canvas.restore();
   }
 
+  Path _dashFor(CanvasEdgeDrawing drawing, Path source, double on, double off) {
+    final cache = _cache;
+    if (cache == null) {
+      return _dash(source, on, off);
+    }
+    final geometry = drawing.geometry;
+    return cache.dashed(
+      drawing.edge.id,
+      (
+        geometry.start,
+        geometry.controlStart,
+        geometry.controlEnd,
+        geometry.end,
+        on,
+        off,
+      ),
+      () => _dash(source, on, off),
+    );
+  }
+
   Path _dash(Path source, double on, double off) {
     final dashed = Path();
     for (final metric in source.computeMetrics()) {
@@ -428,9 +501,52 @@ class CanvasEdgePainter extends CustomPainter {
   bool shouldRepaint(CanvasEdgePainter oldDelegate) => true;
 }
 
+/// The stroke under the pointer while it is being drawn.
+///
+/// Drawn by the stroke layer listening to this, not by rebuilding the board:
+/// a pen sends a point on every pointer move, and the board is the most
+/// expensive thing on the screen to rebuild.
+class CanvasLiveStroke extends ChangeNotifier {
+  List<Offset>? _points;
+
+  /// The points so far, or null when nothing is being drawn.
+  List<Offset>? get points => _points;
+
+  bool get isDrawing => _points != null;
+
+  void start(Offset point) {
+    _points = <Offset>[point];
+    notifyListeners();
+  }
+
+  void add(Offset point) {
+    final points = _points;
+    if (points == null) {
+      return;
+    }
+    points.add(point);
+    notifyListeners();
+  }
+
+  /// Stop drawing, handing back what was drawn.
+  List<Offset>? finish() {
+    final points = _points;
+    if (points == null) {
+      return null;
+    }
+    _points = null;
+    notifyListeners();
+    return points;
+  }
+}
+
 /// The freehand layer.
+///
+/// Each stroke's path is built once and kept with the stroke, and strokes the
+/// camera cannot see are skipped, so a pan repaints what is on screen from
+/// ready-made paths instead of re-smoothing every stroke on the canvas.
 class CanvasStrokePainter extends CustomPainter {
-  const CanvasStrokePainter({
+  CanvasStrokePainter({
     required this.camera,
     required this.palette,
     required this.strokes,
@@ -438,53 +554,62 @@ class CanvasStrokePainter extends CustomPainter {
     this.liveColour,
     this.liveTool = CanvasStrokeTool.pen,
     this.liveWidth = 3,
-  });
+  }) : super(repaint: live);
 
   final CanvasCamera camera;
   final CanvasPalette palette;
   final List<CanvasStroke> strokes;
 
   /// The stroke under the pointer right now, not yet committed.
-  final List<Offset>? live;
+  final CanvasLiveStroke? live;
   final int? liveColour;
   final CanvasStrokeTool liveTool;
   final double liveWidth;
 
+  static final Expando<Path> _paths = Expando<Path>('canvas stroke path');
+
   @override
   void paint(Canvas canvas, Size size) {
-    if (strokes.isEmpty && (live == null || live!.length < 2)) {
+    final drawing = live?.points;
+    if (strokes.isEmpty && (drawing == null || drawing.length < 2)) {
       return;
     }
     canvas.save();
     canvas.translate(camera.offset.dx, camera.offset.dy);
     canvas.scale(camera.zoom);
 
+    final visible = camera.visibleScene(size);
     for (final stroke in strokes) {
-      _paintStroke(
+      if (stroke.points.length < 2 || !stroke.bounds.overlaps(visible)) {
+        continue;
+      }
+      _paintPath(
         canvas,
-        stroke.points,
+        _paths[stroke] ??= _smoothPath(stroke.points),
         stroke.tool,
         stroke.color,
         stroke.width,
       );
     }
-    final drawing = live;
     if (drawing != null && drawing.length > 1) {
-      _paintStroke(canvas, drawing, liveTool, liveColour, liveWidth);
+      _paintPath(
+        canvas,
+        _smoothPath(drawing),
+        liveTool,
+        liveColour,
+        liveWidth,
+      );
     }
     canvas.restore();
   }
 
-  void _paintStroke(
+  void _paintPath(
     Canvas canvas,
-    List<Offset> points,
+    Path path,
     CanvasStrokeTool tool,
     int? colour,
     double width,
   ) {
-    if (points.length < 2) {
-      return;
-    }
     final ink = colour == null ? palette.textPrimary : palette.accentAt(colour);
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -499,10 +624,13 @@ class CanvasStrokePainter extends CustomPainter {
       ..blendMode = tool == CanvasStrokeTool.highlighter && !palette.isDark
           ? BlendMode.multiply
           : BlendMode.srcOver;
+    canvas.drawPath(path, paint);
+  }
 
+  /// Smooth the recorded points through their midpoints, or a quick gesture
+  /// is drawn as a chain of straight segments.
+  static Path _smoothPath(List<Offset> points) {
     final path = Path()..moveTo(points.first.dx, points.first.dy);
-    // Smooth the recorded points through their midpoints, or a quick gesture
-    // is drawn as a chain of straight segments.
     for (var index = 1; index < points.length - 1; index++) {
       final current = points[index];
       final next = points[index + 1];
@@ -514,11 +642,18 @@ class CanvasStrokePainter extends CustomPainter {
       );
     }
     path.lineTo(points.last.dx, points.last.dy);
-    canvas.drawPath(path, paint);
+    return path;
   }
 
   @override
-  bool shouldRepaint(CanvasStrokePainter oldDelegate) => true;
+  bool shouldRepaint(CanvasStrokePainter oldDelegate) =>
+      oldDelegate.camera != camera ||
+      !identical(oldDelegate.strokes, strokes) ||
+      oldDelegate.palette != palette ||
+      oldDelegate.live != live ||
+      oldDelegate.liveColour != liveColour ||
+      oldDelegate.liveTool != liveTool ||
+      oldDelegate.liveWidth != liveWidth;
 }
 
 /// The lines that appear while something is being lined up, and the marquee.

@@ -183,6 +183,27 @@ class WorkspaceTemplate {
   /// More than one part means the template needs a folder to hold them.
   bool get makesSeveralThings => parts.length > 1;
 
+  /// Tables and the one dashboard that reads them: what such a template
+  /// makes is a board, so it can be laid over a dashboard that exists.
+  bool get isBoardBundle =>
+      parts.length > 1 &&
+      parts.where((part) => part.blueprint is TemplateDashboard).length == 1 &&
+      parts.every(
+        (part) =>
+            part.blueprint is TemplateDashboard ||
+            part.blueprint is TemplateDatabase,
+      );
+
+  /// The board, when the template makes one.
+  TemplatePart? get boardPart {
+    for (final part in parts) {
+      if (part.blueprint is TemplateDashboard) {
+        return part;
+      }
+    }
+    return null;
+  }
+
   TemplateKind get kind {
     if (parts.length > 1) {
       return TemplateKind.bundle;
@@ -197,8 +218,12 @@ class WorkspaceTemplate {
   }
 
   /// Whether this template can be laid over an existing view, rather than
-  /// making a new one. Only a single-part template can.
+  /// making a new one: a single part over its own kind, or a board bundle
+  /// over a dashboard, with its tables made beneath it.
   bool appliesTo(ViewPB view) {
+    if (isBoardBundle) {
+      return view.layout == ViewLayoutPB.Document && view.isDashboard;
+    }
     if (parts.length != 1) {
       return false;
     }

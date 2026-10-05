@@ -42,6 +42,14 @@ class MapSuggestionCache {
   final Map<String, List<MapSuggestion>> _found = {};
   final Map<String, Future<List<MapSuggestion>>> _asking = {};
 
+  /// Answers [query] from memory, so a test never reaches a real geocoder.
+  @visibleForTesting
+  void debugRemember(String query, List<MapSuggestion> found) =>
+      _found[query.trim().toLowerCase()] = found;
+
+  @visibleForTesting
+  void debugForget() => _found.clear();
+
   Future<List<MapSuggestion>> search(String query, {int limit = 5}) {
     final key = query.trim().toLowerCase();
     if (key.length < 3) {
@@ -67,7 +75,10 @@ class MapSuggestionCache {
         if (_found.length > 200) {
           _found.clear();
         }
-        _found[key] = suggestions;
+        // Nothing found may only mean the service was not answering yet.
+        if (suggestions.isNotEmpty) {
+          _found[key] = suggestions;
+        }
         return suggestions;
       } on Object {
         return const <MapSuggestion>[];
@@ -108,6 +119,7 @@ class MapSuggestionList extends StatelessWidget {
     this.busy = false,
     this.freeText = '',
     this.onFreeText,
+    this.highlighted,
   });
 
   final MapPalette palette;
@@ -126,6 +138,9 @@ class MapSuggestionList extends StatelessWidget {
   /// Keeping whatever was typed, when it is not a place anybody can find.
   final String freeText;
   final ValueChanged<String>? onFreeText;
+
+  /// The suggestion the keyboard is on, drawn as if hovered.
+  final int? highlighted;
 
   bool get _alreadyOffered => suggestions.any(
         (suggestion) =>
@@ -169,13 +184,14 @@ class MapSuggestionList extends StatelessWidget {
                 subtitle: '',
                 onPicked: () => onFreeText!(freeText),
               ),
-            for (final suggestion in suggestions)
+            for (final (index, suggestion) in suggestions.indexed)
               _Row(
                 palette: palette,
                 icon: suggestion.isPin
                     ? Icons.push_pin_rounded
                     : Icons.place_rounded,
                 accent: suggestion.isPin,
+                highlighted: index == highlighted,
                 title: suggestion.title,
                 subtitle: suggestion.subtitle == suggestion.title
                     ? ''
@@ -226,6 +242,7 @@ class _Row extends StatefulWidget {
     required this.subtitle,
     required this.onPicked,
     this.accent = false,
+    this.highlighted = false,
   });
 
   final MapPalette palette;
@@ -234,6 +251,7 @@ class _Row extends StatefulWidget {
   final String subtitle;
   final VoidCallback onPicked;
   final bool accent;
+  final bool highlighted;
 
   @override
   State<_Row> createState() => _RowState();
@@ -257,7 +275,9 @@ class _RowState extends State<_Row> {
         child: AnimatedContainer(
           duration: MapMetrics.hover,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          color: _hovered ? palette.hover : palette.hover.withValues(alpha: 0),
+          color: _hovered || widget.highlighted
+              ? palette.hover
+              : palette.hover.withValues(alpha: 0),
           child: Row(
             children: [
               Icon(

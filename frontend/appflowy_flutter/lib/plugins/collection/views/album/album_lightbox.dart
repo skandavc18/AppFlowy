@@ -15,6 +15,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/maps/map_geo.dart';
+import 'package:appflowy/shared/maps/map_links.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
@@ -30,7 +32,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
-import 'package:url_launcher/url_launcher.dart';
 
 /// An optional host bridge for provider-backed items, called only on Copy/Share.
 ///
@@ -1166,12 +1167,7 @@ class _LocationSection extends StatelessWidget {
             _TextAction(
               label: LocaleKeys.collections_album_openInMaps.tr(),
               onTap: () => unawaited(
-                launchUrl(
-                  Uri.parse(
-                    'https://www.openstreetmap.org/?mlat=$latitude&mlon=$longitude#map=15/$latitude/$longitude',
-                  ),
-                  mode: LaunchMode.externalApplication,
-                ),
+                openInMaps(LatLng(latitude, longitude)),
               ),
             ),
           ],

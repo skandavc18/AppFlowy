@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_board.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_canvas.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_panel.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_guide.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_template_gallery.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_variables_bar.dart';
@@ -20,6 +21,7 @@ import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy/shared/page_icon.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/text_field_focus.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
@@ -28,12 +30,17 @@ import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart
 import 'package:appflowy/workspace/application/dashboard/dashboard_service.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
+import 'package:appflowy/workspace/application/templates/template_guides.dart';
+import 'package:appflowy/workspace/application/templates/template_service.dart';
+import 'package:appflowy/workspace/application/templates/workspace_template.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -79,6 +86,9 @@ class _DashboardPageState extends State<DashboardPage> {
   late ViewPB _view;
   bool _renaming = false;
   bool _editingSubtitle = false;
+
+  /// A chosen board's tables are being made.
+  bool _building = false;
 
   /// Where the sections are, so a widget can be dragged from one to another.
   final DashboardSectionRegistry _sections = DashboardSectionRegistry();
@@ -244,7 +254,12 @@ class _DashboardPageState extends State<DashboardPage> {
       child: page,
     );
 
-    return CallbackShortcuts(
+    return CallbackShortcutsUnlessTyping(
+      // Ctrl+Z in a field undoes the text, not the dashboard.
+      whileTyping: const {
+        SingleActivator(LogicalKeyboardKey.f11),
+        SingleActivator(LogicalKeyboardKey.escape),
+      },
       bindings: {
         const SingleActivator(LogicalKeyboardKey.f11): _toggleFullscreen,
         const SingleActivator(LogicalKeyboardKey.escape): () {
@@ -280,6 +295,33 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  /// Makes [template]'s tables beneath this dashboard, then lays its board
+  /// out bound to them.
+  Future<void> _adoptBoard(WorkspaceTemplate template) async {
+    if (_building) {
+      return;
+    }
+    setState(() => _building = true);
+    DashboardDocument? document;
+    try {
+      document = await TemplateService.buildBoard(
+        dashboardViewId: widget.view.id,
+        template: template,
+      );
+    } on Object catch (error, stack) {
+      Log.error('[Dashboard] ${template.id} could not be made', error, stack);
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _building = false);
+    if (document == null) {
+      showSnackBarMessage(context, LocaleKeys.templates_failed.tr());
+      return;
+    }
+    _controller.replace(document);
+  }
+
   Widget _buildBoard(
     DashboardPalette palette,
     DashboardDocument document,
@@ -289,14 +331,37 @@ class _DashboardPageState extends State<DashboardPage> {
     final presenting = _controller.mode == DashboardMode.presentation;
 
     final content = document.isEmpty && _controller.isEditable
-        ? DashboardTemplateGallery(
-            palette: palette,
-            embedded: true,
-            onChosen: (template) => _controller.replace(template.build()),
-          )
+        ? _building
+            ? const SizedBox(
+                height: 320,
+                child: Center(child: CircularProgressIndicator.adaptive()),
+              )
+            : DashboardTemplateGallery(
+                palette: palette,
+                embedded: true,
+                onChosen: (template) => _controller.replace(
+                  template.build().copyWith(guide: templateGuide(template.id)),
+                ),
+                onBoardChosen: _ownsController
+                    ? (template) => unawaited(_adoptBoard(template))
+                    : null,
+              )
         : Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (document.guide.isNotEmpty && !presenting)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: DashboardGuideCard(
+                    steps: document.guide,
+                    palette: palette,
+                    onDismiss: _controller.isEditable
+                        ? () => _controller.edit(
+                              (current) => current.copyWith(guide: const []),
+                            )
+                        : null,
+                  ),
+                ),
               if (document.settings.showControlBar)
                 DashboardVariablesBar(
                   controller: _controller,

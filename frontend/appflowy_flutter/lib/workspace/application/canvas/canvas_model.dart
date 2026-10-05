@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Rect, Size;
 
+import 'package:appflowy/shared/json_equality.dart';
 import 'package:flutter/foundation.dart';
 
 /// The document a canvas is. Pure Dart: no Flutter widgets, no backend, no
@@ -482,21 +483,26 @@ class CanvasNode {
     );
   }
 
+  /// Data is compared by value: a widget's spec or a block card's document
+  /// is nested JSON, and a canvas read back from storage must equal the one
+  /// that was written, or every echo of a save is taken for somebody else's
+  /// edit and replaces the card from under whoever is using it.
   @override
   bool operator ==(Object other) =>
+      identical(this, other) ||
       other is CanvasNode &&
-      other.id == id &&
-      other.kind == kind &&
-      other.position == position &&
-      other.size == size &&
-      other.title == title &&
-      other.text == text &&
-      other.url == url &&
-      other.reference == reference &&
-      other.frameId == frameId &&
-      other.color == color &&
-      other.locked == locked &&
-      mapEquals(other.data, data);
+          other.id == id &&
+          other.kind == kind &&
+          other.position == position &&
+          other.size == size &&
+          other.title == title &&
+          other.text == text &&
+          other.url == url &&
+          other.reference == reference &&
+          other.frameId == frameId &&
+          other.color == color &&
+          other.locked == locked &&
+          jsonValuesEqual(other.data, data);
 
   @override
   int get hashCode => Object.hash(
@@ -850,7 +856,11 @@ class CanvasStroke {
   final int? color;
   final double width;
 
-  Rect get bounds {
+  /// Asked for on every frame — culling, framing, the minimap — and a
+  /// stroke can hold thousands of points, so it is measured once.
+  Rect get bounds => _strokeBounds[this] ??= _measure();
+
+  Rect _measure() {
     if (points.isEmpty) {
       return Rect.zero;
     }
@@ -916,16 +926,20 @@ class CanvasStroke {
 
   @override
   bool operator ==(Object other) =>
+      identical(this, other) ||
       other is CanvasStroke &&
-      other.id == id &&
-      other.tool == tool &&
-      other.color == color &&
-      other.width == width &&
-      listEquals(other.points, points);
+          other.id == id &&
+          other.tool == tool &&
+          other.color == color &&
+          other.width == width &&
+          listEquals(other.points, points);
 
   @override
   int get hashCode => Object.hash(id, tool, color, width, points.length);
 }
+
+final Expando<Rect> _strokeBounds = Expando<Rect>('canvas stroke bounds');
+final Expando<Rect> _documentBounds = Expando<Rect>('canvas bounds');
 
 /// Where the canvas was left, so reopening it does not start at the origin.
 @immutable
@@ -1133,15 +1147,13 @@ class CanvasDocument {
     return found;
   }
 
-  /// The box every object on the canvas fits inside.
-  Rect get bounds {
-    final boxes = <Rect>[
-      for (final frame in frames) frame.rect,
-      for (final node in nodes) node.rect,
-      for (final stroke in strokes) stroke.bounds,
-    ];
-    return unionOfCanvasRects(boxes);
-  }
+  /// The box every object on the canvas fits inside. A document never
+  /// changes, so it is worked out once rather than on every frame.
+  Rect get bounds => _documentBounds[this] ??= unionOfCanvasRects(<Rect>[
+        for (final frame in frames) frame.rect,
+        for (final node in nodes) node.rect,
+        for (final stroke in strokes) stroke.bounds,
+      ]);
 
   Rect boundsOf(Iterable<String> ids) {
     final wanted = ids.toSet();
@@ -1313,12 +1325,13 @@ class CanvasDocument {
 
   @override
   bool operator ==(Object other) =>
+      identical(this, other) ||
       other is CanvasDocument &&
-      other.settings == settings &&
-      listEquals(other.nodes, nodes) &&
-      listEquals(other.edges, edges) &&
-      listEquals(other.frames, frames) &&
-      listEquals(other.strokes, strokes);
+          other.settings == settings &&
+          listEquals(other.nodes, nodes) &&
+          listEquals(other.edges, edges) &&
+          listEquals(other.frames, frames) &&
+          listEquals(other.strokes, strokes);
 
   @override
   int get hashCode => Object.hash(

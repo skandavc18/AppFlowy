@@ -1,5 +1,7 @@
 import 'package:appflowy/extensions/dart/dart_extension_host.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_preview.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/templates/built_in/built_in_templates.dart';
@@ -78,6 +80,17 @@ class _TemplateCardState extends State<TemplateCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (!widget.compact) ...[
+                Expanded(
+                  child: _Picture(
+                    template: template,
+                    palette: palette,
+                    tone: tone,
+                    hovered: _hovered,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -118,7 +131,10 @@ class _TemplateCardState extends State<TemplateCard> {
                   ),
                 ],
               ),
-              const Spacer(),
+              if (widget.compact)
+                const Spacer()
+              else
+                const SizedBox(height: 10),
               if (missing.isNotEmpty)
                 _NeedsExtension(
                   palette: palette,
@@ -130,6 +146,161 @@ class _TemplateCardState extends State<TemplateCard> {
                 _Footprint(template: template, palette: palette),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small picture of what the template makes, on the template's colour.
+class _Picture extends StatefulWidget {
+  const _Picture({
+    required this.template,
+    required this.palette,
+    required this.tone,
+    required this.hovered,
+  });
+
+  final WorkspaceTemplate template;
+  final DashboardPalette palette;
+  final DashboardTone tone;
+  final bool hovered;
+
+  @override
+  State<_Picture> createState() => _PictureState();
+}
+
+class _PictureState extends State<_Picture> {
+  // Built once: a template mints fresh ids every time it is built.
+  late final Widget? _art = _artFor(widget.template);
+
+  static Widget? _artFor(WorkspaceTemplate template) {
+    final board = template.boardPart;
+    if (board != null) {
+      return DashboardMiniature(
+        document: (board.blueprint as TemplateDashboard).build(const {}),
+      );
+    }
+    for (final part in template.parts) {
+      switch (part.blueprint) {
+        case TemplateCanvas(:final build):
+          return CanvasMiniature(document: build(const {}));
+        case TemplateDatabase(:final build):
+          return _TableArt(
+            columns: [
+              for (final column in build(const {}).columns) column.name,
+            ],
+          );
+        default:
+          break;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final tone = widget.tone;
+    final art = _art;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: tone.gradient.length > 1
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  for (final colour in tone.gradient)
+                    colour.withValues(alpha: palette.isDark ? 0.34 : 0.55),
+                ],
+              )
+            : null,
+        color: tone.gradient.length > 1 ? null : tone.wash(0.14),
+        borderRadius: BorderRadius.circular(DashboardMetrics.innerRadius),
+      ),
+      child: AnimatedScale(
+        duration: DashboardMetrics.hover,
+        curve: DashboardMetrics.curve,
+        scale: widget.hovered ? 1.03 : 1,
+        alignment: Alignment.topCenter,
+        child: IgnorePointer(
+          child: art ??
+              Center(
+                child: Icon(
+                  widget.template.icon,
+                  size: 34,
+                  color: tone.strong.withValues(alpha: 0.7),
+                ),
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A table drawn as its column names over a few empty rows.
+class _TableArt extends StatelessWidget {
+  const _TableArt({required this.columns});
+
+  final List<String> columns;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = DashboardPalette.of(context);
+    final shown = columns.take(4).toList();
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.surface,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          children: [
+            for (var row = 0; row < 4; row++)
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: row == 0
+                        ? null
+                        : Border(top: BorderSide(color: palette.gridLine)),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      for (final name in shown)
+                        Expanded(
+                          child: row == 0
+                              ? Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      DashboardType.caption(palette).copyWith(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FractionallySizedBox(
+                                    widthFactor: 0.4 + (row * 0.13) % 0.4,
+                                    child: Container(
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: palette.gridLine,
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

@@ -608,6 +608,19 @@ class _MiniatureCard extends StatelessWidget {
                             ),
                           ),
                         ),
+                      ] else if (_sketchOf(spec.type) case final sketch?
+                          when height >= 34) ...[
+                        SizedBox(height: math.max(2, glyph * 0.35)),
+                        Expanded(
+                          child: CustomPaint(
+                            size: Size.infinite,
+                            painter: _SketchPainter(
+                              sketch: sketch,
+                              color: palette.strongFor(appearance.accent),
+                              faint: tone.inkSoft,
+                            ),
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -616,6 +629,255 @@ class _MiniatureCard extends StatelessWidget {
       },
     );
   }
+}
+
+/// A shape that says what a card draws, small enough for a miniature.
+enum _Sketch { line, donut, bars, rows, tiles, payoff, ring, mirror, figure }
+
+_Sketch? _sketchOf(String type) => switch (type) {
+      'trend' || 'portfolio' || 'net_worth' || 'chart' => _Sketch.line,
+      'allocation' => _Sketch.donut,
+      'heatmap' ||
+      'pnl_calendar' ||
+      'calendar' ||
+      'balance_sheet' =>
+        _Sketch.tiles,
+      'holdings' ||
+      'watchlist' ||
+      'list' ||
+      'database' ||
+      'reminders' =>
+        _Sketch.rows,
+      'options_book' || 'options_payoff' => _Sketch.payoff,
+      'pnl_stats' || 'loans' || 'progress' => _Sketch.ring,
+      'option_chain' => _Sketch.mirror,
+      'options_summary' || 'metric' || 'counter' => _Sketch.figure,
+      'quote_wall' || 'quote_spotlight' => _Sketch.bars,
+      _ => null,
+    };
+
+class _SketchPainter extends CustomPainter {
+  const _SketchPainter({
+    required this.sketch,
+    required this.color,
+    required this.faint,
+  });
+
+  final _Sketch sketch;
+  final Color color;
+  final Color faint;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width < 8 || size.height < 6) {
+      return;
+    }
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1, h * 0.04)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final soft = Paint()..color = color.withValues(alpha: 0.18);
+    final muted = Paint()..color = faint.withValues(alpha: 0.22);
+    switch (sketch) {
+      case _Sketch.line:
+        const shape = [0.72, 0.6, 0.66, 0.44, 0.5, 0.3, 0.36, 0.14];
+        final points = [
+          for (var i = 0; i < shape.length; i++)
+            Offset(w * i / (shape.length - 1), h * shape[i]),
+        ];
+        final line = Path()..addPolygon(points, false);
+        canvas
+          ..drawPath(
+            Path.from(line)
+              ..lineTo(w, h)
+              ..lineTo(0, h)
+              ..close(),
+            soft,
+          )
+          ..drawPath(line, stroke);
+      case _Sketch.donut:
+        final radius = math.min(w, h) * 0.42;
+        final centre = Offset(w / 2, h / 2);
+        final ring = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = radius * 0.42
+          ..strokeCap = StrokeCap.butt;
+        var start = -math.pi / 2;
+        for (final (share, alpha) in const [
+          (0.46, 1.0),
+          (0.24, 0.7),
+          (0.18, 0.45),
+          (0.12, 0.25),
+        ]) {
+          final sweep = share * math.pi * 2;
+          canvas.drawArc(
+            Rect.fromCircle(center: centre, radius: radius),
+            start + 0.06,
+            sweep - 0.12,
+            false,
+            ring..color = color.withValues(alpha: alpha),
+          );
+          start += sweep;
+        }
+      case _Sketch.bars:
+      case _Sketch.rows:
+        final count = math.max(2, math.min(5, (h / 9).floor()));
+        final gap = h / count;
+        for (var i = 0; i < count; i++) {
+          final top = i * gap + gap * 0.25;
+          final barHeight = gap * (sketch == _Sketch.rows ? 0.34 : 0.4);
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(0, top, w, barHeight),
+              Radius.circular(barHeight / 2),
+            ),
+            muted,
+          );
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(0, top, w * (0.86 - i * 0.14), barHeight),
+              Radius.circular(barHeight / 2),
+            ),
+            soft..color = color.withValues(alpha: 0.32),
+          );
+        }
+      case _Sketch.tiles:
+        const columns = 7;
+        final rows = math.max(2, math.min(4, (h / (w / columns)).floor()));
+        final cell = math.min(w / columns, h / rows);
+        for (var row = 0; row < rows; row++) {
+          for (var column = 0; column < columns; column++) {
+            final strength = ((row * 3 + column * 5) % 7) / 7;
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTWH(
+                  column * cell + cell * 0.1,
+                  row * cell + cell * 0.1,
+                  cell * 0.8,
+                  cell * 0.8,
+                ),
+                Radius.circular(cell * 0.2),
+              ),
+              Paint()..color = color.withValues(alpha: 0.12 + strength * 0.5),
+            );
+          }
+        }
+      case _Sketch.payoff:
+        final zero = h * 0.62;
+        final shape = Path()
+          ..moveTo(0, h * 0.95)
+          ..lineTo(w * 0.3, h * 0.95)
+          ..lineTo(w * 0.42, h * 0.2)
+          ..lineTo(w * 0.58, h * 0.2)
+          ..lineTo(w * 0.7, h * 0.95)
+          ..lineTo(w, h * 0.95);
+        canvas
+          ..drawLine(Offset(0, zero), Offset(w, zero), muted..strokeWidth = 1)
+          ..drawPath(
+            Path.from(shape)
+              ..lineTo(w, zero)
+              ..lineTo(0, zero)
+              ..close(),
+            soft,
+          )
+          ..drawPath(shape, stroke);
+      case _Sketch.ring:
+        final radius = math.min(w, h) * 0.4;
+        final centre = Offset(math.min(w / 2, radius * 1.4), h / 2);
+        final width = radius * 0.32;
+        canvas
+          ..drawCircle(
+            centre,
+            radius,
+            Paint()
+              ..color = faint.withValues(alpha: 0.18)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = width,
+          )
+          ..drawArc(
+            Rect.fromCircle(center: centre, radius: radius),
+            -math.pi / 2,
+            math.pi * 1.3,
+            false,
+            Paint()
+              ..color = color
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = width
+              ..strokeCap = StrokeCap.round,
+          );
+        if (w > radius * 4) {
+          final left = centre.dx + radius * 1.8;
+          for (var i = 0; i < 3; i++) {
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTWH(left, h * (0.22 + i * 0.22), w - left, h * 0.08),
+                Radius.circular(h * 0.04),
+              ),
+              muted,
+            );
+          }
+        }
+      case _Sketch.mirror:
+        final count = math.max(3, math.min(7, (h / 6).floor()));
+        final gap = h / count;
+        for (var i = 0; i < count; i++) {
+          final depth = 1 - (i - count / 2).abs() / count;
+          final barHeight = gap * 0.5;
+          final top = i * gap + gap * 0.25;
+          canvas
+            ..drawRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTRB(
+                  w / 2 - w * 0.46 * depth,
+                  top,
+                  w / 2 - 1,
+                  top + barHeight,
+                ),
+                Radius.circular(barHeight / 2),
+              ),
+              Paint()..color = color.withValues(alpha: 0.55),
+            )
+            ..drawRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTRB(
+                  w / 2 + 1,
+                  top,
+                  w / 2 + w * 0.42 * (1.1 - depth),
+                  top + barHeight,
+                ),
+                Radius.circular(barHeight / 2),
+              ),
+              Paint()..color = faint.withValues(alpha: 0.4),
+            );
+        }
+      case _Sketch.figure:
+        canvas
+          ..drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(0, h * 0.12, w * 0.55, h * 0.3),
+              Radius.circular(h * 0.08),
+            ),
+            Paint()..color = color.withValues(alpha: 0.7),
+          )
+          ..drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(0, h * 0.58, w * 0.32, h * 0.14),
+              Radius.circular(h * 0.07),
+            ),
+            muted,
+          );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SketchPainter oldDelegate) =>
+      oldDelegate.sketch != sketch ||
+      oldDelegate.color != color ||
+      oldDelegate.faint != faint;
 }
 
 /// What a board preview says when there is nothing on the board yet.

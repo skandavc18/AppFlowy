@@ -1,14 +1,18 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/table_views/property_ink.dart';
 import 'package:flutter/material.dart';
 
 /// Every fixed size and duration a deck uses.
 abstract final class SlideMetrics {
   static const double cardRadius = 22;
   static const double coverHeight = 168;
+
+  /// A colour or gradient cover needs only a band, not a picture's height.
+  static const double bandHeight = 92;
   static const double cardPadding = 26;
-  static const double propertyGap = 16;
-  static const double iconSize = 40;
+  static const double propertyGap = 18;
+  static const double iconSize = 44;
 
   static const double badgeRadius = 8;
   static const double avatarSize = 26;
@@ -31,16 +35,36 @@ abstract final class SlideMetrics {
   /// stronger reads as a gimmick rather than depth.
   static const double perspective = 0.0011;
 
-  static const Duration settle = Duration(milliseconds: 380);
   static const Duration change = Duration(milliseconds: 300);
   static const Duration hover = Duration(milliseconds: 180);
   static const Duration enter = Duration(milliseconds: 420);
 
-  static const Curve settleCurve = Curves.easeInOutCubic;
   static const Curve enterCurve = Curves.easeOutCubic;
 
-  /// How far a wheel notch moves the deck.
-  static const double wheelStep = 1 / 3;
+  /// The spring a released deck glides home on, critically damped so it never
+  /// wobbles; it inherits the release speed instead of starting from rest.
+  static final SpringDescription settleSpring =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 300);
+
+  /// In slides: close enough to call the glide finished.
+  static const Tolerance settleTolerance =
+      Tolerance(distance: 0.002, velocity: 0.02);
+
+  /// Slides a second; a harder flick would overshoot the slide it lands on.
+  static const double maxSettleVelocity = 5;
+
+  /// How far, in slides, a slow swipe has to travel to turn the page.
+  static const double commitDistance = 0.18;
+
+  /// A scroll delta at least this large is a wheel notch, which turns one
+  /// slide; smaller ones come from a touchpad and follow the fingers.
+  static const double wheelNotch = 24;
+
+  /// Notches closer together than this belong to the same turn.
+  static const Duration wheelStepGap = Duration(milliseconds: 110);
+
+  /// How long touchpad scrolling has to pause before the deck settles.
+  static const Duration wheelQuiet = Duration(milliseconds: 160);
 
   /// How fast a drag has to be released to carry on to the next slide.
   static const double flingVelocity = 320;
@@ -48,7 +72,7 @@ abstract final class SlideMetrics {
 
 /// The colours a deck is drawn in.
 @immutable
-class SlidePalette {
+class SlidePalette implements PropertyInk {
   const SlidePalette({
     required this.canvas,
     required this.surface,
@@ -69,21 +93,32 @@ class SlidePalette {
   final Color canvas;
 
   /// The face of a slide.
+  @override
   final Color surface;
 
   /// A panel standing on a slide.
+  @override
   final Color raised;
 
   /// A well cut into a slide, such as a progress track.
+  @override
   final Color sunken;
 
+  @override
   final Color hover;
+  @override
   final Color border;
+  @override
   final Color textPrimary;
+  @override
   final Color textSecondary;
+  @override
   final Color textMuted;
+  @override
   final Color accent;
+  @override
   final Color shadow;
+  @override
   final bool isDark;
   final bool isPaper;
 
@@ -99,6 +134,7 @@ class SlidePalette {
     Color(0xFF6366F1),
   ];
 
+  @override
   Color swatchFor(String value) {
     if (value.trim().isEmpty) {
       return accent;
@@ -125,15 +161,28 @@ class SlidePalette {
         blurRadius: 9,
         offset: Offset(0, 2 + lift / 3),
       ),
+      ..._rim,
     ];
   }
 
+  @override
   List<BoxShadow> get chromeShadow => [
         BoxShadow(
           color: shadow.withValues(alpha: isDark ? 0.42 : 0.12),
           blurRadius: 14,
           offset: const Offset(0, 4),
         ),
+        ..._rim,
+      ];
+
+  /// A shadow says nothing on a dark canvas, so there a surface's edge is a
+  /// faint light rim instead of a drawn outline.
+  List<BoxShadow> get _rim => [
+        if (isDark)
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.07),
+            spreadRadius: 0.6,
+          ),
       ];
 }
 

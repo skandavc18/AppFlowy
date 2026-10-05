@@ -106,8 +106,9 @@ int dashboardColumnsFor(double width) {
 
 /// Rewrite a placement stored against [from] columns for a canvas of [to].
 ///
-/// Spans are scaled and rounded UP so a widget never loses so much width that
-/// it stops working; a widget that filled the row still fills it.
+/// Edges are scaled rather than spans, so widgets that met still meet: a row
+/// that was full is still full and never spills onto the next line, and a
+/// widget that filled the row still fills it.
 DashboardPlacement scaleDashboardPlacement(
   DashboardPlacement placement, {
   required int from,
@@ -117,10 +118,10 @@ DashboardPlacement scaleDashboardPlacement(
     return placement;
   }
   final ratio = to / from;
-  var span = (placement.columnSpan * ratio).ceil();
-  span = span.clamp(1, to);
-  var column = (placement.column * ratio).floor();
-  column = column.clamp(0, to - span);
+  final start = (placement.column * ratio).round();
+  final end = ((placement.column + placement.columnSpan) * ratio).round();
+  final span = math.max(1, end - start).clamp(1, to);
+  final column = start.clamp(0, to - span);
   return placement.copyWith(column: column, columnSpan: span);
 }
 

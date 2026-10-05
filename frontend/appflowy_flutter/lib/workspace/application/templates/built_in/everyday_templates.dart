@@ -239,65 +239,22 @@ final _quotes = WorkspaceTemplate(
   label: () => LocaleKeys.templates_item_quotes.tr(),
   description: () => LocaleKeys.templates_item_quotesHint.tr(),
   icon: Icons.format_quote_rounded,
-  accent: DashboardAccent.purple,
+  accent: DashboardAccent.amber,
   keywords: const [
     'quotes',
     'quotations',
     'sayings',
     'inspiration',
     'commonplace',
+    'quote of the day',
+    'passages',
   ],
   build: () => [
     TemplatePart(
       key: 'quotes',
       icon: '💬',
       name: () => LocaleKeys.templates_text_theQuotes.tr(),
-      blueprint: TemplateDatabase(
-        (_) => TemplateTable(
-          columns: [
-            TemplateColumn.text(LocaleKeys.templates_column_quote.tr()),
-            TemplateColumn.text(LocaleKeys.templates_column_whoSaidIt.tr()),
-            TemplateColumn.text(LocaleKeys.templates_column_whereFrom.tr()),
-            TemplateColumn.multiSelect(LocaleKeys.templates_column_theme.tr(), [
-              LocaleKeys.templates_option_work.tr(),
-              LocaleKeys.templates_option_life.tr(),
-              LocaleKeys.templates_option_craft.tr(),
-              LocaleKeys.templates_option_courage.tr(),
-              LocaleKeys.templates_option_stillness.tr(),
-            ]),
-            TemplateColumn.checkbox(
-              LocaleKeys.templates_column_favourite.tr(),
-            ),
-            TemplateColumn.date(LocaleKeys.templates_column_added.tr()),
-          ],
-          rows: [
-            [
-              'The obstacle is the way.',
-              'Marcus Aurelius',
-              'Meditations',
-              LocaleKeys.templates_option_courage.tr(),
-              'yes',
-              '',
-            ],
-            [
-              'Simplicity is the ultimate sophistication.',
-              'Leonardo da Vinci',
-              '',
-              LocaleKeys.templates_option_craft.tr(),
-              'no',
-              '',
-            ],
-            [
-              'It does not matter how slowly you go, so long as you do not stop.',
-              'Confucius',
-              '',
-              LocaleKeys.templates_option_life.tr(),
-              'no',
-              '',
-            ],
-          ],
-        ),
-      ),
+      blueprint: TemplateDatabase((_) => _quotesTable()),
     ),
     TemplatePart(
       key: 'board',
@@ -313,44 +270,47 @@ final _quotes = WorkspaceTemplate(
             [
               section([
                 widget(
-                  'quote',
+                  'quote_spotlight',
                   w: 8,
-                  accent: DashboardAccent.purple,
-                  settings: const {
-                    'text': 'The obstacle is the way.',
-                    'author': 'Marcus Aurelius',
-                  },
+                  h: 7,
+                  source: table(quotes, name: name),
                 ),
                 widget(
                   'metric',
                   x: 8,
+                  h: 3,
                   title: LocaleKeys.templates_text_collected.tr(),
-                  accent: DashboardAccent.purple,
+                  accent: DashboardAccent.amber,
                   settings: const {'aggregate': 'count'},
                   source: table(quotes, name: name, field: quote),
+                ),
+                widget(
+                  'chart',
+                  x: 8,
+                  y: 3,
+                  title: LocaleKeys.templates_text_byTheme.tr(),
+                  settings: const {'chart_type': 'donut', 'aggregate': 'count'},
+                  source: table(quotes, name: name, groupField: theme),
                 ),
               ]),
               section(
                 [
                   widget(
-                    'database',
-                    w: 8,
-                    h: 9,
+                    'quote_wall',
+                    w: 12,
+                    h: 12,
                     source: table(quotes, name: name),
                   ),
+                ],
+                title: LocaleKeys.templates_text_theWall.tr(),
+              ),
+              section(
+                [
                   widget(
-                    'chart',
-                    x: 8,
+                    'database',
+                    w: 12,
                     h: 9,
-                    title: LocaleKeys.templates_text_byTheme.tr(),
-                    accent: DashboardAccent.purple,
-                    settings: const {'chart_type': 'donut'},
-                    source: table(
-                      quotes,
-                      name: name,
-                      field: quote,
-                      groupField: theme,
-                    ),
+                    source: table(quotes, name: name),
                   ),
                 ],
                 title: LocaleKeys.templates_text_theCommonplaceBook.tr(),
@@ -363,6 +323,140 @@ final _quotes = WorkspaceTemplate(
     ),
   ],
 );
+
+/// Public-domain passages, long ones included: the dashboard sets a line
+/// and a page of prose equally well.
+TemplateTable _quotesTable() {
+  final work = LocaleKeys.templates_option_work.tr();
+  final life = LocaleKeys.templates_option_life.tr();
+  final craft = LocaleKeys.templates_option_craft.tr();
+  final courage = LocaleKeys.templates_option_courage.tr();
+  final stillness = LocaleKeys.templates_option_stillness.tr();
+  final today = DateTime.now();
+  String added(int days) {
+    final date = DateTime(today.year, today.month, today.day - days);
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  return TemplateTable(
+    columns: [
+      TemplateColumn.text(LocaleKeys.templates_column_quote.tr()),
+      TemplateColumn.text(LocaleKeys.templates_column_whoSaidIt.tr()),
+      TemplateColumn.text(LocaleKeys.templates_column_whereFrom.tr()),
+      // One theme a quote, so the donut counts each quote once.
+      TemplateColumn.select(
+        LocaleKeys.templates_column_theme.tr(),
+        [work, life, craft, courage, stillness],
+      ),
+      TemplateColumn.checkbox(LocaleKeys.templates_column_favourite.tr()),
+      TemplateColumn.date(LocaleKeys.templates_column_added.tr()),
+    ],
+    rows: [
+      [
+        'I went to the woods because I wished to live deliberately, to front '
+            'only the essential facts of life, and see if I could not learn '
+            'what it had to teach, and not, when I came to die, discover that '
+            'I had not lived. I did not wish to live what was not life, living '
+            'is so dear; nor did I wish to practise resignation, unless it was '
+            'quite necessary.',
+        'Henry David Thoreau',
+        'Walden (1854)',
+        life,
+        'yes',
+        added(2),
+      ],
+      [
+        'Where the mind is without fear and the head is held high; where '
+            'knowledge is free; where the world has not been broken up into '
+            'fragments by narrow domestic walls; where words come out from the '
+            'depth of truth; where tireless striving stretches its arms '
+            'towards perfection; where the clear stream of reason has not lost '
+            'its way into the dreary desert sand of dead habit; where the mind '
+            'is led forward by thee into ever-widening thought and action — '
+            'into that heaven of freedom, my Father, let my country awake.',
+        'Rabindranath Tagore',
+        'Gitanjali, 35 (1912)',
+        courage,
+        'yes',
+        added(5),
+      ],
+      [
+        'There are more things, Lucilius, likely to frighten us than there '
+            'are to crush us; we suffer more often in imagination than in '
+            'reality.',
+        'Seneca',
+        'Letters to Lucilius, XIII',
+        courage,
+        'no',
+        added(8),
+      ],
+      [
+        'Begin the morning by saying to thyself, I shall meet with the '
+            'busy-body, the ungrateful, arrogant, deceitful, envious, '
+            'unsocial. All these things happen to them by reason of their '
+            'ignorance of what is good and evil.',
+        'Marcus Aurelius',
+        'Meditations, II.1 (tr. George Long)',
+        stillness,
+        'no',
+        added(11),
+      ],
+      [
+        'To believe your own thought, to believe that what is true for you in '
+            'your private heart is true for all men, — that is genius.',
+        'Ralph Waldo Emerson',
+        'Self-Reliance (1841)',
+        craft,
+        'no',
+        added(15),
+      ],
+      [
+        'Arise, awake, and stop not till the goal is reached.',
+        'Swami Vivekananda',
+        '',
+        courage,
+        'yes',
+        added(18),
+      ],
+      [
+        'With malice toward none, with charity for all, with firmness in the '
+            'right as God gives us to see the right, let us strive on to '
+            'finish the work we are in, to bind up the nation\'s wounds.',
+        'Abraham Lincoln',
+        'Second Inaugural Address (1865)',
+        work,
+        'no',
+        added(23),
+      ],
+      [
+        'The journey of a thousand li commenced with a single step.',
+        'Lao Tzu',
+        'Tao Te Ching, 64 (tr. James Legge)',
+        life,
+        'no',
+        added(27),
+      ],
+      [
+        'Our life is frittered away by detail. Simplify, simplify.',
+        'Henry David Thoreau',
+        'Walden (1854)',
+        stillness,
+        'no',
+        added(31),
+      ],
+      [
+        'Well done is better than well said.',
+        'Benjamin Franklin',
+        "Poor Richard's Almanack",
+        work,
+        'no',
+        added(36),
+      ],
+    ],
+  );
+}
 
 // ----------------------------------------------------------------- daily note
 

@@ -85,6 +85,14 @@ void main() {
           value: '42',
           facts: const TableColumnFacts(lowest: 0, highest: 84),
         ),
+        TablePropertyKind.number,
+      );
+      expect(
+        classifyTableProperty(
+          field: _field('f', 'Completion', FieldType.Number),
+          value: '42',
+          facts: const TableColumnFacts(lowest: 0, highest: 84),
+        ),
         TablePropertyKind.progress,
       );
       expect(

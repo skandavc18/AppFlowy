@@ -7,12 +7,16 @@ import 'package:appflowy/shared/slides/slide_deck.dart';
 import 'package:appflowy/shared/slides/slide_query.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
+import 'package:appflowy/shared/table_views/table_view_chrome.dart'
+    show TableViewEmpty;
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:appflowy/workspace/application/slides/slide_source.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 /// A table read one row at a time, with the chrome every other viewer in the
@@ -181,7 +185,10 @@ class SlideStageState extends State<SlideStage> {
   }
 
   void _onIndexChanged(int index) {
-    _index = index;
+    if (index != _index) {
+      _index = index;
+      _showIndex();
+    }
     // Every step would otherwise be a folder write; the place is only worth
     // keeping once the reader has settled on it.
     _indexTimer?.cancel();
@@ -191,6 +198,24 @@ class SlideStageState extends State<SlideStage> {
       }
       widget.onSpecChanged(widget.spec.copyWith(index: index));
     });
+  }
+
+  /// Moves the rail and the counter along with the deck. The deck can settle
+  /// while it is itself being rebuilt, when this stage must wait a frame.
+  void _showIndex() {
+    if (!mounted) {
+      return;
+    }
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+      return;
+    }
+    setState(() {});
   }
 
   // ------------------------------------------------------------------ layout
@@ -229,26 +254,41 @@ class SlideStageState extends State<SlideStage> {
 
   Widget _buildBody(SlidePalette palette) {
     if (_source.isLoading && _source.cards.isEmpty) {
-      return _buildNotice(palette, LocaleKeys.slides_loading.tr());
+      return _buildLoading(palette);
     }
     final error = _source.error;
     if (error != null && error.isNotEmpty && _source.cards.isEmpty) {
-      return _buildNotice(palette, error, onTap: reload);
+      return TableViewEmpty(
+        palette: palette,
+        icon: Icons.warning_rounded,
+        message: error,
+        actionLabel: LocaleKeys.slides_reload.tr(),
+        onAction: reload,
+      );
     }
     if (_visible.isEmpty) {
-      return _buildNotice(
-        palette,
-        _query.isFiltering
-            ? LocaleKeys.slides_noneMatch.tr()
-            : LocaleKeys.slides_addFirst.tr(),
-        onTap: _query.isFiltering ? _clearFilter : _addRow,
-      );
+      return _query.isFiltering
+          ? TableViewEmpty(
+              palette: palette,
+              icon: Icons.filter_alt_off_rounded,
+              message: LocaleKeys.slides_noneMatch.tr(),
+              actionLabel: LocaleKeys.slides_everything.tr(),
+              onAction: _clearFilter,
+            )
+          : TableViewEmpty(
+              palette: palette,
+              icon: Icons.view_carousel_rounded,
+              message: LocaleKeys.slides_empty.tr(),
+              actionLabel: LocaleKeys.slides_addFirst.tr(),
+              onAction: widget.onAddRow == null ? null : _addRow,
+            );
     }
 
     return SlideDeck(
       controller: _deck,
       cards: _visible,
       palette: palette,
+      viewId: widget.viewId,
       flow: widget.spec.flow,
       wrap: widget.spec.wrap,
       index: _index,
@@ -266,46 +306,28 @@ class SlideStageState extends State<SlideStage> {
     );
   }
 
-  Widget _buildNotice(
-    SlidePalette palette,
-    String message, {
-    VoidCallback? onTap,
-  }) {
-    final actionable = onTap != null;
+  Widget _buildLoading(SlidePalette palette) {
     return Center(
-      child: MouseRegion(
-        cursor: actionable ? SystemMouseCursors.click : MouseCursor.defer,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            decoration: BoxDecoration(
-              color: palette.surface,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: palette.chromeShadow,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  message,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: actionable ? palette.accent : palette.textMuted,
-                  ),
-                ),
-                if (actionable) ...[
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 16,
-                    color: palette.accent,
-                  ),
-                ],
-              ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.6,
+              color: palette.accent,
             ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              LocaleKeys.slides_loading.tr(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: palette.textMuted),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -314,30 +336,44 @@ class SlideStageState extends State<SlideStage> {
     if (_visible.length <= 1) {
       return const SizedBox(height: 4);
     }
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        SlideControlButton(
-          palette: palette,
-          icon: Icons.chevron_left_rounded,
-          tooltip: LocaleKeys.slides_previous.tr(),
-          onTap: _deck.previous,
-        ),
-        const SizedBox(width: 14),
-        SlideRail(
-          count: _visible.length,
-          index: _index,
-          palette: palette,
-          onSelected: (at) => _deck.goTo(at),
-        ),
-        const SizedBox(width: 14),
-        SlideControlButton(
-          palette: palette,
-          icon: Icons.chevron_right_rounded,
-          tooltip: LocaleKeys.slides_next.tr(),
-          onTap: _deck.next,
-        ),
-      ],
+    // A narrow host shrinks the controls rather than letting them spill.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SlideControlButton(
+            palette: palette,
+            icon: Icons.chevron_left_rounded,
+            tooltip: LocaleKeys.slides_previous.tr(),
+            onTap: _deck.previous,
+          ),
+          const SizedBox(width: 14),
+          SlideRail(
+            count: _visible.length,
+            index: _index,
+            palette: palette,
+            onSelected: (at) => _deck.goTo(at),
+          ),
+          const SizedBox(width: 14),
+          SlideControlButton(
+            palette: palette,
+            icon: Icons.chevron_right_rounded,
+            tooltip: LocaleKeys.slides_next.tr(),
+            onTap: _deck.next,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '${_index + 1} / ${_visible.length}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: palette.textMuted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -350,6 +386,8 @@ class SlideStageState extends State<SlideStage> {
           Expanded(
             child: Row(
               children: [
+                const WorkspaceGlyph(Icons.view_carousel_rounded),
+                const SizedBox(width: 9),
                 Flexible(
                   child: Text(
                     title == null || title.isEmpty
@@ -367,13 +405,27 @@ class SlideStageState extends State<SlideStage> {
                 ),
                 const SizedBox(width: 10),
                 Flexible(
-                  child: Text(
-                    LocaleKeys.slides_slideCount.tr(
-                      namedArgs: {'count': '${_visible.length}'},
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2.5,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: palette.textMuted),
+                    decoration: BoxDecoration(
+                      color: palette.raised,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      LocaleKeys.slides_slideCount.tr(
+                        namedArgs: {'count': '${_visible.length}'},
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: palette.textMuted,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -494,13 +546,19 @@ class SlideStageState extends State<SlideStage> {
             fillColor: palette.raised,
             hintText: LocaleKeys.slides_searchHint.tr(),
             hintStyle: TextStyle(fontSize: 13, color: palette.textMuted),
-            prefixIcon:
-                Icon(Icons.search_rounded, size: 15, color: palette.textMuted),
+            prefixIcon: WorkspaceGlyph(
+              Icons.search_rounded,
+              size: 15,
+              color: palette.textMuted,
+            ),
             prefixIconConstraints:
                 const BoxConstraints(minWidth: 32, minHeight: 32),
             suffixIcon: IconButton(
-              icon:
-                  Icon(Icons.close_rounded, size: 14, color: palette.textMuted),
+              icon: WorkspaceGlyph(
+                Icons.close_rounded,
+                size: 14,
+                color: palette.textMuted,
+              ),
               splashRadius: 12,
               onPressed: _closeSearch,
             ),
@@ -813,7 +871,11 @@ class SlideControlButton extends StatelessWidget {
         tooltip: tooltip,
         isSelected: active,
         onPressed: onTap,
-        icon: Icon(icon, size: 17),
+        icon: WorkspaceGlyph(
+          icon,
+          size: 17,
+          color: active ? palette.accent : palette.textSecondary,
+        ),
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
           minimumSize: const Size.square(SlideMetrics.controlSize),

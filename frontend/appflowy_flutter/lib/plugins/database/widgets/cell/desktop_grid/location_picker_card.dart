@@ -5,7 +5,6 @@ import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/maps/map_marker.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
-import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -103,7 +102,6 @@ class LocationPickerCard extends StatelessWidget {
               pins: pinned == null
                   ? const []
                   : [AppMapPin(id: 'picked', point: pinned, title: text)],
-              apiKey: MapsSettings.instance.apiKey,
               initialCenter: pinned,
               initialZoom: pinned == null ? 2.2 : 14,
               showControls: false,

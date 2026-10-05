@@ -1,8 +1,16 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/slides/slide_property_view.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
+import 'package:appflowy/shared/table_views/property_values.dart';
 import 'package:appflowy/shared/table_views/row_page_preview.dart';
+import 'package:appflowy/shared/table_views/table_property_view.dart'
+    show TableCoverView;
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
+import 'package:appflowy/workspace/application/table_views/table_row.dart'
+    show TableCover, TableCoverKind;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +29,7 @@ class SlideCard extends StatefulWidget {
     this.prominence = 1,
     this.live = false,
     this.showPageContent = false,
+    this.viewId = '',
     this.onOpen,
     this.onEdit,
     this.onContextMenu,
@@ -38,6 +47,9 @@ class SlideCard extends StatefulWidget {
 
   /// Whether the writing on the row's own page is read on the slide.
   final bool showPageContent;
+
+  /// The table the row belongs to, so attached files can be read.
+  final String viewId;
 
   final VoidCallback? onOpen;
   final VoidCallback? onEdit;
@@ -94,41 +106,111 @@ class _SlideCardState extends State<SlideCard> {
     }
   }
 
+  /// What a short slide keeps back for its facts before the head is trimmed.
+  static const double _minimumBody = 56;
+  static const double _footerHeight = 34;
+
   Widget _buildBody(SlidePalette palette) {
     final card = widget.card;
     final properties = card.filled;
-    final hero = card.coverUrl ?? _heroFrom(properties);
+    final picture = card.cover == null ? _heroFrom(properties) : null;
+    final cover = card.cover ??
+        (picture == null
+            ? card.fallbackCover
+            : TableCover(kind: TableCoverKind.picture, value: picture));
+    final hero = cover?.kind == TableCoverKind.picture ? cover!.value : null;
+    final lead = _leadOf(properties);
     final rest = properties
         .where(
-          (property) => !(hero != null &&
-              property.kind == SlidePropertyKind.image &&
-              property.value.contains(hero)),
+          (property) =>
+              !identical(property, lead) &&
+              !(hero != null &&
+                  !property.isMedia &&
+                  property.kind == SlidePropertyKind.image &&
+                  property.value.contains(hero)),
         )
         .toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (hero != null) _buildCover(palette, hero),
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            SlideMetrics.cardPadding,
-            hero == null ? SlideMetrics.cardPadding : 18,
-            SlideMetrics.cardPadding,
-            14,
-          ),
-          child: _buildHead(palette, showIcon: hero == null),
-        ),
-        Expanded(
-          child: widget.showPageContent
-              ? _buildPage(palette, rest)
-              : rest.isEmpty
-                  ? _buildEmpty(palette)
-                  : _buildProperties(palette, rest),
-        ),
-        _buildFooter(palette),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxHeight;
+        // A short deck gives up the cover's height, the title's second line
+        // and the footer, in that order, rather than spilling out of the card.
+        final tight = height < 380;
+        final coverHeight =
+            cover == null ? 0.0 : _coverHeightFor(cover, height);
+        final showFooter = !tight && card.lastModified != null;
+        final headRoom = math.max(
+          0.0,
+          height -
+              coverHeight -
+              (showFooter ? _footerHeight : 12) -
+              _minimumBody,
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (cover != null)
+              SizedBox(
+                height: coverHeight,
+                child: _buildCover(palette, cover),
+              ),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: headRoom),
+              // Trims a head that cannot fit instead of overflowing the card,
+              // without adding a scroll view the facts below would share.
+              child: UnconstrainedBox(
+                constrainedAxis: Axis.horizontal,
+                alignment: Alignment.topCenter,
+                clipBehavior: Clip.hardEdge,
+                child: _buildHead(
+                  palette,
+                  lead: lead,
+                  hasCover: cover != null,
+                  tight: tight,
+                ),
+              ),
+            ),
+            Expanded(
+              child: widget.showPageContent
+                  ? _buildPage(palette, rest)
+                  : rest.isEmpty
+                      ? _buildEmpty(palette)
+                      : _buildProperties(palette, rest),
+            ),
+            if (showFooter)
+              _buildFooter(palette, card.lastModified!)
+            else
+              const SizedBox(height: 12),
+          ],
+        );
+      },
     );
+  }
+
+  /// A picture earns the most room; a colour or gradient is a band.
+  static double _coverHeightFor(TableCover cover, double height) {
+    final band = cover.kind == TableCoverKind.colour ||
+        cover.kind == TableCoverKind.gradient;
+    return band
+        ? math.min(SlideMetrics.bandHeight, height * 0.18)
+        : math.min(SlideMetrics.coverHeight, height * 0.3);
+  }
+
+  /// The status (or the people) shown under the title, and so not repeated
+  /// among the facts below it.
+  SlideProperty? _leadOf(List<SlideProperty> properties) {
+    if (widget.card.subtitle.isEmpty) {
+      return null;
+    }
+    for (final property in properties) {
+      if (property.kind == SlidePropertyKind.badge ||
+          property.kind == SlidePropertyKind.person) {
+        return property.value == widget.card.subtitle ? property : null;
+      }
+    }
+    return null;
   }
 
   /// The row's own page, with the short facts kept above it.
@@ -194,37 +276,43 @@ class _SlideCardState extends State<SlideCard> {
     );
   }
 
-  Widget _buildCover(SlidePalette palette, String url) {
-    return SizedBox(
-      height: SlideMetrics.coverHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          widget.live
-              ? SlidePicture(url: url, palette: palette)
-              : ColoredBox(color: palette.raised),
-          // A scrim so an emoji or a bright picture never fights the title.
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  palette.surface.withValues(alpha: 0),
-                  palette.surface.withValues(alpha: 0.92),
-                ],
-                stops: const [0.45, 1],
+  Widget _buildCover(SlidePalette palette, TableCover cover) {
+    final picture = cover.kind == TableCoverKind.picture ||
+        cover.kind == TableCoverKind.asset;
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        // Only a fetched picture waits for the slide in front; a bundled one,
+        // a colour or a gradient costs nothing to draw on every slide.
+        if (widget.live || cover.kind != TableCoverKind.picture)
+          TableCoverView(cover: cover, palette: palette)
+        else
+          PropertyPicturePlaceholder(ink: palette),
+        if (picture)
+          // A soft foot so a bright picture settles into the slide.
+          IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    palette.surface.withValues(alpha: 0),
+                    palette.surface.withValues(alpha: 0.4),
+                  ],
+                  stops: const [0.6, 1],
+                ),
               ),
             ),
           ),
-          if (widget.card.icon != null)
-            Positioned(
-              left: SlideMetrics.cardPadding,
-              bottom: -SlideMetrics.iconSize / 3,
-              child: _buildIcon(palette),
-            ),
-        ],
-      ),
+        if (widget.card.icon != null)
+          Positioned(
+            left: SlideMetrics.cardPadding,
+            bottom: -SlideMetrics.iconSize / 2,
+            child: _buildIcon(palette),
+          ),
+      ],
     );
   }
 
@@ -239,77 +327,84 @@ class _SlideCardState extends State<SlideCard> {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: palette.surface,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: palette.chromeShadow,
       ),
       child: Text(
         icon,
-        style: const TextStyle(fontSize: 21, height: 1),
+        style: const TextStyle(fontSize: 22, height: 1),
       ),
     );
   }
 
-  Widget _buildHead(SlidePalette palette, {required bool showIcon}) {
+  Widget _buildHead(
+    SlidePalette palette, {
+    required SlideProperty? lead,
+    required bool hasCover,
+    required bool tight,
+  }) {
     final card = widget.card;
     final accent =
         card.accent.isEmpty ? palette.accent : palette.swatchFor(card.accent);
+    final iconOnCover = hasCover && card.icon != null;
+    final top = iconOnCover
+        ? SlideMetrics.iconSize / 2 + 10
+        : hasCover
+            ? 16.0
+            : (tight ? 18.0 : SlideMetrics.cardPadding);
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (showIcon && card.icon != null) ...[
-          _buildIcon(palette),
-          const SizedBox(width: 14),
-        ],
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                card.title.trim().isEmpty ? '—' : card.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 22,
-                  height: 1.22,
-                  letterSpacing: -0.4,
-                  fontWeight: FontWeight.w600,
-                  color: palette.textPrimary,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        SlideMetrics.cardPadding,
+        top,
+        SlideMetrics.cardPadding,
+        tight ? 8 : 14,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!hasCover && card.icon != null) ...[
+            _buildIcon(palette),
+            const SizedBox(width: 14),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  card.title.trim().isEmpty ? '—' : card.title,
+                  maxLines: tight ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: tight ? 20 : 24,
+                    height: 1.2,
+                    letterSpacing: -0.5,
+                    fontWeight: FontWeight.w700,
+                    color: palette.textPrimary,
+                  ),
                 ),
-              ),
-              if (card.subtitle.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        shape: BoxShape.circle,
-                      ),
+                if (card.subtitle.isNotEmpty) ...[
+                  SizedBox(height: tight ? 6 : 9),
+                  if (lead?.kind == SlidePropertyKind.person)
+                    PropertyPeople(
+                      names: slidePartsOf(card.subtitle),
+                      initialsOf: slideInitialsOf,
+                      ink: palette,
+                    )
+                  else
+                    PropertyPill(
+                      label: card.subtitle,
+                      colour: accent,
+                      ink: palette,
+                      dense: true,
                     ),
-                    const SizedBox(width: 7),
-                    Flexible(
-                      child: Text(
-                        card.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: palette.textMuted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -337,6 +432,8 @@ class _SlideCardState extends State<SlideCard> {
                   property: pair[i],
                   palette: palette,
                   live: widget.live,
+                  viewId: widget.viewId,
+                  rowId: widget.card.rowId,
                 ),
               ),
             ],
@@ -358,6 +455,8 @@ class _SlideCardState extends State<SlideCard> {
             property: property,
             palette: palette,
             live: widget.live,
+            viewId: widget.viewId,
+            rowId: widget.card.rowId,
           ),
         );
         continue;
@@ -410,35 +509,41 @@ class _SlideCardState extends State<SlideCard> {
   Widget _buildEmpty(SlidePalette palette) => Center(
         child: Text(
           '—',
-          style: TextStyle(fontSize: 20, color: palette.textMuted),
+          style: TextStyle(
+            fontSize: 18,
+            color: palette.textMuted.withValues(alpha: 0.6),
+          ),
         ),
       );
 
-  Widget _buildFooter(SlidePalette palette) {
-    final modified = widget.card.lastModified;
-    if (modified == null) {
-      return const SizedBox(height: SlideMetrics.cardPadding);
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        SlideMetrics.cardPadding,
-        0,
-        SlideMetrics.cardPadding,
-        16,
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.schedule_rounded,
-            size: 12,
-            color: palette.textMuted.withValues(alpha: 0.8),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            _agoOf(modified),
-            style: TextStyle(fontSize: 11.5, color: palette.textMuted),
-          ),
-        ],
+  Widget _buildFooter(SlidePalette palette, DateTime modified) {
+    return SizedBox(
+      height: _footerHeight,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          SlideMetrics.cardPadding,
+          4,
+          SlideMetrics.cardPadding,
+          12,
+        ),
+        child: Row(
+          children: [
+            WorkspaceGlyph(
+              Icons.schedule_rounded,
+              size: 13,
+              color: palette.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                _agoOf(modified),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, color: palette.textMuted),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

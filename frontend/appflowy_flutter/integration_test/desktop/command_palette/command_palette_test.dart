@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/page_preview.dart';
@@ -15,6 +14,7 @@ import 'package:appflowy/workspace/presentation/command_palette/widgets/search_f
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_recent_view_cell.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_results_list.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_preview/view_preview_table.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -215,7 +215,7 @@ void main() {
       expect(
         find.descendant(
           of: pagePreview,
-          matching: find.byType(DatabaseTabBarView),
+          matching: find.byType(ViewPreviewTable),
         ),
         findsOneWidget,
       );

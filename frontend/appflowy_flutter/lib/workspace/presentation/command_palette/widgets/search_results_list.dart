@@ -40,7 +40,6 @@ class SearchResultList extends StatefulWidget {
     this.currentWorkspaceCover,
     this.query,
     this.contentSearch = false,
-    this.metadataOnly = false,
     this.canUseResult,
     super.key,
   });
@@ -67,7 +66,6 @@ class SearchResultList extends StatefulWidget {
   final PageStyleCover? currentWorkspaceCover;
   final String? query;
   final bool contentSearch;
-  final bool metadataOnly;
   final bool Function(String viewId)? canUseResult;
 
   @override
@@ -150,7 +148,6 @@ class _SearchResultListState extends State<SearchResultList> {
                     query: _query,
                     matchingSnippet: narrowResult?.content,
                     contentSearch: widget.contentSearch,
-                    metadataOnly: widget.metadataOnly,
                     canUseView: widget.canUseResult,
                     cachedViews: cachedViews,
                     currentUserId: context
@@ -182,7 +179,6 @@ class _SearchResultListState extends State<SearchResultList> {
                           query: _query,
                           matchingSnippet: selectedResult?.content,
                           contentSearch: widget.contentSearch,
-                          metadataOnly: widget.metadataOnly,
                           canUseView: widget.canUseResult,
                           cachedViews: cachedViews,
                           currentUserId: context

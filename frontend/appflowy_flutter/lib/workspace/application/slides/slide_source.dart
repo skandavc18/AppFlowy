@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:appflowy/plugins/database/application/field/property_style.dart';
 import 'package:appflowy/plugins/database/domain/field_service.dart';
 import 'package:appflowy/plugins/database/domain/location_service.dart';
+import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
+import 'package:appflowy/workspace/application/table_views/table_row.dart'
+    show TableCover, TableCoverKind;
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -217,6 +220,7 @@ class SlideSource extends ChangeNotifier {
                     maximum: styleKind == 'progress' ? style?.maximum : null,
                   )
                 : null,
+            isMedia: field.fieldType == FieldType.Media,
           ),
         );
       }
@@ -229,7 +233,8 @@ class SlideSource extends ChangeNotifier {
           icon: meta?.hasIcon() == true && meta!.icon.isNotEmpty
               ? meta.icon
               : null,
-          coverUrl: _coverOf(row, meta, cell),
+          cover: _coverOf(row, meta, cell),
+          fallbackCover: _fallbackCoverOf(row, meta),
           documentId: meta?.documentId ?? '',
           accent: _accentOf(properties),
           properties: properties,
@@ -320,7 +325,9 @@ class SlideSource extends ChangeNotifier {
     return '';
   }
 
-  String? _coverOf(
+  /// What the row's own page wears at its head, so a slide and the page never
+  /// disagree. A picture named by the chosen cover column wins.
+  TableCover? _coverOf(
     RowTextPB row,
     RowMetaPB? meta,
     String Function(RowTextPB, String) cell,
@@ -330,20 +337,33 @@ class SlideSource extends ChangeNotifier {
       final value = cell(row, chosen);
       final picture = slidePartsOf(value).firstWhereOrNull(looksLikeSlideImage);
       if (picture != null) {
-        return picture;
+        return TableCover(kind: TableCoverKind.picture, value: picture);
       }
     }
-    if (meta == null || !meta.hasCover()) {
+    if (meta == null || !meta.hasCover() || meta.cover.data.isEmpty) {
       return null;
     }
-    final data = meta.cover.data;
-    if (data.isEmpty) {
+    return TableCover(
+      kind: switch (meta.cover.coverType) {
+        CoverTypePB.FileCover => TableCoverKind.picture,
+        CoverTypePB.AssetCover => TableCoverKind.asset,
+        CoverTypePB.ColorCover => TableCoverKind.colour,
+        _ => TableCoverKind.gradient,
+      },
+      value: meta.cover.data,
+    );
+  }
+
+  /// The gradient a page shows until somebody chooses a cover. A cover taken
+  /// off on purpose leaves nothing.
+  TableCover? _fallbackCoverOf(RowTextPB row, RowMetaPB? meta) {
+    if (meta != null && meta.hasCover()) {
       return null;
     }
-    // Only a real picture is worth putting on a slide; a colour is not.
-    final looksLikeFile =
-        data.startsWith('http') || data.contains('/') || data.contains(r'\');
-    return looksLikeFile ? data : null;
+    return TableCover(
+      kind: TableCoverKind.gradient,
+      value: FlowyGradientColor.forSeed(row.rowId).id,
+    );
   }
 
   @override

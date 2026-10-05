@@ -185,6 +185,49 @@ class CanvasPalette {
 
   /// A hover wash that fades from its own hue rather than through grey.
   Color get hoverAtRest => hover.withValues(alpha: 0);
+
+  /// Compared by value: the palette is resolved afresh on every build, and a
+  /// card that is handed an equal palette must not be redrawn for it.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CanvasPalette &&
+          other.canvas == canvas &&
+          other.surface == surface &&
+          other.raised == raised &&
+          other.sunken == sunken &&
+          other.hover == hover &&
+          other.border == border &&
+          other.grid == grid &&
+          other.textPrimary == textPrimary &&
+          other.textSecondary == textSecondary &&
+          other.textMuted == textMuted &&
+          other.accent == accent &&
+          other.onAccent == onAccent &&
+          other.shadow == shadow &&
+          other.guide == guide &&
+          other.isDark == isDark &&
+          other.isPaper == isPaper;
+
+  @override
+  int get hashCode => Object.hash(
+        canvas,
+        surface,
+        raised,
+        sunken,
+        hover,
+        border,
+        grid,
+        textPrimary,
+        textSecondary,
+        textMuted,
+        accent,
+        onAccent,
+        shadow,
+        guide,
+        isDark,
+        isPaper,
+      );
 }
 
 /// The palette for the appearance the application is wearing, unless the

@@ -1,10 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
+import 'package:appflowy/plugins/dashboard/presentation/widgets/quote_widgets.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
+import 'package:appflowy/workspace/application/finance/quote_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
@@ -171,60 +175,85 @@ final _quote = DashboardWidgetDefinition(
   keywords: const ['quote', 'citation', 'saying'],
   builder: (context) {
     final palette = context.palette;
-    // Editorial: a large mark in the widget's colour, the words set big
-    // enough to be a moment on the page, and the attribution underneath.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.format_quote_rounded,
-          size: 30,
-          color: context.strong.withValues(alpha: 0.75),
-        ),
-        const SizedBox(height: 2),
-        Flexible(
-          child: DashboardEditableText(
-            findId: dashboardFindWidget(context.spec.id, _keyText),
-            value: context.spec.setting(_keyText),
-            hint: LocaleKeys.dashboard_widget_quoteHint.tr(),
-            palette: palette,
-            enabled: context.isTypable,
-            multiline: true,
-            style:
-                DashboardType.body(palette, color: context.tone.ink).copyWith(
-              fontSize: 17,
-              height: 1.45,
-              letterSpacing: -0.15,
-              fontStyle: FontStyle.italic,
-            ),
-            onChanged: (value) => context.setSettings({_keyText: value}),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
+    final text = context.spec.setting(_keyText);
+    // Editorial: a large mark in the widget's colour, the words set as large
+    // as the card allows — a line big and italic, a long passage upright at
+    // a reading size — and the attribution underneath.
+    return LayoutBuilder(
+      builder: (layoutContext, constraints) {
+        final base = quoteStyle(QuoteLength.of(text), context.tone.ink);
+        final room = Size(
+          constraints.maxWidth,
+          constraints.hasBoundedHeight
+              ? math.max(0, constraints.maxHeight - 62)
+              : 400,
+        );
+        final size = text.trim().isEmpty
+            ? 17.0
+            : fitQuoteFontSize(
+                text: text,
+                style: base,
+                box: room,
+                scaler: MediaQuery.textScalerOf(layoutContext),
+                minimum: 12.5,
+                maximum: math.min(base.fontSize!, 26),
+              );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 14,
-              height: 1.5,
-              margin: const EdgeInsets.only(right: 8),
-              color: context.tone.label.withValues(alpha: 0.6),
-            ),
-            Expanded(
-              child: DashboardEditableText(
-                findId: dashboardFindWidget(context.spec.id, _keyAuthor),
-                value: context.spec.setting(_keyAuthor),
-                hint: LocaleKeys.dashboard_widget_quoteAuthor.tr(),
-                palette: palette,
-                enabled: context.isTypable,
-                style:
-                    DashboardType.eyebrow(palette, color: context.tone.label),
-                onChanged: (value) => context.setSettings({_keyAuthor: value}),
+            Text(
+              '“',
+              style: TextStyle(
+                fontFamily: quoteFontFamily,
+                fontFamilyFallback: quoteFontFallback,
+                fontSize: 40,
+                height: 0.9,
+                color: context.strong.withValues(alpha: 0.7),
               ),
             ),
+            const SizedBox(height: 2),
+            Flexible(
+              child: DashboardEditableText(
+                findId: dashboardFindWidget(context.spec.id, _keyText),
+                value: context.spec.setting(_keyText),
+                hint: LocaleKeys.dashboard_widget_quoteHint.tr(),
+                palette: palette,
+                enabled: context.isTypable,
+                multiline: true,
+                style: base.copyWith(fontSize: size),
+                onChanged: (value) => context.setSettings({_keyText: value}),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 14,
+                  height: 1.5,
+                  margin: const EdgeInsets.only(right: 8),
+                  color: context.tone.label.withValues(alpha: 0.6),
+                ),
+                Expanded(
+                  child: DashboardEditableText(
+                    findId: dashboardFindWidget(context.spec.id, _keyAuthor),
+                    value: context.spec.setting(_keyAuthor),
+                    hint: LocaleKeys.dashboard_widget_quoteAuthor.tr(),
+                    palette: palette,
+                    enabled: context.isTypable,
+                    style: DashboardType.eyebrow(
+                      palette,
+                      color: context.tone.label,
+                    ),
+                    onChanged: (value) =>
+                        context.setSettings({_keyAuthor: value}),
+                  ),
+                ),
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     );
   },
   configure: (context) => [

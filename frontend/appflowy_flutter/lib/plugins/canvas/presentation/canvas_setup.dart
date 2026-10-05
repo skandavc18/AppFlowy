@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,13 +5,12 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/drawing/drawing_editor_stage.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/drawing/excalidraw_editor_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/link_parsers/default_parser.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block_fullscreen.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
-import 'package:appflowy/shared/drawing/excalidraw_scene.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
@@ -284,64 +282,23 @@ flowchart LR
 
 /// Open a hand-drawn diagram in the real Excalidraw editor.
 ///
-/// The same route the drawing block uses, so a drawing made on a canvas and a
-/// drawing made in a page are the same document opened the same way.
+/// The same stage the drawing block uses, so a drawing made on a canvas and a
+/// drawing made in a page are the same document, opened and kept the same
+/// way. The returned future completes once the window has closed, after the
+/// editor has handed over its last strokes.
 Future<void> openCanvasDrawing(
   BuildContext context, {
   required String scene,
   required bool editable,
   required ValueChanged<String> onSceneChanged,
-}) {
-  if (!canRunExcalidrawEditor) {
-    return Future<void>.value();
-  }
-  return showVisualBlockFullscreen<void>(
-    context: context,
-    icon: Icons.draw_rounded,
-    title: LocaleKeys.canvas_diagram_drawing.tr(),
-    subtitle: LocaleKeys.diagrams_drawing_poweredBy.tr(),
-    builder: (_) => _CanvasDrawingStage(
-      scene: scene.trim().isEmpty ? DrawScene.empty().encode() : scene,
+}) =>
+    showDrawingEditor(
+      context,
+      title: LocaleKeys.canvas_diagram_drawing.tr(),
+      scene: scene,
       editable: editable,
       onSceneChanged: onSceneChanged,
-    ),
-  );
-}
-
-class _CanvasDrawingStage extends StatefulWidget {
-  const _CanvasDrawingStage({
-    required this.scene,
-    required this.editable,
-    required this.onSceneChanged,
-  });
-
-  final String scene;
-  final bool editable;
-  final ValueChanged<String> onSceneChanged;
-
-  @override
-  State<_CanvasDrawingStage> createState() => _CanvasDrawingStageState();
-}
-
-class _CanvasDrawingStageState extends State<_CanvasDrawingStage> {
-  final ExcalidrawEditorController _controller = ExcalidrawEditorController();
-
-  @override
-  void dispose() {
-    // The editor is asked for the scene one last time on the way out: the
-    // web side debounces, so the final strokes may not have been reported.
-    unawaited(_controller.flush());
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => ExcalidrawEditorView(
-        scene: widget.scene,
-        editable: widget.editable,
-        controller: _controller,
-        onSceneChanged: widget.onSceneChanged,
-      );
-}
+    );
 
 /// Which language a code card is written in.
 Future<String?> askForCanvasCodeLanguage(

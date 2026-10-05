@@ -5,16 +5,13 @@ import 'dart:io';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_preview.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_preview_face.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
-import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
+import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
-import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/deferred_code_highlight.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_document.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_text_preview.dart';
@@ -22,17 +19,16 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandb
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_thumbnail_cache.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
-import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
-import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
+import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
@@ -40,17 +36,18 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item.dar
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_preview/view_preview_scope.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_preview/view_preview_table.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-document/entities.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pdfrx/pdfrx.dart';
-import 'package:provider/provider.dart';
 
 import 'search_layout.dart';
 import 'content_search_widgets.dart';
@@ -63,19 +60,17 @@ class PagePreview extends StatelessWidget {
     this.query,
     this.matchingSnippet,
     this.contentSearch = false,
-    this.metadataOnly = false,
   });
   final ViewPB view;
   final VoidCallback onViewOpened;
   final String? query;
   final String? matchingSnippet;
   final bool contentSearch;
-  final bool metadataOnly;
 
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    if (contentSearch || metadataOnly) {
+    if (contentSearch) {
       // Only already-authorized text enters this path. Do not mount the normal
       // cover/editor/database/file previews: they can read or fetch again.
       return CommandPalettePreviewSurface(
@@ -91,63 +86,50 @@ class PagePreview extends StatelessWidget {
             ],
           ),
         ),
-        child: metadataOnly && (matchingSnippet?.isEmpty ?? true)
-            ? const SizedBox.shrink()
-            : SearchMatchContext(
-                query: query ?? '',
-                snippet: matchingSnippet ?? '',
-              ),
+        child: SearchMatchContext(
+          query: query ?? '',
+          snippet: matchingSnippet ?? '',
+        ),
       );
     }
-    return BlocProvider(
-      create: (context) => DocumentImmersiveCoverBloc(view: view)
-        ..add(const DocumentImmersiveCoverEvent.initial()),
-      child:
-          BlocBuilder<DocumentImmersiveCoverBloc, DocumentImmersiveCoverState>(
-        builder: (context, state) {
-          // A dashboard's preview is its whole page, cover included.
-          final cover =
-              _dashboardOf(view) == null ? buildCover(state, context) : null;
-          return CommandPalettePreviewSurface(
-            key: const ValueKey('page-preview-card'),
-            header: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (view.icon.value.isNotEmpty || cover == null) ...[
-                        SizedBox.square(
-                          dimension: 28,
-                          child: Center(
-                            child: buildIcon(theme, view, cover != null),
-                          ),
-                        ),
-                        const HSpace(WorkspaceTokens.space3),
-                      ],
-                      Expanded(child: buildTitle(context, view)),
-                    ],
-                  ),
-                  if (cover != null)
-                    Padding(
-                      padding:
-                          const EdgeInsets.only(top: WorkspaceTokens.space4),
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(WorkspaceTokens.cardRadius),
-                        child: cover,
-                      ),
+    // A dashboard's preview is its whole page, cover included.
+    final cover = _dashboardOf(view) == null ? _buildCover(context) : null;
+    return CommandPalettePreviewSurface(
+      key: const ValueKey('page-preview-card'),
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (view.icon.value.isNotEmpty || cover == null) ...[
+                  SizedBox.square(
+                    dimension: 28,
+                    child: Center(
+                      child: buildIcon(theme, view, cover != null),
                     ),
+                  ),
+                  const HSpace(WorkspaceTokens.space3),
                 ],
-              ),
+                Expanded(child: buildTitle(context, view)),
+              ],
             ),
-            child: _buildPageContent(context),
-          );
-        },
+            if (cover != null)
+              Padding(
+                padding: const EdgeInsets.only(top: WorkspaceTokens.space4),
+                child: ClipRRect(
+                  borderRadius:
+                      BorderRadius.circular(WorkspaceTokens.cardRadius),
+                  child: cover,
+                ),
+              ),
+          ],
+        ),
       ),
+      child: _buildPageContent(context),
     );
   }
 
@@ -232,7 +214,7 @@ class PagePreview extends StatelessWidget {
     if (view.layout.isDocumentView) {
       return _DocumentPagePreview(
         key: ValueKey('document-preview-${view.id}'),
-        viewId: view.id,
+        view: view,
       );
     }
     if (view.layout.isDatabaseView) {
@@ -244,78 +226,16 @@ class PagePreview extends StatelessWidget {
     return const _PreviewError();
   }
 
-  Widget? buildCover(DocumentImmersiveCoverState state, BuildContext context) {
-    final viewCover = view.cover;
-    const height = 96.0;
-    if (viewCover != null && !viewCover.isNone) {
-      return ViewCoverImage(
-        cover: viewCover,
-        userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
-        width: double.infinity,
-        height: height,
-      );
-    }
-
-    final cover = state.cover;
-    final type = state.cover.type;
-    if (type == PageStyleCoverImageType.customImage ||
-        type == PageStyleCoverImageType.unsplashImage) {
-      final userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile;
-      if (userProfile == null) return null;
-
-      return SizedBox(
-        height: height,
-        width: double.infinity,
-        child: FlowyNetworkImage(
-          url: cover.value,
-          userProfilePB: userProfile,
-        ),
-      );
-    }
-
-    if (type == PageStyleCoverImageType.builtInImage) {
-      return SizedBox(
-        height: height,
-        width: double.infinity,
-        child: Image.asset(
-          PageStyleCoverImageType.builtInImagePath(cover.value),
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-
-    if (type == PageStyleCoverImageType.pureColor) {
-      final color = FlowyTint.fromId(cover.value)?.color(context) ??
-          cover.value.tryToColor();
-      return Container(
-        height: height,
-        width: double.infinity,
-        color: color,
-      );
-    }
-
-    if (type == PageStyleCoverImageType.gradientColor) {
-      return Container(
-        height: height,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: FlowyGradientColor.fromId(cover.value).linear,
-        ),
-      );
-    }
-
-    if (type == PageStyleCoverImageType.localImage) {
-      return SizedBox(
-        height: height,
-        width: double.infinity,
-        child: Image.file(
-          File(cover.value),
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-
-    return null;
+  /// The page's own saved cover, exactly as its gallery card shows it.
+  Widget? _buildCover(BuildContext context) {
+    final cover = view.cover;
+    if (cover == null || cover.isNone) return null;
+    return ViewCoverImage(
+      cover: cover,
+      userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
+      width: double.infinity,
+      height: 96,
+    );
   }
 
   Widget buildIcon(AppFlowyThemeData theme, ViewPB view, bool hasCover) {
@@ -389,11 +309,11 @@ class PagePreview extends StatelessWidget {
 
 class _DocumentPagePreview extends StatefulWidget {
   const _DocumentPagePreview({
-    required this.viewId,
+    required this.view,
     super.key,
   });
 
-  final String viewId;
+  final ViewPB view;
 
   @override
   State<_DocumentPagePreview> createState() => _DocumentPagePreviewState();
@@ -404,6 +324,8 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
   static const double _lineHeight = 1.4;
 
   EditorState? editorState;
+  DocumentDataPB? data;
+  List<FolderGalleryPreviewBlock>? textBlocks;
   bool isLoading = true;
   bool hasError = false;
   bool blank = false;
@@ -418,7 +340,7 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
   @override
   void didUpdateWidget(covariant _DocumentPagePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.viewId != widget.viewId) {
+    if (oldWidget.view.id != widget.view.id) {
       unawaited(_loadDocument());
     }
   }
@@ -443,29 +365,30 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
       });
     }
 
-    final result = await DocumentService().getDocument(
-      documentId: widget.viewId,
-    );
-    var requestFailed = false;
-    final document = result.fold(
-      (data) => data.toDocument(),
-      (error) {
-        requestFailed = true;
-        Log.warn(
-          'Unable to load search preview for ${widget.viewId}: $error',
-        );
-        return null;
-      },
-    );
+    final viewId = widget.view.id;
+    // The host's reader when it has one: the palette reads every preview
+    // through the same reader as its search.
+    final reads = ViewPreviewScope.maybeOf(context);
+    DocumentDataPB? data;
+    try {
+      data = await (reads ?? ViewPreviewReads.native()).document(viewId);
+    } on Object catch (error) {
+      Log.warn('Unable to load search preview for $viewId: $error');
+    }
+    final document = data?.toDocument();
 
     if (!mounted || currentRequestId != requestId) {
       return;
     }
 
-    if (document == null && !requestFailed) {
-      Log.warn('Search preview document is invalid: ${widget.viewId}');
+    if (data == null) {
+      Log.warn('Unable to load search preview for $viewId');
+    } else if (document == null) {
+      Log.warn('Search preview document is invalid: $viewId');
     }
     setState(() {
+      this.data = document == null ? null : data;
+      textBlocks = null;
       editorState = document == null ? null : EditorState(document: document);
       blank = document != null && _isBlank(document);
       hasError = document == null;
@@ -513,6 +436,26 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
           key: const ValueKey('document-preview-empty'),
           icon: Icons.article_rounded,
           message: LocaleKeys.viewLibrary_emptyPage.tr(),
+        ),
+      );
+    }
+
+    // The miniature editor needs the app's appearance. A host without it
+    // still shows what the page says, as its gallery card does.
+    final data = this.data;
+    if (data != null &&
+        (context.read<AppearanceSettingsCubit?>() == null ||
+            context.read<DocumentAppearanceCubit?>() == null)) {
+      final blocks = textBlocks ??= FolderGalleryPreviewParser.parse(
+        view: widget.view,
+        item: WorkspaceExplorerItem.fromView(widget.view),
+        document: data,
+      ).blocks;
+      return _PreviewFadeIn(
+        key: const ValueKey('document-preview-ready'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+          child: FolderGalleryRichTextPreview(blocks: blocks),
         ),
       );
     }
@@ -578,55 +521,86 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
   }
 }
 
-class _DatabasePagePreview extends StatelessWidget {
+/// A table's preview, drawn by the same renderer as its gallery card.
+class _DatabasePagePreview extends StatefulWidget {
   const _DatabasePagePreview({
     required this.view,
     super.key,
   });
 
-  static const double _canvasWidth = 720;
-  static const double _canvasHeight = 960;
-
   final ViewPB view;
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-          return const SizedBox.shrink();
-        }
+  State<_DatabasePagePreview> createState() => _DatabasePagePreviewState();
+}
 
-        final scale = constraints.maxWidth / _canvasWidth;
-        final renderedHeight = _canvasHeight * scale;
-        return SingleChildScrollView(
-          child: SizedBox(
-            width: constraints.maxWidth,
-            height: renderedHeight,
-            child: FittedBox(
-              alignment: Alignment.topLeft,
-              fit: BoxFit.fill,
-              child: SizedBox(
-                width: _canvasWidth,
-                height: _canvasHeight,
-                child: FocusScope(
-                  canRequestFocus: false,
-                  descendantsAreFocusable: false,
-                  child: IgnorePointer(
-                    child: Provider(
-                      create: (_) => const DatabasePluginWidgetBuilderSize(
-                        horizontalPadding: 16,
-                      ),
-                      child: DatabaseTabBarView(
-                        view: view,
-                        shrinkWrap: false,
-                        showActions: false,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+class _DatabasePagePreviewState extends State<_DatabasePagePreview> {
+  /// Only for a host without a [ViewPreviewScope]; dropped with this preview.
+  ViewPreviewReads? _ownReads;
+  late Future<FolderGalleryPreview> _table = _read();
+
+  Future<FolderGalleryPreview> _read({bool reload = false}) {
+    final reads = ViewPreviewScope.maybeOf(context) ??
+        (_ownReads ??= ViewPreviewReads.native());
+    return reads.table(widget.view, reload: reload);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DatabasePagePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view.id != widget.view.id) {
+      _table = _read();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ownReads?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<FolderGalleryPreview>(
+      future: _table,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _PreviewFadeIn(
+            key: ValueKey('database-preview-loading'),
+            delay: _spinnerDelay,
+            child: Center(child: CircularProgressIndicator.adaptive()),
+          );
+        }
+        final preview = snapshot.data;
+        final database = preview?.database;
+        if (snapshot.hasError ||
+            preview == null ||
+            preview.unavailable ||
+            database == null ||
+            (database.totalRowCount > 0 &&
+                (database.columns.isEmpty || database.rows.isEmpty))) {
+          return _PreviewFadeIn(
+            key: const ValueKey('database-preview-error'),
+            child: _PreviewError(
+              onRetry: () => setState(() => _table = _read(reload: true)),
             ),
+          );
+        }
+        if (database.rows.isEmpty) {
+          return _PreviewFadeIn(
+            child: BoardPreviewEmptyNote(
+              key: const ValueKey('database-preview-empty'),
+              icon: Icons.table_chart_rounded,
+              message: LocaleKeys.viewLibrary_emptyTable.tr(),
+            ),
+          );
+        }
+        return _PreviewFadeIn(
+          key: const ValueKey('database-preview-ready'),
+          child: ViewPreviewTable(
+            snapshot: database,
+            surface: WorkspacePalette.of(context).elevatedSurface,
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           ),
         );
       },

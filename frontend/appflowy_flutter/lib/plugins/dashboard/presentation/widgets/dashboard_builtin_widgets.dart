@@ -2,6 +2,7 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/collection_widge
 import 'package:appflowy/plugins/dashboard/presentation/widgets/content_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/control_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/data_widgets.dart';
+import 'package:appflowy/plugins/dashboard/presentation/widgets/finance/finance_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/info_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/page_block_widget.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/text_widgets.dart';
@@ -16,6 +17,7 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/time_widgets.dar
 void registerBuiltInDashboardWidgets() {
   registerDashboardTextWidgets();
   registerDashboardDataWidgets();
+  registerDashboardFinanceWidgets();
   registerDashboardContentWidgets();
   registerDashboardCollectionWidgets();
   registerDashboardTimeWidgets();

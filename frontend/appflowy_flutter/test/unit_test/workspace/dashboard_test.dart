@@ -36,6 +36,29 @@ void main() {
       expect(scaled.column + scaled.columnSpan, lessThanOrEqualTo(2));
     });
 
+    test('widgets that shared a row still share it on a narrower grid', () {
+      for (final row in const [
+        [(0, 8), (8, 4)],
+        [(0, 4), (4, 4), (8, 4)],
+        [(0, 3), (3, 3), (6, 3), (9, 3)],
+        [(0, 7), (7, 5)],
+      ]) {
+        for (final columns in const [8, 6, 4]) {
+          var edge = 0;
+          for (final (column, span) in row) {
+            final scaled = scaleDashboardPlacement(
+              DashboardPlacement(column: column, columnSpan: span),
+              from: 12,
+              to: columns,
+            );
+            expect(scaled.column, edge, reason: '$row at $columns');
+            edge = scaled.column + scaled.columnSpan;
+          }
+          expect(edge, columns, reason: '$row should fill $columns columns');
+        }
+      }
+    });
+
     test('overlapping widgets are pushed down, not on top of each other', () {
       final settled = resolveDashboardLayout(
         const [
@@ -283,6 +306,25 @@ void main() {
       expect(
         DashboardDocument.fromJson(document.toJson()).widgetById('w'),
         isNotNull,
+      );
+    });
+
+    test('a how-to guide is kept until it is dismissed', () {
+      const guided = DashboardDocument(guide: ['Add a row', 'Watch it grow']);
+      final restored = DashboardDocument.fromJson(guided.toJson());
+      expect(restored.guide, ['Add a row', 'Watch it grow']);
+      expect(restored, guided);
+      // A guide is words about the board, not something on it.
+      expect(restored.isEmpty, isTrue);
+
+      final dismissed = restored.copyWith(guide: const []);
+      expect(dismissed.toJson().containsKey('guide'), isFalse);
+      expect(dismissed == restored, isFalse);
+      expect(
+        DashboardDocument.fromJson({
+          'guide': ['  ', 'Kept', 3],
+        }).guide,
+        ['Kept'],
       );
     });
 

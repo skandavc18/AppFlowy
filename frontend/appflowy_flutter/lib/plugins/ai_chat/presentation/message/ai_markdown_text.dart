@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/ai_chat/application/chat_text_selection.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/chat_find.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/shared/editor_focus_node.dart';
 import 'package:appflowy/shared/markdown_to_document.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -73,6 +74,7 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
 
   late EditorState editorState;
   late EditorScrollController scrollController;
+  final EditorFocusNode _focusNode = EditorFocusNode(debugLabel: 'chat answer');
   Timer? markdownOutputTimer;
   int offset = 0;
   String _renderedMarkdown = '';
@@ -156,6 +158,7 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
   void dispose() {
     scrollController.dispose();
     editorState.dispose();
+    _focusNode.dispose();
 
     markdownOutputTimer?.cancel();
     for (final controller in _animations.values.map((e) => e.$1)) {
@@ -195,6 +198,7 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
         onPointerUp: (_) => ChatTextSelection.instance.report(_selectedText()),
         child: AppFlowyEditor(
           shrinkWrap: true,
+          focusNode: _focusNode,
           // the editor is not editable in the chat
           editable: false,
           disableKeyboardService: UniversalPlatform.isMobile,

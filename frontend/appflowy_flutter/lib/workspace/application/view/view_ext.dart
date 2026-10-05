@@ -40,6 +40,7 @@ import 'package:appflowy/workspace/application/table_views/table_view_mark.dart'
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/view/view_extra_cache.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -291,13 +292,17 @@ extension ViewExtension on ViewPB {
 
   FlowySvgData get iconData => layout.icon;
 
+  /// What `jsonDecode(extra)` gives, without decoding a large extra again for
+  /// every getter. It throws where that did, so each getter keeps its fallback.
+  dynamic _decodeExtra() => ViewExtraCache.decode(extra) ?? jsonDecode(extra);
+
   bool get isSpace {
     try {
       if (extra.isEmpty) {
         return false;
       }
 
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final isSpace = ext[ViewExtKeys.isSpaceKey] ?? false;
       return isSpace;
     } catch (e) {
@@ -307,7 +312,7 @@ extension ViewExtension on ViewPB {
 
   SpacePermission get spacePermission {
     try {
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final permission = ext[ViewExtKeys.spacePermissionKey] ?? 1;
       return SpacePermission.values[permission];
     } catch (e) {
@@ -321,7 +326,7 @@ extension ViewExtension on ViewPB {
         return null;
       }
 
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final icon = ext[ViewExtKeys.spaceIconKey];
       final color = ext[ViewExtKeys.spaceIconColorKey];
       if (icon == null || color == null) {
@@ -359,7 +364,7 @@ extension ViewExtension on ViewPB {
 
   String? get spaceIcon {
     try {
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final icon = ext[ViewExtKeys.spaceIconKey];
       return icon;
     } catch (e) {
@@ -369,7 +374,7 @@ extension ViewExtension on ViewPB {
 
   String? get spaceIconColor {
     try {
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final color = ext[ViewExtKeys.spaceIconColorKey];
       return color;
     } catch (e) {
@@ -379,7 +384,7 @@ extension ViewExtension on ViewPB {
 
   bool get isPinned {
     try {
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final isPinned = ext[ViewExtKeys.isPinnedKey] ?? false;
       return isPinned;
     } catch (e) {
@@ -403,7 +408,7 @@ extension ViewExtension on ViewPB {
       return PageStyleLineHeightLayout.normal;
     }
     try {
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final lineHeight = ext[ViewExtKeys.lineHeightLayoutKey];
       return PageStyleLineHeightLayout.fromString(lineHeight);
     } catch (e) {
@@ -416,7 +421,7 @@ extension ViewExtension on ViewPB {
       return PageStyleFontLayout.normal;
     }
     try {
-      final ext = jsonDecode(extra);
+      final ext = _decodeExtra();
       final fontLayout = ext[ViewExtKeys.fontLayoutKey];
       return PageStyleFontLayout.fromString(fontLayout);
     } catch (e) {

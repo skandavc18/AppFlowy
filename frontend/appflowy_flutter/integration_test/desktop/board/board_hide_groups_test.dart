@@ -63,7 +63,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap the hide option
-      await tester.tap(find.byFlowySvg(FlowySvgs.hide_s));
+      await tester.tap(find.text(LocaleKeys.board_column_hideColumn.tr()));
       await tester.pumpAndSettle();
 
       int shownGroups =
@@ -97,7 +97,10 @@ void main() {
             )
             .first,
       );
-      expect(find.byFlowySvg(FlowySvgs.delete_s), findsNothing);
+      expect(
+        find.text(LocaleKeys.board_column_deleteColumn.tr()),
+        findsNothing,
+      );
 
       // dismiss the popup
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -112,10 +115,11 @@ void main() {
             )
             .at(1),
       );
-      expect(find.byFlowySvg(FlowySvgs.delete_s), findsOneWidget);
+      final deleteRow = find.text(LocaleKeys.board_column_deleteColumn.tr());
+      expect(deleteRow, findsOneWidget);
 
       // Tap the delete button and confirm
-      await tester.tapButton(find.byFlowySvg(FlowySvgs.delete_s));
+      await tester.tapButton(deleteRow);
       await tester.tapButtonWithName(LocaleKeys.space_delete.tr());
 
       // Expect number of groups to decrease by one

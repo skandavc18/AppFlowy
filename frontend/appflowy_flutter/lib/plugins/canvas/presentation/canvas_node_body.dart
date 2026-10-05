@@ -565,7 +565,7 @@ class _CanvasDiagramBody extends StatelessWidget {
           label: LocaleKeys.canvas_diagram_choose.tr(),
         );
       case CanvasDiagramKind.drawing:
-        final scene = DrawScene.decode(node.text);
+        final scene = DrawScene.decodeCached(node.text);
         if (scene == null || scene.isEmpty) {
           return _CanvasPlaceholder(
             palette: palette,
@@ -751,28 +751,39 @@ class _CanvasImageBody extends StatelessWidget {
           icon: Icons.broken_image_rounded,
           label: LocaleKeys.canvas_card_missing.tr(),
         );
+    // Decoded no larger than a card can usefully show it, even zoomed in. A
+    // photograph straight off a camera is otherwise held at full resolution —
+    // tens of megabytes each — and a canvas of them churns the image cache,
+    // decoding them again every time somebody pans back.
+    final ImageProvider<Object> original;
+    if (remote) {
+      original = NetworkImage(source);
+    } else {
+      original = FileImage(File(source));
+    }
+    final ImageProvider<Object> picture = ResizeImage(
+      original,
+      width: _imageDecodeLimit,
+      height: _imageDecodeLimit,
+      policy: ResizeImagePolicy.fit,
+    );
     return ClipRRect(
       borderRadius: BorderRadius.circular(CanvasMetrics.cardRadius - 4),
       // `contain`, so the whole picture is visible. The card is shaped to the
       // picture when it is chosen, and can be resized by hand afterwards —
       // cropping the content to fit the box is never what was meant.
-      child: remote
-          ? Image.network(
-              source,
-              fit: BoxFit.contain,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (_, __, ___) => broken(),
-            )
-          : Image.file(
-              File(source),
-              fit: BoxFit.contain,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (_, __, ___) => broken(),
-            ),
+      child: Image(
+        image: picture,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, __, ___) => broken(),
+      ),
     );
   }
+
+  /// The longest side a card's picture is decoded at.
+  static const int _imageDecodeLimit = 2048;
 }
 
 /// A saved link or a web page.

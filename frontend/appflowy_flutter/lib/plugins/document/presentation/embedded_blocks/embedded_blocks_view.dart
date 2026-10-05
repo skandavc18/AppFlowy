@@ -1,10 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/shortcuts/text_field_aware_commands.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
+import 'package:appflowy/shared/editor_focus_node.dart';
+import 'package:appflowy/shared/json_equality.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -51,6 +53,10 @@ class _EmbeddedBlocksViewState extends State<EmbeddedBlocksView> {
   late EditorState _editorState;
   StreamSubscription<EditorTransactionValue>? _changes;
   Timer? _save;
+  final EditorFocusNode _focusNode =
+      EditorFocusNode(debugLabel: 'embedded blocks');
+  late final List<CommandShortcutEvent> _commands =
+      embeddedBlocksCommandShortcuts();
 
   /// What was last handed out, so it is not mistaken for news when it comes
   /// back down through the host.
@@ -69,7 +75,7 @@ class _EmbeddedBlocksViewState extends State<EmbeddedBlocksView> {
       _editorState.editable = widget.editable;
     }
     if (!identical(widget.document, oldWidget.document) &&
-        !identical(widget.document, _handedOut) &&
+        !_isOwnEcho(widget.document) &&
         !_sameDocument(widget.document, _editorState.document.toJson())) {
       // What arrived from outside wins over an edit not yet handed out — an
       // undo on the dashboard must not be re-done by a late save. Nothing is
@@ -78,6 +84,8 @@ class _EmbeddedBlocksViewState extends State<EmbeddedBlocksView> {
       _save = null;
       _release();
       _adopt(widget.document);
+      // Host and view agree on this one now; only later news is news.
+      _handedOut = widget.document;
     }
   }
 
@@ -100,7 +108,19 @@ class _EmbeddedBlocksViewState extends State<EmbeddedBlocksView> {
       });
     }
     _release();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Whether [document] is what this view last handed out, coming back. A
+  /// host that saves and reads itself back hands down an equal copy rather
+  /// than the same map; taken for news, it would replace the editor and lose
+  /// whatever was typed or drawn since — including into a drawing still open.
+  bool _isOwnEcho(Map<String, Object?> document) {
+    final handedOut = _handedOut;
+    return handedOut != null &&
+        (identical(document, handedOut) ||
+            jsonValuesEqual(document, handedOut));
   }
 
   void _adopt(Map<String, Object?> json) {
@@ -158,8 +178,10 @@ class _EmbeddedBlocksViewState extends State<EmbeddedBlocksView> {
           child: AppFlowyEditor(
             key: ObjectKey(editorState),
             editorState: editorState,
+            focusNode: _focusNode,
             editable: widget.editable,
             editorStyle: styleCustomizer.style(),
+            commandShortcutEvents: _commands,
             blockComponentBuilders: buildBlockComponentBuilders(
               context: context,
               editorState: editorState,
@@ -197,11 +219,5 @@ Document embeddedBlocksDocument(Map<String, Object?> json) {
   return Document.blank(withInitialText: true);
 }
 
-bool _sameDocument(Map<String, Object?> a, Map<String, Object?> b) {
-  if (identical(a, b)) return true;
-  try {
-    return jsonEncode(a) == jsonEncode(b);
-  } on Object {
-    return false;
-  }
-}
+bool _sameDocument(Map<String, Object?> a, Map<String, Object?> b) =>
+    jsonValuesEqual(a, b);

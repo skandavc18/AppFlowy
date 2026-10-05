@@ -166,7 +166,9 @@ class CartoTileProvider extends MapTileProvider {
 ///
 /// Google will not serve a tile without a session first, so the provider opens
 /// one lazily and draws nothing until it has. Without an API key there is
-/// nothing to open, and the map falls back to a keyless provider.
+/// nothing to open, and the map falls back to a keyless provider — as it does
+/// when Google turns the key away (a demo key, one without the Map Tiles API)
+/// or cannot be reached, rather than staying blank.
 class GoogleTileProvider extends MapTileProvider {
   GoogleTileProvider({required this.apiKey, http.Client? client})
       : _client = client ?? http.Client();
@@ -177,14 +179,46 @@ class GoogleTileProvider extends MapTileProvider {
   final Map<MapStyleName, String> _sessions = {};
   final Map<MapStyleName, Future<void>> _opening = {};
 
-  @override
-  MapProviderKind get kind => MapProviderKind.google;
+  /// Keys Google refused this session; they are not offered again.
+  static final Set<String> _refusedKeys = {};
+
+  @visibleForTesting
+  static void debugForgetRefusals() => _refusedKeys.clear();
+
+  /// Any other failure is worth retrying, but not on every frame.
+  static const _retryAfter = Duration(minutes: 1);
+  DateTime? _failedAt;
+
+  MapStyleName _lastStyle = MapStyleName.streets;
+
+  bool get _usingFallback {
+    if (_refusedKeys.contains(apiKey)) {
+      return true;
+    }
+    final failedAt = _failedAt;
+    return failedAt != null &&
+        DateTime.now().difference(failedAt) < _retryAfter;
+  }
+
+  static MapTileProvider _fallbackFor(MapStyleName style) =>
+      const CartoTileProvider().supports(style)
+          ? const CartoTileProvider()
+          : const OpenStreetMapTileProvider();
 
   @override
-  String get attribution => '© Google';
+  MapProviderKind get kind =>
+      _usingFallback ? _fallbackFor(_lastStyle).kind : MapProviderKind.google;
 
   @override
-  int get maxZoom => 20;
+  String get attribution =>
+      _usingFallback ? _fallbackFor(_lastStyle).attribution : '© Google';
+
+  @override
+  int get maxZoom => _usingFallback ? _fallbackFor(_lastStyle).maxZoom : 20;
+
+  @override
+  Map<String, String> get headers =>
+      _usingFallback ? _fallbackFor(_lastStyle).headers : const {};
 
   @override
   bool supports(MapStyleName style) => apiKey.isNotEmpty;
@@ -193,6 +227,10 @@ class GoogleTileProvider extends MapTileProvider {
 
   @override
   Uri? tileUri(MapTile tile, MapStyleName style) {
+    _lastStyle = style;
+    if (_usingFallback) {
+      return _fallbackFor(style).tileUri(tile, style);
+    }
     final session = _sessions[style];
     if (session == null || apiKey.isEmpty) {
       return null;
@@ -206,7 +244,8 @@ class GoogleTileProvider extends MapTileProvider {
 
   @override
   Future<void> warmUp(MapStyleName style) {
-    if (apiKey.isEmpty || _sessions.containsKey(style)) {
+    _lastStyle = style;
+    if (apiKey.isEmpty || _usingFallback || _sessions.containsKey(style)) {
       return Future.value();
     }
     return _opening[style] ??= _openSession(style).whenComplete(() {
@@ -227,7 +266,18 @@ class GoogleTileProvider extends MapTileProvider {
         }),
       );
       if (response.statusCode != 200) {
-        Log.warn('Google map tiles refused a session: ${response.statusCode}');
+        final refused = response.statusCode >= 400 &&
+            response.statusCode < 500 &&
+            response.statusCode != 429;
+        if (!refused) {
+          _failedAt = DateTime.now();
+        }
+        if (!refused || _refusedKeys.add(apiKey)) {
+          Log.warn(
+            'Google map tiles refused a session (${response.statusCode}); '
+            'drawing OpenStreetMap tiles instead.',
+          );
+        }
         return;
       }
       final body = jsonDecode(response.body);
@@ -236,6 +286,7 @@ class GoogleTileProvider extends MapTileProvider {
         _sessions[style] = session;
       }
     } on Object catch (error) {
+      _failedAt = DateTime.now();
       Log.warn('Could not open a Google map tile session: $error');
     }
   }

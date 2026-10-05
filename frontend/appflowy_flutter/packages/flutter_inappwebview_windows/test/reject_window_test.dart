@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
 import 'package:flutter_inappwebview_windows/flutter_inappwebview_windows.dart';
+import 'package:flutter_inappwebview_windows/src/in_app_webview/in_app_webview_controller.dart'
+    show InternalInAppWebViewController;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

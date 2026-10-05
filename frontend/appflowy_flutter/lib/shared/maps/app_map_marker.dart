@@ -158,6 +158,9 @@ class _Badge extends StatelessWidget {
   final AppMapPin pin;
   final double size;
 
+  // A digit, as in a pin named by its coordinates, would read as a pin count.
+  static final _letter = RegExp(r'^\p{L}', unicode: true);
+
   @override
   Widget build(BuildContext context) {
     final icon = pin.icon;
@@ -168,9 +171,10 @@ class _Badge extends StatelessWidget {
         textAlign: TextAlign.center,
       );
     }
-    final initial = pin.title.trim().isEmpty
-        ? '·'
-        : String.fromCharCode(pin.title.trim().runes.first).toUpperCase();
+    final title = pin.title.trim();
+    final initial = _letter.hasMatch(title)
+        ? String.fromCharCode(title.runes.first).toUpperCase()
+        : '·';
     return Text(
       initial,
       style: TextStyle(

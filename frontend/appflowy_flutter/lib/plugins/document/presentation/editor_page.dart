@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/background
 import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_host.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/i18n/editor_i18n.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/shortcuts/text_field_aware_commands.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/document_spell_check.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_gestures.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
@@ -18,6 +19,7 @@ import 'package:appflowy/plugins/inline_actions/handlers/date_reference.dart';
 import 'package:appflowy/plugins/inline_actions/handlers/inline_page_reference.dart';
 import 'package:appflowy/plugins/inline_actions/handlers/reminder_reference.dart';
 import 'package:appflowy/plugins/inline_actions/inline_actions_service.dart';
+import 'package:appflowy/shared/editor_focus_node.dart';
 import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -106,11 +108,15 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
     ],
   );
 
-  late final List<CommandShortcutEvent> commandShortcuts = [
+  late final List<CommandShortcutEvent> commandShortcuts =
+      standAsideForTextFields([
     ...commandShortcutEvents,
     ..._buildFindAndReplaceCommands(),
     _buildSpellCheckCommand(),
-  ];
+  ]);
+
+  final EditorFocusNode _editorFocusNode =
+      EditorFocusNode(debugLabel: 'document editor');
 
   final List<ToolbarItem> toolbarItems = [
     improveWritingItem,
@@ -368,6 +374,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
     }
     inlineActionsService.dispose();
     editorScrollController.dispose();
+    _editorFocusNode.dispose();
 
     super.dispose();
   }
@@ -401,6 +408,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
           enabled: UniversalPlatform.isDesktopOrWeb,
           child: AppFlowyEditor(
             editorState: widget.editorState,
+            focusNode: _editorFocusNode,
             editable: !isViewDeleted && isEditable,
             disableSelectionService: UniversalPlatform.isMobile && !isEditable,
             disableKeyboardService: UniversalPlatform.isMobile && !isEditable,

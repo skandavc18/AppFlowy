@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/board/application/board_actions_bloc.dart';
+import 'package:appflowy/plugins/database/board/application/board_group_colors.dart';
 import 'package:appflowy/plugins/database/board/group_ext.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_style.dart';
 import 'package:appflowy/plugins/database/board/presentation/widgets/board_column_header.dart';
@@ -298,20 +299,32 @@ class _BoardContentState extends State<_BoardContent> {
 
   /// The wash the column for [columnData] wears, or null when its group has no
   /// colour to lend.
-  Color? _washOf(BuildContext context, AppFlowyGroupData columnData) {
-    final color = _groupColorOf(context, columnData);
+  Color? _washOf(
+    BuildContext context,
+    AppFlowyGroupData columnData,
+    BoardGroupColors colors,
+  ) {
+    final color = _groupColorOf(context, columnData, colors);
     return color == null
         ? null
         : boardColumnWashColor(boardPaletteOf(context), color);
   }
 
-  /// The colour the group itself was given, before any wash is mixed from it.
-  Color? _groupColorOf(BuildContext context, AppFlowyGroupData columnData) {
+  /// The colour the column was given, else the one its group lends it, before
+  /// any wash is mixed from it.
+  Color? _groupColorOf(
+    BuildContext context,
+    AppFlowyGroupData columnData,
+    BoardGroupColors colors,
+  ) {
     final custom = columnData.customData;
     if (custom is! GroupData) {
       return null;
     }
-    return custom.group.groupOptionColor(databaseController)?.toColor(context);
+    return BoardColumnColor.resolve(
+      chosen: colors[custom.group.groupId],
+      optionColor: custom.group.groupOptionColor(databaseController),
+    )?.toColor(context);
   }
 
   DatabaseController get databaseController =>
@@ -407,133 +420,141 @@ class _BoardContentState extends State<_BoardContent> {
           focusScope: widget.focusScope,
           child: Padding(
             padding: const EdgeInsets.only(top: 8.0),
-            child: ValueListenableBuilder(
-              valueListenable: databaseController.compactModeNotifier,
-              builder: (context, compactMode, _) {
-                final board = ScrollConfiguration(
-                  behavior:
-                      BoardScrollBehaviour(ScrollConfiguration.of(context)),
-                  child: BoardColumnSurface(
-                    child: AppFlowyBoard(
-                      boardScrollController: scrollManager,
-                      scrollController: scrollController,
-                      shrinkWrap: columnsShrinkWrap,
-                      controller: context.read<BoardBloc>().boardController,
-                      groupConstraints: BoxConstraints.tightFor(
-                        width: compactMode ? 196 : 256,
-                      ),
-                      config: config,
-                      leading: HiddenGroupsColumn(
+            // Picking a column colour repaints the board from here; the board
+            // package hands every column the builders afresh on a rebuild.
+            child: ValueListenableBuilder<BoardGroupColors>(
+              valueListenable:
+                  BoardGroupColorRegistry.instance.notifierFor(widget.view),
+              builder: (context, colors, _) => ValueListenableBuilder(
+                valueListenable: databaseController.compactModeNotifier,
+                builder: (context, compactMode, _) {
+                  final board = ScrollConfiguration(
+                    behavior:
+                        BoardScrollBehaviour(ScrollConfiguration.of(context)),
+                    child: BoardColumnSurface(
+                      child: AppFlowyBoard(
+                        boardScrollController: scrollManager,
+                        scrollController: scrollController,
                         shrinkWrap: columnsShrinkWrap,
-                        margin: config.groupHeaderPadding +
-                            EdgeInsets.only(
-                              left: widget.shrinkWrap ? horizontalPadding : 0.0,
+                        controller: context.read<BoardBloc>().boardController,
+                        groupConstraints: BoxConstraints.tightFor(
+                          width: compactMode ? 196 : 256,
+                        ),
+                        config: config,
+                        leading: HiddenGroupsColumn(
+                          shrinkWrap: columnsShrinkWrap,
+                          margin: config.groupHeaderPadding +
+                              EdgeInsets.only(
+                                left:
+                                    widget.shrinkWrap ? horizontalPadding : 0.0,
+                              ),
+                        ),
+                        trailing: context
+                                    .read<BoardBloc>()
+                                    .groupingFieldType
+                                    ?.canCreateNewGroup ??
+                                false
+                            ? BoardTrailing(scrollController: scrollController)
+                            : const HSpace(40),
+                        headerBuilder: (_, groupData) => BoardColumnWash(
+                          color: _washOf(context, groupData, colors),
+                          child: BlocProvider.value(
+                            value: context.read<BoardBloc>(),
+                            child: BoardColumnHeader(
+                              databaseController: databaseController,
+                              groupData: groupData,
+                              margin: config.groupHeaderPadding,
                             ),
-                      ),
-                      trailing: context
-                                  .read<BoardBloc>()
-                                  .groupingFieldType
-                                  ?.canCreateNewGroup ??
-                              false
-                          ? BoardTrailing(scrollController: scrollController)
-                          : const HSpace(40),
-                      headerBuilder: (_, groupData) => BoardColumnWash(
-                        color: _washOf(context, groupData),
-                        child: BlocProvider.value(
-                          value: context.read<BoardBloc>(),
-                          child: BoardColumnHeader(
-                            databaseController: databaseController,
-                            groupData: groupData,
-                            margin: config.groupHeaderPadding,
                           ),
                         ),
-                      ),
-                      footerBuilder: (_, groupData) => BoardColumnWash(
-                        color: _washOf(context, groupData),
-                        child: MultiBlocProvider(
+                        footerBuilder: (_, groupData) => BoardColumnWash(
+                          color: _washOf(context, groupData, colors),
+                          child: MultiBlocProvider(
+                            providers: [
+                              BlocProvider.value(
+                                value: context.read<BoardBloc>(),
+                              ),
+                              BlocProvider.value(
+                                value: context.read<BoardActionsCubit>(),
+                              ),
+                            ],
+                            child: BoardColumnFooter(
+                              columnData: groupData,
+                              boardConfig: config,
+                              scrollManager: scrollManager,
+                            ),
+                          ),
+                        ),
+                        cardBuilder: (cardContext, column, columnItem) =>
+                            MultiBlocProvider(
+                          key: ValueKey(
+                            "board_card_${column.id}_${columnItem.id}",
+                          ),
                           providers: [
-                            BlocProvider.value(
-                              value: context.read<BoardBloc>(),
+                            BlocProvider<BoardBloc>.value(
+                              value: cardContext.read<BoardBloc>(),
                             ),
                             BlocProvider.value(
-                              value: context.read<BoardActionsCubit>(),
+                              value: cardContext.read<BoardActionsCubit>(),
+                            ),
+                            BlocProvider(
+                              create: (_) => PageAccessLevelBloc(
+                                view: widget.view,
+                                ignorePageAccessLevel: true,
+                              )..add(PageAccessLevelEvent.initial()),
                             ),
                           ],
-                          child: BoardColumnFooter(
-                            columnData: groupData,
-                            boardConfig: config,
-                            scrollManager: scrollManager,
-                          ),
-                        ),
-                      ),
-                      cardBuilder: (cardContext, column, columnItem) =>
-                          MultiBlocProvider(
-                        key: ValueKey(
-                          "board_card_${column.id}_${columnItem.id}",
-                        ),
-                        providers: [
-                          BlocProvider<BoardBloc>.value(
-                            value: cardContext.read<BoardBloc>(),
-                          ),
-                          BlocProvider.value(
-                            value: cardContext.read<BoardActionsCubit>(),
-                          ),
-                          BlocProvider(
-                            create: (_) => PageAccessLevelBloc(
-                              view: widget.view,
-                              ignorePageAccessLevel: true,
-                            )..add(PageAccessLevelEvent.initial()),
-                          ),
-                        ],
-                        child: BlocBuilder<PageAccessLevelBloc,
-                            PageAccessLevelState>(
-                          builder: (lockStatusContext, state) {
-                            return IgnorePointer(
-                              ignoring: !state.isEditable,
-                              child: _BoardCard(
-                                afGroupData: column,
-                                groupItem: columnItem as GroupItem,
-                                boardConfig: config,
-                                columnWash: _washOf(context, column),
-                                groupColor: _groupColorOf(context, column),
-                                notifier: widget.focusScope,
-                                cellBuilder: cellBuilder,
-                                compactMode: compactMode,
-                                onOpenCard: (rowMeta) => _openCard(
-                                  context: context,
-                                  databaseController: lockStatusContext
-                                      .read<BoardBloc>()
-                                      .databaseController,
-                                  rowMeta: rowMeta,
+                          child: BlocBuilder<PageAccessLevelBloc,
+                              PageAccessLevelState>(
+                            builder: (lockStatusContext, state) {
+                              return IgnorePointer(
+                                ignoring: !state.isEditable,
+                                child: _BoardCard(
+                                  afGroupData: column,
+                                  groupItem: columnItem as GroupItem,
+                                  boardConfig: config,
+                                  columnWash: _washOf(context, column, colors),
+                                  groupColor:
+                                      _groupColorOf(context, column, colors),
+                                  notifier: widget.focusScope,
+                                  cellBuilder: cellBuilder,
+                                  compactMode: compactMode,
+                                  onOpenCard: (rowMeta) => _openCard(
+                                    context: context,
+                                    databaseController: lockStatusContext
+                                        .read<BoardBloc>()
+                                        .databaseController,
+                                    rowMeta: rowMeta,
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
+                  );
 
-                if (!ridesPageScroll) {
-                  return board;
-                }
+                  if (!ridesPageScroll) {
+                    return board;
+                  }
 
-                // The page owns the vertical axis, so the last card is never
-                // sliced by the window edge; the tail leaves room to breathe.
-                return SingleChildScrollView(
-                  controller: PrimaryScrollController.maybeOf(context),
-                  padding: const EdgeInsets.only(bottom: 56),
-                  // The board measures only as wide as its columns, and a
-                  // scroll view takes its child's width, so without this the
-                  // page's scrollbar is drawn beside the last column instead
-                  // of at the edge of the page.
-                  child: Align(
-                    alignment: AlignmentDirectional.topStart,
-                    child: board,
-                  ),
-                );
-              },
+                  // The page owns the vertical axis, so the last card is never
+                  // sliced by the window edge; the tail leaves room to breathe.
+                  return SingleChildScrollView(
+                    controller: PrimaryScrollController.maybeOf(context),
+                    padding: const EdgeInsets.only(bottom: 56),
+                    // The board measures only as wide as its columns, and a
+                    // scroll view takes its child's width, so without this the
+                    // page's scrollbar is drawn beside the last column instead
+                    // of at the edge of the page.
+                    child: Align(
+                      alignment: AlignmentDirectional.topStart,
+                      child: board,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ),

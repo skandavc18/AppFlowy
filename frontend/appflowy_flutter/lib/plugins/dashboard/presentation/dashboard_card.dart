@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_embed_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
@@ -357,66 +359,74 @@ class _DashboardCardState extends State<DashboardCard> {
           left: appearance.media ? 12 : 16,
           right: DashboardMetrics.resizeHandle + 4,
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: showsTitle
-                  ? GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onDoubleTap: _editable ? _rename : null,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // A header that also carries the widget's own
-                            // controls has no room to spare: the words win.
-                            if (definition != null && trailing == null) ...[
-                              Icon(
-                                definition.icon,
-                                size: 14,
-                                color: appearance.onColour
-                                    ? appearance.tone.label
-                                    : appearance.tone.strong
-                                        .withValues(alpha: 0.85),
-                              ),
-                              const SizedBox(width: 7),
-                            ],
-                            SurfaceFindTarget(
-                              id: dashboardFindWidget(spec.id, 'title'),
-                              child: Text(
-                                spec.title,
-                                maxLines: 1,
-                                style: DashboardType.eyebrow(
-                                  palette,
-                                  color: ink,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // The widget's own controls take what they need, up to the
+            // two-thirds of the row they have always been allowed, and the
+            // title has the rest — a lone "+" no longer squeezes it.
+            final managementWidth = controls ? 8.0 + 2 * 24 + 4 : 0.0;
+            final shared = math.max(
+              0.0,
+              constraints.maxWidth - managementWidth - 8,
+            );
+            final trailingLimit = math.min(240.0, shared * 2 / 3);
+            return Row(
+              children: [
+                Expanded(
+                  child: showsTitle
+                      ? GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onDoubleTap: _editable ? _rename : null,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // A header that also carries the widget's
+                                // own controls has no room to spare: the
+                                // words win.
+                                if (definition != null && trailing == null) ...[
+                                  Icon(
+                                    definition.icon,
+                                    size: 14,
+                                    color: appearance.onColour
+                                        ? appearance.tone.label
+                                        : appearance.tone.strong
+                                            .withValues(alpha: 0.85),
+                                  ),
+                                  const SizedBox(width: 7),
+                                ],
+                                SurfaceFindTarget(
+                                  id: dashboardFindWidget(spec.id, 'title'),
+                                  child: Text(
+                                    spec.title,
+                                    maxLines: 1,
+                                    style: DashboardType.eyebrow(
+                                      palette,
+                                      color: ink,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            if (trailing != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 240),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                if (trailing != null) ...[
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: trailingLimit),
                     child: trailing,
                   ),
-                ),
-              ),
-            ],
-            if (controls) ...[
-              const SizedBox(width: 8),
-              _buildManagementControls(selected: selected, floating: false),
-            ],
-          ],
+                ],
+                if (controls) ...[
+                  const SizedBox(width: 8),
+                  _buildManagementControls(selected: selected, floating: false),
+                ],
+              ],
+            );
+          },
         ),
       ),
     );

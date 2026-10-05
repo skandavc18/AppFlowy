@@ -244,6 +244,7 @@ ChartTable chartTableFromRowText(
       for (final row in selectedRows) List<String>.of(row.cells),
     ],
     columnIds: List<String>.of(rows.fieldIds),
+    rowIds: [for (final row in selectedRows) row.rowId],
     keepEmptyRows: true,
   );
 }

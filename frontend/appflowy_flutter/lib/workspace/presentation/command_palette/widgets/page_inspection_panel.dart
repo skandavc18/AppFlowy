@@ -35,7 +35,6 @@ class PageInspectionPanel extends StatefulWidget {
     this.query,
     this.matchingSnippet,
     this.contentSearch = false,
-    this.metadataOnly = false,
     this.canUseView,
     super.key,
   });
@@ -49,7 +48,6 @@ class PageInspectionPanel extends StatefulWidget {
   final String? query;
   final String? matchingSnippet;
   final bool contentSearch;
-  final bool metadataOnly;
   final bool Function(String id)? canUseView;
 
   @override
@@ -157,7 +155,6 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
                   query: widget.query,
                   matchingSnippet: _snippet,
                   contentSearch: widget.contentSearch,
-                  metadataOnly: widget.metadataOnly,
                   onViewOpened: () => widget.onOpen(view),
                 ),
               ),
@@ -199,7 +196,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
 
   Widget _buildFolderInspection(BuildContext context, ViewPB folder) {
     final palette = WorkspacePalette.of(context);
-    final cover = widget.metadataOnly ? null : folder.cover;
+    final cover = folder.cover;
     final collectionArtwork = FolderGalleryCollectionArtwork(
       item: WorkspaceExplorerItem.fromView(folder),
     );

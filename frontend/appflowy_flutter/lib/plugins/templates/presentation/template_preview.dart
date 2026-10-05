@@ -1,6 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/plugins/canvas/presentation/canvas_board.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_board.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_canvas.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_guide.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_sample_tables.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_canvas.dart';
 import 'package:appflowy/shared/markdown_to_document.dart';
@@ -11,6 +15,8 @@ import 'package:appflowy/workspace/application/dashboard/dashboard_controller.da
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/templates/built_in/built_in_templates.dart';
+import 'package:appflowy/workspace/application/templates/template_guides.dart';
+import 'package:appflowy/workspace/application/templates/template_samples.dart';
 import 'package:appflowy/workspace/application/templates/workspace_template.dart';
 import 'package:appflowy/workspace/application/user/user_workspace_bloc.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/field_entities.pb.dart';
@@ -78,14 +84,22 @@ class _TemplatePreviewDialog extends StatefulWidget {
 }
 
 class _TemplatePreviewDialogState extends State<_TemplatePreviewDialog> {
-  int _part = 0;
+  /// A board first: it is what the template is for, and its tables are
+  /// one tab away.
+  late int _part = math.max(
+    0,
+    widget.template.parts.indexWhere(
+      (part) =>
+          part.blueprint is TemplateDashboard ||
+          part.blueprint is TemplateCanvas,
+    ),
+  );
 
-  /// ⚠️ Deliberately empty. Binding a preview's widgets to view ids that do
-  /// not exist yet would have every chart and metric reading a table the
-  /// backend cannot find, i.e. a preview full of errors. Unbound, they draw
-  /// their own "choose a table" card and the layout still reads correctly —
-  /// and the table itself is shown as its own part beside the dashboard.
-  static const TemplateContext _unbound = {};
+  /// The template's own rows, under stand-in ids nothing can be written to,
+  /// so the board draws its real charts before anything is made.
+  late final _samples = templateSamples(widget.template);
+
+  late final _guide = templateGuide(widget.template.id);
 
   @override
   Widget build(BuildContext context) {
@@ -113,6 +127,11 @@ class _TemplatePreviewDialogState extends State<_TemplatePreviewDialog> {
               onUse: () => Navigator.of(context).pop(true),
               onClose: () => Navigator.of(context).pop(false),
             ),
+            if (_guide.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 14),
+                child: DashboardGuideCard(steps: _guide, palette: palette),
+              ),
             if (parts.length > 1)
               _PartSwitcher(
                 parts: parts,
@@ -123,13 +142,16 @@ class _TemplatePreviewDialogState extends State<_TemplatePreviewDialog> {
             Expanded(
               child: ColoredBox(
                 color: palette.canvas,
-                child: _PartPreview(
-                  // Keyed, so switching part builds a fresh controller rather
-                  // than pouring one document into another's.
-                  key: ValueKey('${template.id}-$_part'),
-                  part: parts[_part],
-                  created: _unbound,
-                  palette: palette,
+                child: DashboardSampleTables(
+                  tables: _samples.tables,
+                  child: _PartPreview(
+                    // Keyed, so switching part builds a fresh controller
+                    // rather than pouring one document into another's.
+                    key: ValueKey('${template.id}-$_part'),
+                    part: parts[_part],
+                    created: _samples.ids,
+                    palette: palette,
+                  ),
                 ),
               ),
             ),
@@ -371,7 +393,7 @@ class _PartPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) => switch (part.blueprint) {
         TemplateDashboard(build: final build) => _DashboardPreview(
-            document: build(created),
+            document: withoutEmbeddedTables(build(created)),
             palette: palette,
           ),
         TemplateCanvas(build: final build) => _CanvasPreview(

@@ -1,13 +1,6 @@
-import 'dart:io';
-
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
-import 'package:appflowy/shared/maps/app_map_view.dart';
-import 'package:appflowy/shared/maps/map_geocoder.dart';
-import 'package:appflowy/shared/maps/map_location.dart';
-import 'package:appflowy/shared/maps/map_marker.dart';
-import 'package:appflowy/shared/progress_bar.dart';
+import 'package:appflowy/shared/table_views/property_values.dart';
 import 'package:appflowy/shared/table_views/row_media.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
@@ -84,18 +77,12 @@ class TablePropertyView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          property.name.toUpperCase(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 9.5,
-            height: 1.1,
-            letterSpacing: 0.7,
-            color: palette.textMuted,
-          ),
+        PropertyLabel(
+          name: property.name,
+          icon: tablePropertyGlyph(property.kind),
+          ink: palette,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 7),
         body,
       ],
     );
@@ -110,6 +97,7 @@ class TablePropertyView extends StatelessWidget {
         style: TextStyle(
           fontSize: compact ? 13 : 14,
           height: 1.35,
+          fontWeight: FontWeight.w500,
           color: palette.textPrimary,
         ),
       );
@@ -125,26 +113,7 @@ class TablePropertyView extends StatelessWidget {
         ),
       );
 
-  Widget _link() => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.link_rounded, size: 14, color: palette.accent),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              property.value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13.5,
-                color: palette.accent,
-                decoration: TextDecoration.underline,
-                decorationColor: palette.accent.withValues(alpha: 0.4),
-              ),
-            ),
-          ),
-        ],
-      );
+  Widget _link() => PropertyLink(value: property.value, ink: palette);
 
   // ----------------------------------------------------------------- values
 
@@ -153,136 +122,49 @@ class TablePropertyView extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontSize: compact ? 18 : 28,
-          height: 1.05,
-          fontWeight: FontWeight.w600,
+          fontSize: compact ? 18 : 26,
+          height: 1.1,
+          fontWeight: FontWeight.w700,
           letterSpacing: -0.6,
+          fontFeatures: const [FontFeature.tabularFigures()],
           color: palette.textPrimary,
         ),
       );
 
-  Widget _rating() {
-    final marks = property.rating ?? 0;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < 5; i++)
-          Padding(
-            padding: const EdgeInsets.only(right: 3),
-            child: Icon(
-              i < marks ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: 16,
-              color: i < marks
-                  ? palette.accent
-                  : palette.textMuted.withValues(alpha: 0.5),
-            ),
-          ),
-      ],
-    );
-  }
+  Widget _rating() => PropertyStars(marks: property.rating ?? 0, ink: palette);
 
-  Widget _progress(BuildContext context) {
-    final fraction = property.fraction;
-    final colors = ProgressBarColors.of(context);
-    final label = progressDisplayLabel(property.value);
-    return Semantics(
-      value: label,
-      child: ExcludeSemantics(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: compact ? 11.5 : 12,
-                fontWeight: FontWeight.w500,
-                fontFeatures: const [FontFeature.tabularFigures()],
-                color: palette.textSecondary,
-              ),
-            ),
-            if (fraction != null) ...[
-              const SizedBox(height: 6),
-              AppFlowyProgressBar(
-                fraction: fraction,
-                fill: colors.fill,
-                highlight: colors.highlight,
-                track: colors.track,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _progress(BuildContext context) => PropertyProgress(
+        value: property.value,
+        fraction: property.fraction,
+        ink: palette,
+        compact: compact,
+      );
 
-  Widget _checkbox() {
-    final ticked = const ['yes', 'true', '1', 'checked']
-        .contains(property.value.trim().toLowerCase());
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedContainer(
-          duration: TableViewMetrics.hover,
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color:
-                ticked ? palette.accent : palette.accent.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: ticked
-                  ? palette.accent
-                  : palette.textMuted.withValues(alpha: 0.5),
-              width: 1.4,
-            ),
-          ),
-          child: ticked
-              ? const Icon(Icons.check_rounded, size: 14, color: Colors.white)
-              : null,
-        ),
-        const SizedBox(width: 8),
-        Text(
-          ticked ? 'Yes' : 'No',
-          style: TextStyle(fontSize: 13.5, color: palette.textSecondary),
-        ),
-      ],
-    );
-  }
+  Widget _checkbox() => PropertyCheck(
+        ticked: const ['yes', 'true', '1', 'checked']
+            .contains(property.value.trim().toLowerCase()),
+        ink: palette,
+      );
 
-  Widget _date() => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.calendar_today_rounded,
-            size: 13,
-            color: palette.textMuted,
-          ),
-          const SizedBox(width: 7),
-          Flexible(
-            child: Text(
-              property.value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13.5,
-                letterSpacing: 0.1,
-                color: palette.textPrimary,
-              ),
-            ),
-          ),
-        ],
+  Widget _date() => Text(
+        property.value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.1,
+          color: palette.textPrimary,
+        ),
       );
 
   // ------------------------------------------------------------------- sets
 
-  Widget _badge() => TablePill(
+  Widget _badge() => PropertyPill(
         label: property.value,
         colour: palette.swatchFor(property.value),
-        palette: palette,
+        ink: palette,
+        dense: compact,
       );
 
   Widget _tags() => Wrap(
@@ -290,35 +172,19 @@ class TablePropertyView extends StatelessWidget {
         runSpacing: 6,
         children: [
           for (final part in tablePartsOf(property.value))
-            TablePill(
+            PropertyPill(
               label: part,
               colour: palette.swatchFor(part),
-              palette: palette,
+              ink: palette,
+              dense: compact,
             ),
         ],
       );
 
-  Widget _people() => Wrap(
-        spacing: 10,
-        runSpacing: 8,
-        children: [
-          for (final name in tablePartsOf(property.value))
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TableAvatar(name: name, palette: palette),
-                const SizedBox(width: 7),
-                Flexible(
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: palette.textPrimary),
-                  ),
-                ),
-              ],
-            ),
-        ],
+  Widget _people() => PropertyPeople(
+        names: tablePartsOf(property.value),
+        initialsOf: tableInitialsOf,
+        ink: palette,
       );
 
   Widget _relation() => Wrap(
@@ -326,7 +192,11 @@ class TablePropertyView extends StatelessWidget {
         runSpacing: 6,
         children: [
           for (final name in tablePartsOf(property.value))
-            _chip(Icons.link_rounded, name, palette.textMuted),
+            PropertyChip(
+              label: name,
+              icon: Icons.description_rounded,
+              ink: palette,
+            ),
         ],
       );
 
@@ -334,127 +204,28 @@ class TablePropertyView extends StatelessWidget {
     if (_canReadMedia) {
       return _mediaCell();
     }
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final name in tablePartsOf(property.value))
-          _chip(
-            fileIconForName(tableFileNameOf(name)),
-            tableFileNameOf(name),
-            palette.accent,
-          ),
+    return PropertyFiles(
+      names: [
+        for (final name in tablePartsOf(property.value)) tableFileNameOf(name),
       ],
+      ink: palette,
     );
   }
 
-  /// A media cell drawn from what it actually holds.
-  ///
-  /// The files arrive a moment after the row does, so the box keeps its place
-  /// while they are on their way rather than shifting the page when they land.
-  Widget _mediaCell() => RowMediaView(
+  /// A media cell drawn from what it actually holds. The files arrive a
+  /// moment after the row does, so the box keeps its place meanwhile.
+  Widget _mediaCell() => PropertyMedia(
         viewId: viewId,
         fieldId: property.fieldId,
         rowId: rowId,
-        builder: (context, files) {
-          if (files == null) {
-            return _pictureFrame(const SizedBox.shrink());
-          }
-          final pictures = files.where((file) => file.isImage).toList();
-          final rest = files.where((file) => !file.isImage).toList();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (pictures.isNotEmpty)
-                _pictureFrame(
-                  live
-                      ? RowMediaImage(
-                          file: pictures.first,
-                          placeholder: ColoredBox(color: palette.raised),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              if (pictures.length > 1) ...[
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final picture in pictures.skip(1))
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: live
-                              ? RowMediaImage(
-                                  file: picture,
-                                  placeholder:
-                                      ColoredBox(color: palette.raised),
-                                )
-                              : ColoredBox(color: palette.raised),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-              if (rest.isNotEmpty) ...[
-                if (pictures.isNotEmpty) const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final file in rest)
-                      _chip(
-                        fileIconForName(file.name),
-                        file.name,
-                        palette.accent,
-                      ),
-                  ],
-                ),
-              ],
-            ],
-          );
-        },
+        ink: palette,
+        live: live,
+        height: _pictureHeight,
       );
 
-  Widget _pictureFrame(Widget child) => ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          height: compact
-              ? TableViewMetrics.imagePreviewHeight * 0.7
-              : TableViewMetrics.imagePreviewHeight,
-          width: double.infinity,
-          child: ColoredBox(color: palette.raised, child: child),
-        ),
-      );
-
-  Widget _chip(IconData icon, String label, Color tint) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        decoration: BoxDecoration(
-          color: palette.raised,
-          borderRadius: BorderRadius.circular(TableViewMetrics.pillRadius),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: tint),
-            const SizedBox(width: 6),
-            Flexible(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 150),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.5, color: palette.textPrimary),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+  double get _pictureHeight => compact
+      ? TableViewMetrics.imagePreviewHeight * 0.7
+      : TableViewMetrics.imagePreviewHeight;
 
   // --------------------------------------------------------------- pictures
 
@@ -462,75 +233,44 @@ class TablePropertyView extends StatelessWidget {
     if (_canReadMedia) {
       return _mediaCell();
     }
-    final source = tablePartsOf(property.value)
-        .firstWhere(looksLikeTableImage, orElse: () => property.value.trim());
-    return _pictureFrame(
-      live
-          ? TablePicture(url: source, palette: palette)
-          : const SizedBox.shrink(),
+    final pictures =
+        tablePartsOf(property.value).where(looksLikeTableImage).toList();
+    return PropertyPictures(
+      sources: pictures.isEmpty ? [property.value.trim()] : pictures,
+      ink: palette,
+      live: live,
+      height: _pictureHeight,
     );
   }
 
-  Widget _location() {
-    final place = parseMapLocation(property.value);
-    final point =
-        place.point ?? GeocodeCache.instance.peek(geocodeKeyFor(place))?.point;
-    final label = place.label.isEmpty ? property.value : place.label;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (point != null && live && !compact)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              height: TableViewMetrics.mapPreviewHeight,
-              width: double.infinity,
-              child: AppMapView(
-                pins: [
-                  AppMapPin(id: property.fieldId, point: point, title: label),
-                ],
-                initialCenter: point,
-                initialZoom: 13.5,
-                showControls: false,
-                clustering: false,
-                autoFit: false,
-              ),
-            ),
-          )
-        else if (point != null && !compact)
-          Container(
-            height: TableViewMetrics.mapPreviewHeight,
-            decoration: BoxDecoration(
-              color: palette.raised,
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        if (point != null && !compact) const SizedBox(height: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.place_rounded, size: 14, color: palette.accent),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: compact ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.3,
-                  color: palette.textPrimary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+  Widget _location() => PropertyMap(
+        pinId: property.fieldId,
+        value: property.value,
+        ink: palette,
+        live: live,
+        height: TableViewMetrics.mapPreviewHeight,
+        compact: compact,
+      );
 }
+
+/// The mark a property's name wears, after the kind of value it holds.
+IconData tablePropertyGlyph(TablePropertyKind kind) => switch (kind) {
+      TablePropertyKind.text => Icons.text_fields_rounded,
+      TablePropertyKind.excerpt => Icons.notes_rounded,
+      TablePropertyKind.number => Icons.numbers_rounded,
+      TablePropertyKind.rating => Icons.star_rounded,
+      TablePropertyKind.progress => Icons.speed_rounded,
+      TablePropertyKind.checkbox => Icons.check_box_rounded,
+      TablePropertyKind.badge => Icons.arrow_drop_down_circle_rounded,
+      TablePropertyKind.tags => Icons.label_rounded,
+      TablePropertyKind.date => Icons.calendar_today_rounded,
+      TablePropertyKind.person => Icons.person_rounded,
+      TablePropertyKind.image => Icons.image_rounded,
+      TablePropertyKind.files => Icons.attach_file_rounded,
+      TablePropertyKind.location => Icons.place_rounded,
+      TablePropertyKind.relation => Icons.hub_rounded,
+      TablePropertyKind.link => Icons.link_rounded,
+    };
 
 /// A coloured label — a status, a tag, a group heading.
 class TablePill extends StatelessWidget {
@@ -609,7 +349,6 @@ class TableAvatar extends StatelessWidget {
   }
 }
 
-/// A picture from wherever the table keeps it.
 /// The cover a row wears, drawn the way its own page draws it.
 class TableCoverView extends StatelessWidget {
   const TableCoverView({
@@ -619,7 +358,7 @@ class TableCoverView extends StatelessWidget {
   });
 
   final TableCover cover;
-  final TableViewPalette palette;
+  final PropertyInk palette;
 
   @override
   Widget build(BuildContext context) {
@@ -630,7 +369,8 @@ class TableCoverView extends StatelessWidget {
         return Image.asset(
           PageStyleCoverImageType.builtInImagePath(cover.value),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => ColoredBox(color: palette.raised),
+          errorBuilder: (_, __, ___) =>
+              PropertyPicturePlaceholder(ink: palette),
         );
       case TableCoverKind.colour:
         return ColoredBox(
@@ -658,6 +398,7 @@ Color? _colourOf(String value) {
   return Color(digits.length <= 6 ? packed | 0xFF000000 : packed);
 }
 
+/// A picture from wherever the table keeps it.
 class TablePicture extends StatelessWidget {
   const TablePicture({
     super.key,
@@ -667,29 +408,10 @@ class TablePicture extends StatelessWidget {
   });
 
   final String url;
-  final TableViewPalette palette;
+  final PropertyInk palette;
   final BoxFit fit;
 
   @override
-  Widget build(BuildContext context) {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) {
-      return ColoredBox(color: palette.raised);
-    }
-    final placeholder = ColoredBox(color: palette.raised);
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return Image.network(
-        trimmed,
-        fit: fit,
-        isAntiAlias: true,
-        errorBuilder: (_, __, ___) => placeholder,
-      );
-    }
-    return Image.file(
-      File(trimmed),
-      fit: fit,
-      isAntiAlias: true,
-      errorBuilder: (_, __, ___) => placeholder,
-    );
-  }
+  Widget build(BuildContext context) =>
+      PropertyPicture(url: url, ink: palette, fit: fit);
 }

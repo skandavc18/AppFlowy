@@ -5,6 +5,8 @@ import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/maps/map_marker.dart';
 import 'package:appflowy/shared/maps/map_tile_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 const _london = LatLng(51.5074, -0.1278);
 const _newYork = LatLng(40.7128, -74.0060);
@@ -310,6 +312,89 @@ void main() {
         provider.tileUri(tile, MapStyleName.dark).toString(),
         isNot(provider.tileUri(tile, MapStyleName.light).toString()),
       );
+    });
+
+    group('a Google key', () {
+      const tile = MapTile(1, 2, 3);
+      tearDown(GoogleTileProvider.debugForgetRefusals);
+
+      test(
+          'that Google turns away draws the open map instead, and is not '
+          'offered again', () async {
+        var sessions = 0;
+        MockClient refusing() => MockClient((_) async {
+              sessions++;
+              return http.Response('{"error":{"code":403}}', 403);
+            });
+        final provider =
+            GoogleTileProvider(apiKey: 'demo-key', client: refusing());
+
+        await provider.warmUp(MapStyleName.light);
+
+        expect(sessions, 1);
+        expect(
+          provider.tileUri(tile, MapStyleName.light),
+          const CartoTileProvider().tileUri(tile, MapStyleName.light),
+        );
+        expect(provider.kind, MapProviderKind.carto);
+        expect(provider.attribution, const CartoTileProvider().attribution);
+        // CARTO draws no satellite pictures; the street map stands in.
+        expect(
+          provider.tileUri(tile, MapStyleName.satellite),
+          const OpenStreetMapTileProvider()
+              .tileUri(tile, MapStyleName.satellite),
+        );
+        expect(provider.kind, MapProviderKind.openStreetMap);
+
+        final another =
+            GoogleTileProvider(apiKey: 'demo-key', client: refusing());
+        await another.warmUp(MapStyleName.dark);
+        expect(sessions, 1);
+        expect(another.tileUri(tile, MapStyleName.dark), isNotNull);
+      });
+
+      test(
+          'whose session fails for now draws the open map, and is tried '
+          'again later rather than on every frame', () async {
+        var sessions = 0;
+        final unavailable = MockClient((_) async {
+          sessions++;
+          return http.Response('unavailable', 503);
+        });
+        final provider =
+            GoogleTileProvider(apiKey: 'flaky-key', client: unavailable);
+
+        await provider.warmUp(MapStyleName.light);
+        await provider.warmUp(MapStyleName.light);
+
+        expect(sessions, 1);
+        expect(provider.tileUri(tile, MapStyleName.light), isNotNull);
+        expect(provider.kind, MapProviderKind.carto);
+        // The key itself was not refused, so the next map asks again.
+        final next =
+            GoogleTileProvider(apiKey: 'flaky-key', client: unavailable);
+        await next.warmUp(MapStyleName.light);
+        expect(sessions, 2);
+      });
+
+      test('that works still draws Google', () async {
+        final asked = <Uri>[];
+        final provider = GoogleTileProvider(
+          apiKey: 'good-key',
+          client: MockClient((request) async {
+            asked.add(request.url);
+            return http.Response('{"session":"abc"}', 200);
+          }),
+        );
+
+        await provider.warmUp(MapStyleName.light);
+
+        expect(asked.single.path, '/v1/createSession');
+        expect(provider.kind, MapProviderKind.google);
+        final uri = provider.tileUri(tile, MapStyleName.light)!;
+        expect(uri.host, 'tile.googleapis.com');
+        expect(uri.queryParameters['session'], 'abc');
+      });
     });
   });
 }

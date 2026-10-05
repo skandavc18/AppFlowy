@@ -20,6 +20,7 @@ String dashboardGroupLabel(DashboardWidgetGroup group) => switch (group) {
       DashboardWidgetGroup.collections =>
         LocaleKeys.dashboard_group_collections.tr(),
       DashboardWidgetGroup.data => LocaleKeys.dashboard_group_data.tr(),
+      DashboardWidgetGroup.money => LocaleKeys.dashboard_group_money.tr(),
       DashboardWidgetGroup.time => LocaleKeys.dashboard_group_time.tr(),
       DashboardWidgetGroup.controls => LocaleKeys.dashboard_group_controls.tr(),
       DashboardWidgetGroup.info => LocaleKeys.dashboard_group_info.tr(),

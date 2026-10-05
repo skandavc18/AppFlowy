@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_location.dart';
+import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
@@ -62,6 +63,19 @@ class GoogleGeocoder implements MapGeocoder {
   final String apiKey;
   final http.Client _client;
 
+  /// Set once Google has turned the key away — a demo key, a key without the
+  /// Geocoding API, one restricted to another app. It is not asked again.
+  bool get isRefused => _refused;
+  bool _refused = false;
+
+  void _refuse(String reason) {
+    if (_refused) {
+      return;
+    }
+    _refused = true;
+    Log.warn('Google refused the maps key ($reason); searching OpenStreetMap.');
+  }
+
   @override
   Future<GeocodeResult?> lookUp(MapLocation location) async {
     final results = await _ask(
@@ -79,7 +93,7 @@ class GoogleGeocoder implements MapGeocoder {
   }
 
   Future<List<GeocodeResult>> _ask(Map<String, String> query) async {
-    if (apiKey.isEmpty) {
+    if (apiKey.isEmpty || _refused) {
       return const [];
     }
     try {
@@ -90,10 +104,22 @@ class GoogleGeocoder implements MapGeocoder {
       final response =
           await _client.get(uri).timeout(const Duration(seconds: 12));
       if (response.statusCode != 200) {
+        if (response.statusCode >= 400 &&
+            response.statusCode < 500 &&
+            response.statusCode != 429) {
+          _refuse('HTTP ${response.statusCode}');
+        }
         return const [];
       }
       final body = jsonDecode(response.body);
-      if (body is! Map || body['status'] != 'OK') {
+      if (body is! Map) {
+        return const [];
+      }
+      final status = body['status'];
+      if (status != 'OK') {
+        if (status == 'REQUEST_DENIED' || status == 'OVER_DAILY_LIMIT') {
+          _refuse('$status ${body['error_message'] ?? ''}'.trim());
+        }
         return const [];
       }
       final results = body['results'];
@@ -289,20 +315,64 @@ class GeocodeCache {
   }
 }
 
+/// Google first, while it answers; OpenStreetMap whenever it does not.
+///
+/// A key that cannot search must not leave every search empty: whatever Google
+/// refuses or cannot find is asked of the keyless service instead.
+class FallbackGeocoder implements MapGeocoder {
+  FallbackGeocoder({required this.primary, required this.fallback});
+
+  final GoogleGeocoder primary;
+  final MapGeocoder fallback;
+
+  @override
+  Future<GeocodeResult?> lookUp(MapLocation location) async {
+    if (!primary.isRefused) {
+      final found = await primary.lookUp(location);
+      if (found != null) {
+        return found;
+      }
+    }
+    return fallback.lookUp(location);
+  }
+
+  @override
+  Future<List<GeocodeResult>> search(String query, {int limit = 6}) async {
+    if (!primary.isRefused) {
+      final found = await primary.search(query, limit: limit);
+      if (found.isNotEmpty) {
+        return found;
+      }
+    }
+    return fallback.search(query, limit: limit);
+  }
+}
+
 /// The key a location is remembered under.
 String geocodeKeyFor(MapLocation location) =>
     location.placeId != null ? 'id:${location.placeId}' : 'q:${location.query}';
 
-/// The geocoder to use, given whether a key has been configured.
+/// The geocoder for [apiKey], or for the key configured in Settings when none
+/// is given.
 ///
 /// The same one is handed back every time. Nominatim allows one request a
 /// second from an application, and that budget is only kept if every caller
 /// queues behind the same instance — a fresh one per lookup means the search
-/// box and the map race each other into being turned away.
-MapGeocoder resolveGeocoder({String apiKey = ''}) => _geocoders.putIfAbsent(
-      apiKey,
-      () =>
-          apiKey.isEmpty ? NominatimGeocoder() : GoogleGeocoder(apiKey: apiKey),
-    );
+/// box and the map race each other into being turned away. A keyed geocoder
+/// falls back to that same keyless one.
+MapGeocoder resolveGeocoder({String? apiKey}) {
+  final key = apiKey ?? MapsSettings.instance.apiKey;
+  final keyless = _geocoders.putIfAbsent('', () => NominatimGeocoder());
+  if (key.isEmpty) {
+    return keyless;
+  }
+  return _geocoders.putIfAbsent(
+    key,
+    () => FallbackGeocoder(
+      primary: GoogleGeocoder(apiKey: key),
+      fallback: keyless,
+    ),
+  );
+}
 
 final Map<String, MapGeocoder> _geocoders = {};

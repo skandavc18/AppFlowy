@@ -127,6 +127,7 @@ IconData canvasWidgetGroupIcon(DashboardWidgetGroup group) => switch (group) {
       DashboardWidgetGroup.content => Icons.description_rounded,
       DashboardWidgetGroup.collections => Icons.auto_stories_rounded,
       DashboardWidgetGroup.data => Icons.bar_chart_rounded,
+      DashboardWidgetGroup.money => Icons.payments_rounded,
       DashboardWidgetGroup.time => Icons.schedule_rounded,
       DashboardWidgetGroup.controls => Icons.tune_rounded,
       DashboardWidgetGroup.info => Icons.auto_awesome_rounded,

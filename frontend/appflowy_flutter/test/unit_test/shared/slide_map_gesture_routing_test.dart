@@ -1000,6 +1000,235 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
+
+  testWidgets(
+    'a quick short trackpad flick turns the slide; the same travel held returns',
+    (tester) async {
+      final page = ScrollController();
+      final deck = SlideDeckController();
+      final changes = <int>[];
+      try {
+        await tester.pumpWidget(
+          _app(page: page, child: _deck(deck, changes: changes)),
+        );
+        await tester.pumpAndSettle();
+        final point = tester.getCenter(find.byType(SlideDeck));
+
+        // Lifted while still moving: the flick carries on to the next slide
+        // although it travelled well under half of one.
+        final flick =
+            await tester.createGesture(kind: PointerDeviceKind.trackpad);
+        await flick.panZoomStart(point);
+        final samples = [
+          (16, -14.0),
+          (32, -_layout.step * 0.08),
+          (48, -_layout.step * 0.15),
+        ];
+        for (final (ms, dx) in samples) {
+          await flick.panZoomUpdate(
+            point,
+            pan: Offset(dx, 0),
+            timeStamp: Duration(milliseconds: ms),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await flick.panZoomEnd(timeStamp: const Duration(milliseconds: 56));
+        expect(changes, isEmpty);
+        await tester.pumpAndSettle();
+        expect(deck.index, 1);
+        expect(changes, [1]);
+
+        // The same travel with the fingers stopped before lifting stays.
+        await _pan(
+          tester,
+          point,
+          [const Offset(-14, 0), Offset(-_layout.step * 0.15, 0)],
+        );
+        expect(deck.index, 1);
+        expect(changes, [1]);
+        expect(_history(tester).isActive, isFalse);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        deck.dispose();
+        page.dispose();
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'a deliberate push of under half a slide turns it either way',
+    (tester) async {
+      final page = ScrollController();
+      final deck = SlideDeckController();
+      final changes = <int>[];
+      try {
+        await tester.pumpWidget(
+          _app(page: page, child: _deck(deck, changes: changes)),
+        );
+        await tester.pumpAndSettle();
+        final point = tester.getCenter(find.byType(SlideDeck));
+        await _pan(
+          tester,
+          point,
+          [const Offset(-14, 0), Offset(-_layout.step * 0.3, 0)],
+        );
+        expect(deck.index, 1);
+        expect(changes, [1]);
+        await _pan(
+          tester,
+          point,
+          [const Offset(14, 0), Offset(_layout.step * 0.3, 0)],
+        );
+        expect(deck.index, 0);
+        expect(changes, [1, 0]);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        deck.dispose();
+        page.dispose();
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'finger wobble mid swipe keeps the swipe; a real pinch gives it back',
+    (tester) async {
+      final page = ScrollController();
+      final deck = SlideDeckController();
+      final changes = <int>[];
+      var navigation = 0;
+      try {
+        await tester.pumpWidget(
+          _app(
+            page: page,
+            onNavigate: () => navigation++,
+            child: _deck(deck, changes: changes),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final point = tester.getCenter(find.byType(SlideDeck));
+        Future<void> swipe(List<(double, double, double)> samples) async {
+          final pan =
+              await tester.createGesture(kind: PointerDeviceKind.trackpad);
+          await pan.panZoomStart(point);
+          for (var i = 0; i < samples.length; i++) {
+            final (dx, scale, rotation) = samples[i];
+            await pan.panZoomUpdate(
+              point,
+              pan: Offset(dx, 0),
+              scale: scale,
+              rotation: rotation,
+              timeStamp: Duration(milliseconds: (i + 1) * 16),
+            );
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          final (dx, scale, rotation) = samples.last;
+          await pan.panZoomUpdate(
+            point,
+            pan: Offset(dx, 0),
+            scale: scale,
+            rotation: rotation,
+            timeStamp: const Duration(milliseconds: 300),
+          );
+          await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 301));
+          await tester.pumpAndSettle();
+        }
+
+        // Two fingers never keep a perfectly constant spread or angle.
+        await swipe([
+          (-14, 1, 0),
+          (-_layout.step * 0.3, 1.03, 0.02),
+          (-_layout.step * 0.6, 1.05, -0.04),
+        ]);
+        expect(deck.index, 1);
+        expect(changes, [1]);
+
+        await swipe([
+          (-14, 1, 0),
+          (-_layout.step * 0.6, 1.2, 0),
+        ]);
+        expect(deck.index, 1);
+        expect(changes, [1]);
+        expect(navigation, 0);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        deck.dispose();
+        page.dispose();
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'a wheel notch turns exactly one slide in one unbroken glide',
+    (tester) async {
+      final page = ScrollController();
+      final deck = SlideDeckController();
+      final changes = <int>[];
+      try {
+        await tester.pumpWidget(
+          _app(page: page, child: _deck(deck, changes: changes)),
+        );
+        await tester.pumpAndSettle();
+        final background =
+            tester.getTopLeft(find.byType(SlideDeck)) + const Offset(8, 8);
+        Future<void> notch(Duration at) => tester.sendEventToBinding(
+              PointerScrollEvent(
+                timeStamp: at,
+                position: background,
+                scrollDelta: const Offset(0, 120),
+              ),
+            );
+        // Where a card's centre travels, frame by frame. A glide that jumps
+        // back would show up as a step to the right.
+        Future<List<double>> trail(String rowId, int frames) async {
+          final card = find.byKey(ValueKey(rowId));
+          final xs = [tester.getCenter(card).dx];
+          for (var i = 0; i < frames; i++) {
+            await tester.pump(const Duration(milliseconds: 16));
+            xs.add(tester.getCenter(card).dx);
+          }
+          return xs;
+        }
+
+        void expectOneWay(List<double> xs) {
+          for (var i = 1; i < xs.length; i++) {
+            expect(xs[i], lessThanOrEqualTo(xs[i - 1] + 0.01));
+          }
+          expect(xs.last, lessThan(xs.first - 1));
+        }
+
+        await notch(Duration.zero);
+        // The rest of a burst from the same notch is not another slide.
+        await notch(const Duration(milliseconds: 8));
+        final first = await trail('row-1', 40);
+        expectOneWay(first);
+        expect(deck.index, 1);
+        expect(changes, [1]);
+
+        // A second notch mid glide queues the next slide on top and keeps
+        // the momentum rather than stopping and starting again.
+        await notch(const Duration(seconds: 2));
+        final early = await trail('row-2', 6);
+        await notch(const Duration(seconds: 2, milliseconds: 150));
+        final late = await trail('row-2', 45);
+        expectOneWay([...early, ...late.skip(1)]);
+        expect(deck.index, 3);
+        expect(changes, [1, 3]);
+        expect(page.offset, 0);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        deck.dispose();
+        page.dispose();
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }
 
 Widget _deck(

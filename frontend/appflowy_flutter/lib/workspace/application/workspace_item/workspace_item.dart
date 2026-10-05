@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/view/view_extra_cache.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/icon.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
@@ -189,13 +190,17 @@ class WorkspaceFileReference {
   }
 }
 
+/// The JSON object a view's extra holds; empty when it holds anything else.
+///
+/// Large extras are decoded once and remembered (see [ViewExtraCache]): the
+/// returned map is the caller's own, but its nested values are shared, so copy
+/// one before changing it.
 Map<String, dynamic> decodeViewExtra(String extra) {
   if (extra.isEmpty) {
     return <String, dynamic>{};
   }
   try {
-    final value = jsonDecode(extra);
-    return value is Map ? Map<String, dynamic>.from(value) : {};
+    return ViewExtraCache.decode(extra) ?? <String, dynamic>{};
   } on FormatException {
     return <String, dynamic>{};
   }

@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:appflowy/extensions/application/extension_data_store.dart';
 import 'package:appflowy/extensions/dart/appflowy_extension.dart';
+import 'package:appflowy/extensions/dart/built_in/market_feed.dart';
 import 'package:appflowy/extensions/dart/built_in/stock_chart.dart';
 import 'package:appflowy/extensions/dart/built_in/stock_dashboard_widget.dart';
 import 'package:appflowy/extensions/dart/extension_boundary.dart';
@@ -12,6 +13,7 @@ import 'package:appflowy/extensions/dart/extension_context.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/market/market_data.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -42,8 +44,9 @@ class StockExtension extends AppFlowyExtension {
         id: 'stock',
         name: 'Stocks',
         description:
-            'A block showing a share price that refreshes itself, plus a '
-            'command to refresh every ticker on the watchlist.',
+            'Share prices that refresh themselves: a stock block, live prices '
+            'and option chains for money dashboards, and a command to refresh '
+            'every ticker on the watchlist.',
       );
 
   @override
@@ -82,6 +85,20 @@ class StockExtension extends AppFlowyExtension {
     ctx.dashboardWidgets.add(stockDashboardWidget());
 
     ctx.jobs.every(StockFeed.jobInterval, feed.refreshWatchlist);
+
+    // Live prices for money dashboards: the portfolio, watchlist, options
+    // and chain widgets read through this, and fall back to their tables'
+    // own prices once it is gone.
+    final market = StockMarketProvider(
+      context: ctx,
+      search: searchWithStockFeed,
+    );
+    MarketData.attach(market);
+    ctx.scope.onDispose(() {
+      MarketData.detach(market);
+      market.dispose();
+    });
+    ctx.jobs.every(StockMarketProvider.jobInterval, market.refresh);
 
     unawaited(feed.refreshWatchlist());
   }

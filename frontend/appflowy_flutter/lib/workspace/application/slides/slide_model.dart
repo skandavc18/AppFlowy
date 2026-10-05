@@ -1,3 +1,5 @@
+import 'package:appflowy/workspace/application/table_views/table_row.dart'
+    show TableCover;
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:flutter/foundation.dart';
 
@@ -70,6 +72,7 @@ class SlideProperty {
     required this.value,
     required this.kind,
     this.fraction,
+    this.isMedia = false,
   });
 
   final String fieldId;
@@ -79,6 +82,10 @@ class SlideProperty {
 
   /// How full a progress bar should be, when the kind is a progress.
   final double? fraction;
+
+  /// Whether the column holds attached files. Its text is only their names,
+  /// so the files themselves have to be read to show them.
+  final bool isMedia;
 
   bool get isEmpty => value.trim().isEmpty;
 
@@ -99,10 +106,12 @@ class SlideProperty {
       other.name == name &&
       other.value == value &&
       other.kind == kind &&
-      other.fraction == fraction;
+      other.fraction == fraction &&
+      other.isMedia == isMedia;
 
   @override
-  int get hashCode => Object.hash(fieldId, name, value, kind, fraction);
+  int get hashCode =>
+      Object.hash(fieldId, name, value, kind, fraction, isMedia);
 }
 
 /// One row, ready to be drawn.
@@ -113,7 +122,8 @@ class SlideCardData {
     required this.title,
     this.subtitle = '',
     this.icon,
-    this.coverUrl,
+    this.cover,
+    this.fallbackCover,
     this.documentId = '',
     this.accent = '',
     this.properties = const [],
@@ -127,8 +137,13 @@ class SlideCardData {
   /// The row's own emoji, when it has one.
   final String? icon;
 
-  /// A picture to stand behind the slide's head.
-  final String? coverUrl;
+  /// What the row's page wears at its head, or a picture from the chosen
+  /// cover column.
+  final TableCover? cover;
+
+  /// The gradient the row's page falls back to when nobody chose a cover. A
+  /// picture in the row's own columns is worth more, so it is kept apart.
+  final TableCover? fallbackCover;
 
   /// The row's own page, which holds whatever does not fit in a column.
   final String documentId;
@@ -200,7 +215,8 @@ SlidePropertyKind classifySlideProperty({
     case FieldType.LastEditedTime:
       return SlidePropertyKind.date;
     case FieldType.Number:
-      if (_namesProgress(heading) || trimmed.endsWith('%') || facts.hasRange) {
+      // A spread of values alone does not make a budget or a count a bar.
+      if (_namesProgress(heading) || trimmed.endsWith('%')) {
         return SlidePropertyKind.progress;
       }
       return SlidePropertyKind.number;

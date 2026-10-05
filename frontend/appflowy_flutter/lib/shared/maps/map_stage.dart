@@ -6,6 +6,7 @@ import 'package:appflowy/shared/maps/app_map_toolbar.dart';
 import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_geocoder.dart';
+import 'package:appflowy/shared/maps/map_links.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/maps/map_tile_provider.dart';
@@ -235,7 +236,6 @@ class MapStageState extends State<MapStage> {
         controller: _map,
         pins: _source.pins,
         provider: widget.spec.provider,
-        apiKey: MapsSettings.instance.apiKey,
         style: widget.spec.style,
         clustering: widget.spec.clustering,
         initialCenter: widget.spec.center,
@@ -600,9 +600,5 @@ void copyMapCoordinates(BuildContext context, LatLng point) {
 
 /// Hands a point to Google Maps in the browser.
 Future<void> openInGoogleMaps(LatLng point) async {
-  final uri = Uri.https('www.google.com', '/maps/search/', {
-    'api': '1',
-    'query': '${point.latitude},${point.longitude}',
-  });
-  await launchUrl(uri, mode: LaunchMode.externalApplication);
+  await launchUrl(googleMapsLink(point), mode: LaunchMode.externalApplication);
 }

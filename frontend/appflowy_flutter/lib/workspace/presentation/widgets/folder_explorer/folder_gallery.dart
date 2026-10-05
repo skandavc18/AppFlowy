@@ -31,9 +31,8 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_preview/view_preview_table.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart'
-    show FieldType;
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
@@ -1130,7 +1129,10 @@ class _GalleryPreviewStage extends StatelessWidget {
             FolderGalleryPreviewKind.folder ||
             FolderGalleryPreviewKind.dashboard ||
             FolderGalleryPreviewKind.canvas ||
-            FolderGalleryPreviewKind.link =>
+            FolderGalleryPreviewKind.link ||
+            // A table keeps its own margins so a wide one can run under the
+            // card's edges.
+            FolderGalleryPreviewKind.database =>
               EdgeInsets.zero,
             _ => const EdgeInsets.fromLTRB(13, 14, 13, 12),
           }
@@ -1138,12 +1140,11 @@ class _GalleryPreviewStage extends StatelessWidget {
             FolderGalleryPreviewKind.folder ||
             FolderGalleryPreviewKind.dashboard ||
             FolderGalleryPreviewKind.canvas ||
-            FolderGalleryPreviewKind.link =>
+            FolderGalleryPreviewKind.link ||
+            FolderGalleryPreviewKind.database =>
               EdgeInsets.zero,
             FolderGalleryPreviewKind.code =>
               const EdgeInsets.fromLTRB(22, 24, 22, 22),
-            FolderGalleryPreviewKind.database =>
-              const EdgeInsets.fromLTRB(24, 27, 24, 24),
             FolderGalleryPreviewKind.file =>
               const EdgeInsets.fromLTRB(24, 24, 24, 22),
             _ => const EdgeInsets.fromLTRB(27, 30, 27, 24),
@@ -1157,6 +1158,7 @@ class _GalleryPreviewStage extends StatelessWidget {
           view: view,
           preview: preview,
           userProfile: userProfile,
+          compact: compact,
         ),
       ),
     );
@@ -1272,12 +1274,14 @@ class _GalleryPreviewBody extends StatelessWidget {
     required this.preview,
     required this.userProfile,
     this.view,
+    this.compact = false,
   });
 
   final WorkspaceExplorerItem item;
   final ViewPB? view;
   final FolderGalleryPreview preview;
   final UserProfilePB? userProfile;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1294,6 +1298,7 @@ class _GalleryPreviewBody extends StatelessWidget {
       FolderGalleryPreviewKind.database => _GalleryDatabasePreview(
           snapshot: preview.database,
           unavailable: preview.unavailable,
+          compact: compact,
         ),
       FolderGalleryPreviewKind.code => _GalleryCodePreview(preview: preview),
       FolderGalleryPreviewKind.file ||
@@ -2085,17 +2090,15 @@ class _GalleryDatabasePreview extends StatelessWidget {
   const _GalleryDatabasePreview({
     required this.snapshot,
     required this.unavailable,
+    required this.compact,
   });
 
   final FolderGalleryDatabaseSnapshot? snapshot;
   final bool unavailable;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final isPaper = PaperTheme.isEnabled(context);
     final database = snapshot;
     if (database == null ||
         (database.totalRowCount > 0 &&
@@ -2105,185 +2108,10 @@ class _GalleryDatabasePreview extends StatelessWidget {
     if (database.rows.isEmpty) {
       return _GalleryEmptyDatabasePreview(unavailable: unavailable);
     }
-    final baseSurface = _galleryIdentitySurface(context);
-    final tableSurface = Color.alphaBlend(
-      palette.textPrimary.withValues(alpha: isDark ? 0.035 : 0.012),
-      baseSurface,
-    );
-    final headerSurface = Color.alphaBlend(
-      palette.accent.withValues(
-        alpha: isDark
-            ? 0.13
-            : isPaper
-                ? 0.075
-                : 0.06,
-      ),
-      tableSurface,
-    );
-    final stripeSurface = Color.alphaBlend(
-      palette.textPrimary.withValues(alpha: isDark ? 0.045 : 0.022),
-      tableSurface,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: Color.alphaBlend(
-                  palette.accent.withValues(alpha: isDark ? 0.16 : 0.09),
-                  baseSurface,
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              alignment: Alignment.center,
-              child: WorkspaceGlyph(
-                Icons.table_rows_rounded,
-                size: 14,
-                color: palette.accent.withValues(alpha: isDark ? 0.92 : 0.78),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '${database.totalRowCount}',
-              style: TextStyle(
-                color: palette.textSecondary,
-                fontFamily: 'Inter',
-                fontSize: 11,
-                height: 1,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 15),
-        Expanded(
-          child: DecoratedBox(
-            key: const ValueKey('folder-gallery-database-grid'),
-            decoration: BoxDecoration(
-              color: tableSurface,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: palette.shadow.withValues(
-                    alpha: isDark ? 0.22 : 0.07,
-                  ),
-                  blurRadius: 20,
-                  offset: const Offset(0, 9),
-                  spreadRadius: -9,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Column(
-                children: [
-                  _GalleryDatabaseRow(
-                    values: database.columns,
-                    header: true,
-                    backgroundColor: headerSurface,
-                  ),
-                  for (var index = 0; index < database.rows.length; index++)
-                    Expanded(
-                      child: _GalleryDatabaseRow(
-                        values: database.rows[index],
-                        fieldTypes: database.fieldTypes,
-                        backgroundColor:
-                            index.isOdd ? stripeSurface : Colors.transparent,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _GalleryDatabaseRow extends StatelessWidget {
-  const _GalleryDatabaseRow({
-    required this.values,
-    this.header = false,
-    this.backgroundColor = Colors.transparent,
-    this.fieldTypes = const [],
-  });
-
-  final List<String> values;
-  final bool header;
-  final Color backgroundColor;
-  final List<FieldType> fieldTypes;
-
-  bool _findable(int index) =>
-      header ||
-      (index < fieldTypes.length &&
-          const {
-            FieldType.RichText,
-            FieldType.Number,
-            FieldType.Summary,
-            FieldType.Translate,
-            FieldType.SingleSelect,
-            FieldType.MultiSelect,
-            FieldType.Checklist,
-            FieldType.DateTime,
-            FieldType.CreatedTime,
-            FieldType.LastEditedTime,
-          }.contains(fieldTypes[index]));
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return DecoratedBox(
-      key: header ? const ValueKey('folder-gallery-database-header-row') : null,
-      decoration: BoxDecoration(color: backgroundColor),
-      child: SizedBox(
-        height: header ? 31 : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 11),
-          child: Row(
-            children: [
-              for (var index = 0; index < values.length; index++) ...[
-                if (index > 0) const SizedBox(width: 10),
-                Expanded(
-                  flex: index == 0 ? 5 : 4,
-                  child: FolderGalleryFindText(
-                    text: values[index],
-                    enabled: values[index].isNotEmpty && _findable(index),
-                    child: Text(
-                      values[index].isEmpty ? '-' : values[index],
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: header
-                            ? palette.textPrimary.withValues(
-                                alpha: isDark ? 0.88 : 0.72,
-                              )
-                            : values[index].isEmpty
-                                ? palette.textMuted.withValues(alpha: 0.48)
-                                : palette.textPrimary.withValues(
-                                    alpha: isDark ? 0.92 : 0.84,
-                                  ),
-                        fontFamily: 'Inter',
-                        fontSize: header ? 10 : 10.5,
-                        height: 1.2,
-                        fontWeight: header ? FontWeight.w600 : null,
-                        letterSpacing: header ? 0.08 : -0.06,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return ViewPreviewTable(
+      snapshot: database,
+      surface: _galleryIdentitySurface(context),
+      padding: EdgeInsets.all(compact ? 12 : 20),
     );
   }
 }

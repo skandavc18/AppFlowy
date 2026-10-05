@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_extra_cache.dart';
 
 abstract final class ViewCoverCodec {
   static const coverKey = 'cover';
@@ -12,11 +13,11 @@ abstract final class ViewCoverCodec {
       return <String, dynamic>{};
     }
 
-    final decoded = jsonDecode(extra);
-    if (decoded is! Map) {
+    final decoded = ViewExtraCache.decode(extra);
+    if (decoded == null) {
       throw const FormatException('View extra metadata must be a JSON object');
     }
-    return Map<String, dynamic>.from(decoded);
+    return decoded;
   }
 
   static PageStyleCover? decodeCover(String extra) =>

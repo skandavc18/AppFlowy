@@ -64,6 +64,12 @@ abstract final class TemplateRegistry {
           if (template.category == category) template,
       ];
 
+  /// Templates that make a board and the tables it reads.
+  static List<WorkspaceTemplate> boards() => [
+        for (final template in all())
+          if (template.isBoardBundle) template,
+      ];
+
   /// Every template that could be laid over [view].
   static List<WorkspaceTemplate> applicableTo(ViewPB view) => [
         for (final template in all())

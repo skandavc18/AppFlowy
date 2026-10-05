@@ -32,12 +32,14 @@ class DashboardTemplate {
 }
 
 /// Every template AppFlowy ships.
+///
+/// Money boards are not here: they bring tables of their own, so they come
+/// from the template registry.
 List<DashboardTemplate> dashboardTemplates() => [
       _blank,
       _personal,
       _project,
       _weeklyPlanner,
-      _finance,
       _developer,
       _study,
       _habits,
@@ -337,58 +339,6 @@ final _weeklyPlanner = DashboardTemplate(
       ],
       title: LocaleKeys.dashboard_template_days.tr(),
     ),
-  ]),
-);
-
-final _finance = DashboardTemplate(
-  id: 'finance',
-  label: () => LocaleKeys.dashboard_template_finance.tr(),
-  description: () => LocaleKeys.dashboard_template_financeHint.tr(),
-  icon: Icons.savings_rounded,
-  accent: DashboardAccent.green,
-  build: () => _document([
-    _section([
-      _widget(
-        'metric',
-        w: 3,
-        h: 3,
-        title: LocaleKeys.dashboard_template_balance.tr(),
-        accent: DashboardAccent.green,
-        settings: const {'prefix': r'$'},
-      ),
-      _widget(
-        'metric',
-        x: 3,
-        w: 3,
-        h: 3,
-        title: LocaleKeys.dashboard_template_spent.tr(),
-        accent: DashboardAccent.red,
-        settings: const {'prefix': r'$'},
-      ),
-      _widget(
-        'progress',
-        x: 6,
-        w: 6,
-        h: 3,
-        title: LocaleKeys.dashboard_template_budget.tr(),
-        settings: const {'style': 'ring'},
-      ),
-    ]),
-    _section([
-      _widget(
-        'chart',
-        w: 7,
-        h: 7,
-        title: LocaleKeys.dashboard_template_spending.tr(),
-      ),
-      _widget(
-        'database',
-        x: 7,
-        w: 5,
-        h: 7,
-        title: LocaleKeys.dashboard_template_transactions.tr(),
-      ),
-    ]),
   ]),
 );
 

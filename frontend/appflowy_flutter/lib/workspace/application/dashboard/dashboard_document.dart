@@ -195,6 +195,7 @@ class DashboardDocument {
     this.settings = const DashboardSettings(),
     this.subtitle = '',
     this.icon = '',
+    this.guide = const [],
   });
 
   factory DashboardDocument.fromJson(Map<String, Object?> json) =>
@@ -216,6 +217,10 @@ class DashboardDocument {
             : const DashboardSettings(),
         subtitle: json['subtitle'] as String? ?? '',
         icon: json['icon'] as String? ?? '',
+        guide: [
+          for (final step in (json['guide'] as List? ?? const []))
+            if (step is String && step.trim().isNotEmpty) step,
+        ],
       );
 
   /// A dashboard with one unnamed section, ready to be built in.
@@ -228,6 +233,9 @@ class DashboardDocument {
   final DashboardSettings settings;
   final String subtitle;
   final String icon;
+
+  /// How to use the board, step by step, until somebody dismisses it.
+  final List<String> guide;
 
   bool get isEmpty =>
       sections.every((section) => section.widgets.isEmpty) && variables.isEmpty;
@@ -290,6 +298,7 @@ class DashboardDocument {
     DashboardSettings? settings,
     String? subtitle,
     String? icon,
+    List<String>? guide,
   }) =>
       DashboardDocument(
         sections: sections ?? this.sections,
@@ -297,6 +306,7 @@ class DashboardDocument {
         settings: settings ?? this.settings,
         subtitle: subtitle ?? this.subtitle,
         icon: icon ?? this.icon,
+        guide: guide ?? this.guide,
       );
 
   DashboardDocument withSection(DashboardSection section) => copyWith(
@@ -407,6 +417,7 @@ class DashboardDocument {
         if (settings.toJson().isNotEmpty) 'settings': settings.toJson(),
         if (subtitle.isNotEmpty) 'subtitle': subtitle,
         if (icon.isNotEmpty) 'icon': icon,
+        if (guide.isNotEmpty) 'guide': guide,
       };
 
   @override
@@ -416,7 +427,8 @@ class DashboardDocument {
       listEquals(other.variables, variables) &&
       other.settings == settings &&
       other.subtitle == subtitle &&
-      other.icon == icon;
+      other.icon == icon &&
+      listEquals(other.guide, guide);
 
   @override
   int get hashCode => Object.hash(
@@ -425,6 +437,7 @@ class DashboardDocument {
         settings,
         subtitle,
         icon,
+        Object.hashAll(guide),
       );
 }
 

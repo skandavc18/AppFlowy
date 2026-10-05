@@ -46,6 +46,9 @@ abstract final class BoardMetrics {
 Color boardColumnWashColor(BoardPalette palette, Color groupColor) =>
     _boardTinted(palette, groupColor, deepened: false);
 
+/// The neutral well a column without a colour sits in.
+Color boardColumnWellColor(BoardPalette palette) => _boardWell(palette);
+
 /// The tint a card's page preview wears.
 ///
 /// It borrows the wash of the column the card sits in, so the writing on a

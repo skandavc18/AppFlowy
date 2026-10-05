@@ -172,7 +172,7 @@ void main() {
       );
     });
 
-    test('a number is a bar when the column has a spread to compare to', () {
+    test('a number stays a number unless something says it is a fraction', () {
       expect(
         classifySlideProperty(
           field: _field('a', 'Weight', FieldType.Number),
@@ -180,9 +180,18 @@ void main() {
         ),
         SlidePropertyKind.number,
       );
+      // A budget's spread across the table does not turn it into a bar.
       expect(
         classifySlideProperty(
-          field: _field('a', 'Weight', FieldType.Number),
+          field: _field('a', 'Budget', FieldType.Number),
+          value: '12,500',
+          facts: const SlideColumnFacts(lowest: 900, highest: 12500),
+        ),
+        SlidePropertyKind.number,
+      );
+      expect(
+        classifySlideProperty(
+          field: _field('a', 'Progress', FieldType.Number),
           value: '42',
           facts: const SlideColumnFacts(lowest: 0, highest: 100),
         ),

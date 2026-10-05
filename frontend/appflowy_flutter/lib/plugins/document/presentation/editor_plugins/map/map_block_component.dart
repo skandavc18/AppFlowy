@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/maps/app_map_toolbar.dart';
 import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_geocoder.dart';
 import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/maps/map_marker.dart';
+import 'package:appflowy/shared/maps/map_place_field.dart';
 import 'package:appflowy/shared/maps/map_stage.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
+import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -33,9 +39,14 @@ class MapBlockKeys {
   /// How that table is placed.
   static const String spec = 'spec';
 
-  /// Where a map with no table is looking.
+  /// Where the pin is, on a map with no table.
   static const String latitude = 'lat';
   static const String longitude = 'lng';
+
+  /// Where that map was left looking. Kept apart from the pin so looking
+  /// around never carries the pin along; maps saved before fall back to it.
+  static const String viewLatitude = 'view_lat';
+  static const String viewLongitude = 'view_lng';
   static const String zoom = 'zoom';
 
   /// What the pinned place is called.
@@ -119,6 +130,9 @@ class _MapBlockComponentState extends State<MapBlockComponent>
   final PopoverController _picker = PopoverController();
   final AppMapController _map = AppMapController();
 
+  /// Waiting for a click on the map to say where the pin goes.
+  bool _picking = false;
+
   @override
   void dispose() {
     _picker.close();
@@ -130,9 +144,15 @@ class _MapBlockComponentState extends State<MapBlockComponent>
 
   String get _place => node.attributes[MapBlockKeys.place] as String? ?? '';
 
-  LatLng? get _pinned {
-    final lat = node.attributes[MapBlockKeys.latitude];
-    final lng = node.attributes[MapBlockKeys.longitude];
+  LatLng? get _pinned =>
+      _pointAt(MapBlockKeys.latitude, MapBlockKeys.longitude);
+
+  LatLng? get _viewCenter =>
+      _pointAt(MapBlockKeys.viewLatitude, MapBlockKeys.viewLongitude);
+
+  LatLng? _pointAt(String latitudeKey, String longitudeKey) {
+    final lat = node.attributes[latitudeKey];
+    final lng = node.attributes[longitudeKey];
     if (lat is! num || lng is! num) {
       return null;
     }
@@ -167,10 +187,16 @@ class _MapBlockComponentState extends State<MapBlockComponent>
 
   bool get _isConfigured => _viewId.isNotEmpty || _pinned != null;
 
-  Future<void> _update(Map<String, Object?> attributes) {
+  Future<void> _update(
+    Map<String, Object?> attributes, {
+    bool recordUndo = true,
+  }) {
     final transaction = _editorState.transaction
       ..updateNode(node, {...node.attributes, ...attributes});
-    return _editorState.apply(transaction);
+    return _editorState.apply(
+      transaction,
+      options: ApplyOptions(recordUndo: recordUndo),
+    );
   }
 
   @override
@@ -187,12 +213,15 @@ class _MapBlockComponentState extends State<MapBlockComponent>
       editable: _editable,
       onResize: (value) => _update({MapBlockKeys.width: value}),
       onResizeHeight: (value) => _update({MapBlockKeys.height: value}),
-      child: _isConfigured
+      child: _isConfigured || (_picking && _editable)
           ? _buildMap(palette)
           : _MapEmptyFrame(
               palette: palette,
               onPickTable: _picker.show,
-              onPlaceFound: _pinPlace,
+              onPlaceFound: (point, label) =>
+                  _pinPlace(point, label, frame: true),
+              onChooseOnMap:
+                  _editable ? () => setState(() => _picking = true) : null,
             ),
     );
 
@@ -243,7 +272,7 @@ class _MapBlockComponentState extends State<MapBlockComponent>
     // The editor owns the wheel everywhere else on the page; a map has to take
     // it back or panning the page would zoom the map and the reverse.
     final body = PremiumScrollExclusion(
-      child: _viewId.isNotEmpty ? _linkedMap() : _pinnedMap(palette),
+      child: _viewId.isNotEmpty ? _linkedMap() : _placeMap(palette),
     );
     return ViewerCard(reactsToPointer: false, child: body);
   }
@@ -259,39 +288,48 @@ class _MapBlockComponentState extends State<MapBlockComponent>
         trailing: _pickButton(),
       );
 
-  Widget _pinnedMap(MapPalette palette) {
-    final point = _pinned!;
+  /// The map of one place — or, while a place is being chosen on it, of none
+  /// yet. Both are the same map, so the view survives the pin landing.
+  Widget _placeMap(MapPalette palette) {
+    final point = _pinned;
+    final picking = _picking && _editable;
+    final title = point == null
+        ? ''
+        : _place.isEmpty
+            ? point.label
+            : _place;
     return Stack(
       children: [
         Positioned.fill(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: AppMapView(
-              controller: _map,
-              pins: [
-                AppMapPin(
-                  id: 'pinned',
-                  point: point,
-                  title: _place.isEmpty ? point.label : _place,
-                  subtitle: point.label,
-                ),
-              ],
-              apiKey: MapsSettings.instance.apiKey,
-              initialCenter: point,
-              initialZoom: _zoom ?? 14,
-              autoFit: false,
-              clustering: false,
-              showSearch: true,
-              searchHint: LocaleKeys.map_searchHint.tr(),
-              onSearch: _lookUp,
-              onViewportChanged: (viewport) => _update({
-                MapBlockKeys.latitude: viewport.center.latitude,
-                MapBlockKeys.longitude: viewport.center.longitude,
-                MapBlockKeys.zoom: viewport.zoom,
-              }),
-              onContextMenu: (globalPosition, at) =>
-                  copyMapCoordinates(context, at),
-              padding: const EdgeInsets.only(top: 34),
+            child: MouseRegion(
+              // A crosshair says the next click lands the pin.
+              cursor: picking ? SystemMouseCursors.precise : MouseCursor.defer,
+              child: AppMapView(
+                controller: _map,
+                pins: [
+                  if (point != null)
+                    AppMapPin(
+                      id: 'pinned',
+                      point: point,
+                      title: title,
+                      subtitle: point.label,
+                    ),
+                ],
+                initialCenter: _viewCenter ?? point,
+                initialZoom: _zoom ?? (point == null ? null : 14),
+                autoFit: false,
+                clustering: false,
+                showSearch: true,
+                searchHint: LocaleKeys.map_searchHint.tr(),
+                onSearch: _lookUp,
+                onSuggestionPicked: _editable ? _pinSuggestion : null,
+                onViewportChanged: _rememberView,
+                onPointTap: picking ? _pinPoint : null,
+                onContextMenu: _showContextMenu,
+                padding: const EdgeInsets.only(top: 34),
+              ),
             ),
           ),
         ),
@@ -301,9 +339,12 @@ class _MapBlockComponentState extends State<MapBlockComponent>
           top: 10,
           child: _Header(
             palette: palette,
-            title: _place.isEmpty ? point.label : _place,
-            onOpenInGoogleMaps: () => openInGoogleMaps(point),
-            onPickTable: _picker.show,
+            title: picking ? LocaleKeys.map_pinFromMap.tr() : title,
+            picking: picking,
+            onTogglePick:
+                _editable ? () => setState(() => _picking = !_picking) : null,
+            onRemovePin:
+                _editable && point != null && !picking ? _removePin : null,
           ),
         ),
       ],
@@ -317,10 +358,97 @@ class _MapBlockComponentState extends State<MapBlockComponent>
         visualDensity: VisualDensity.compact,
       );
 
+  Future<void> _showContextMenu(Offset globalPosition, LatLng point) async {
+    await showAppMenu<void>(
+      context: context,
+      anchor: globalPosition & Size.zero,
+      entries: [
+        if (_editable) ...[
+          AppMenuItem(
+            label: LocaleKeys.map_pinHere.tr(),
+            icon: Icons.add_location_alt_rounded,
+            onSelected: () => _pinPoint(point),
+          ),
+          if (_pinned != null)
+            AppMenuItem(
+              label: LocaleKeys.map_removePin.tr(),
+              icon: Icons.location_off_rounded,
+              destructive: true,
+              onSelected: _removePin,
+            ),
+          const AppMenuSeparator(),
+        ],
+        AppMenuItem(
+          label: LocaleKeys.map_copyCoordinates.tr(),
+          icon: Icons.copy_rounded,
+          onSelected: () => copyMapCoordinates(context, point),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.map_openInGoogleMaps.tr(),
+          icon: Icons.open_in_new_rounded,
+          onSelected: () => openInGoogleMaps(point),
+        ),
+      ],
+    );
+  }
+
+  void _rememberView(MapViewport viewport) {
+    if (!mounted || !_editable) {
+      return;
+    }
+    // Looking around is worth keeping, but not worth undoing one pan at a
+    // time.
+    unawaited(
+      _update(
+        {
+          MapBlockKeys.viewLatitude: viewport.center.latitude,
+          MapBlockKeys.viewLongitude: viewport.center.longitude,
+          MapBlockKeys.zoom: viewport.zoom,
+        },
+        recordUndo: false,
+      ),
+    );
+  }
+
+  void _pinPoint(LatLng point) {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _picking = false);
+    unawaited(_pinPlace(point, point.label));
+  }
+
+  /// Takes the pin away, and with it where the map was looking: the block goes
+  /// back to asking for a place.
+  void _removePin() {
+    if (!mounted || !_editable) {
+      return;
+    }
+    setState(() => _picking = false);
+    unawaited(
+      _update({
+        MapBlockKeys.latitude: null,
+        MapBlockKeys.longitude: null,
+        MapBlockKeys.place: null,
+        MapBlockKeys.viewLatitude: null,
+        MapBlockKeys.viewLongitude: null,
+        MapBlockKeys.zoom: null,
+      }),
+    );
+  }
+
+  void _pinSuggestion(MapSuggestion suggestion) {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _picking = false);
+    unawaited(_pinPlace(suggestion.point, suggestion.title));
+  }
+
   Future<LatLng?> _lookUp(String query) async {
     final parsed = parseMapLocation(query);
     if (parsed.point != null) {
-      await _pinPlace(parsed.point!, parsed.label);
+      _pinSuggestion(MapSuggestion(title: parsed.label, point: parsed.point!));
       return parsed.point;
     }
     final geocoder = resolveGeocoder(apiKey: MapsSettings.instance.apiKey);
@@ -328,16 +456,33 @@ class _MapBlockComponentState extends State<MapBlockComponent>
     if (found.isEmpty) {
       return null;
     }
-    await _pinPlace(found.first.point, found.first.name);
+    _pinSuggestion(
+      MapSuggestion(
+        title:
+            found.first.name.isEmpty ? found.first.address : found.first.name,
+        point: found.first.point,
+      ),
+    );
     return found.first.point;
   }
 
-  Future<void> _pinPlace(LatLng point, String label) => _update({
-        MapBlockKeys.latitude: point.latitude,
-        MapBlockKeys.longitude: point.longitude,
-        MapBlockKeys.place: label,
+  /// Puts the pin on [point]. [frame] also leaves the map looking at it, for a
+  /// place chosen before there was a map to look with.
+  Future<void> _pinPlace(LatLng point, String label, {bool frame = false}) {
+    if (!_editable) {
+      return Future.value();
+    }
+    return _update({
+      MapBlockKeys.latitude: point.latitude,
+      MapBlockKeys.longitude: point.longitude,
+      MapBlockKeys.place: label,
+      if (frame) ...{
+        MapBlockKeys.viewLatitude: point.latitude,
+        MapBlockKeys.viewLongitude: point.longitude,
         MapBlockKeys.zoom: 14.0,
-      });
+      },
+    });
+  }
 
   Future<void> _selectTable(ViewPB picked) async {
     _picker.close();
@@ -355,52 +500,98 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.palette,
     required this.title,
-    required this.onOpenInGoogleMaps,
-    required this.onPickTable,
+    required this.picking,
+    this.onTogglePick,
+    this.onRemovePin,
   });
 
   final MapPalette palette;
   final String title;
-  final VoidCallback onOpenInGoogleMaps;
-  final VoidCallback onPickTable;
+
+  /// Waiting for a click on the map: the strip says so and offers a way out.
+  final bool picking;
+  final VoidCallback? onTogglePick;
+  final VoidCallback? onRemovePin;
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Flexible(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: palette.floating.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(MapMetrics.controlRadius),
-              boxShadow: palette.chromeShadow,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.place_rounded, size: 14, color: palette.accent),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      height: 1.2,
-                      color: palette.textPrimary,
-                      fontWeight: FontWeight.w600,
-                      fontVariations:
-                          flowyFontVariationsForWeight(FontWeight.w600),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: title.isEmpty ? const SizedBox.shrink() : _chip(),
           ),
         ),
+        if (onTogglePick != null) ...[
+          const SizedBox(width: 8),
+          MapControlGroup(
+            palette: palette,
+            axis: Axis.horizontal,
+            children: [
+              MapControlButton(
+                key: const ValueKey('map-block-pick-toggle'),
+                icon: picking
+                    ? Icons.close_rounded
+                    : Icons.add_location_alt_rounded,
+                tooltip: picking
+                    ? LocaleKeys.button_cancel.tr()
+                    : LocaleKeys.map_movePin.tr(),
+                palette: palette,
+                selected: picking,
+                size: 26,
+                onPressed: onTogglePick,
+              ),
+              if (onRemovePin != null)
+                MapControlButton(
+                  key: const ValueKey('map-block-remove-pin'),
+                  icon: Icons.location_off_rounded,
+                  tooltip: LocaleKeys.map_removePin.tr(),
+                  palette: palette,
+                  size: 26,
+                  onPressed: onRemovePin,
+                ),
+            ],
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _chip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.floating.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(MapMetrics.controlRadius),
+        boxShadow: palette.chromeShadow,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            picking ? Icons.ads_click_rounded : Icons.place_rounded,
+            size: 14,
+            color: palette.accent,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.2,
+                color: palette.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontVariations: flowyFontVariationsForWeight(FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -411,11 +602,15 @@ class _MapEmptyFrame extends StatefulWidget {
     required this.palette,
     required this.onPickTable,
     required this.onPlaceFound,
+    this.onChooseOnMap,
   });
 
   final MapPalette palette;
   final VoidCallback onPickTable;
   final Future<void> Function(LatLng point, String label) onPlaceFound;
+
+  /// Opens the map itself to click a place on, rather than typing one.
+  final VoidCallback? onChooseOnMap;
 
   @override
   State<_MapEmptyFrame> createState() => _MapEmptyFrameState();
@@ -508,39 +703,22 @@ class _MapEmptyFrameState extends State<_MapEmptyFrame> {
                 ),
                 const SizedBox(height: 14),
                 SizedBox(
-                  width: 340,
+                  width: 360,
                   child: Row(
                     children: [
                       Expanded(
-                        child: SizedBox(
-                          height: 34,
-                          child: TextField(
-                            controller: _controller,
-                            onSubmitted: (_) => _find(),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: palette.textPrimary,
-                            ),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              filled: true,
-                              fillColor: palette.hover,
-                              hoverColor: Colors.transparent,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(9),
-                                borderSide: BorderSide.none,
-                              ),
-                              hintText: LocaleKeys.map_searchHint.tr(),
-                              hintStyle: TextStyle(
-                                fontSize: 13,
-                                color: palette.textMuted,
-                              ),
+                        child: MapPlaceField(
+                          key: const ValueKey('map-block-place-field'),
+                          palette: palette,
+                          controller: _controller,
+                          hintText: LocaleKeys.map_locationCellHint.tr(),
+                          onPicked: (suggestion) => unawaited(
+                            widget.onPlaceFound(
+                              suggestion.point,
+                              suggestion.title,
                             ),
                           ),
+                          onSubmitted: (_) => _find(),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -562,10 +740,27 @@ class _MapEmptyFrameState extends State<_MapEmptyFrame> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: widget.onPickTable,
-                  icon: const Icon(Icons.table_chart_rounded, size: 15),
-                  label: Text(LocaleKeys.map_useLocationsFrom.tr()),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 4,
+                  runSpacing: 2,
+                  children: [
+                    if (widget.onChooseOnMap != null)
+                      TextButton.icon(
+                        key: const ValueKey('map-block-choose-on-map'),
+                        onPressed: widget.onChooseOnMap,
+                        icon: const Icon(
+                          Icons.add_location_alt_rounded,
+                          size: 15,
+                        ),
+                        label: Text(LocaleKeys.map_chooseOnMap.tr()),
+                      ),
+                    TextButton.icon(
+                      onPressed: widget.onPickTable,
+                      icon: const Icon(Icons.table_chart_rounded, size: 15),
+                      label: Text(LocaleKeys.map_useLocationsFrom.tr()),
+                    ),
+                  ],
                 ),
               ],
             ),

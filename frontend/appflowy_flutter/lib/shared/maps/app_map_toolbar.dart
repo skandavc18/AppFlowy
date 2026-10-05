@@ -1,10 +1,12 @@
 import 'dart:ui' as ui;
 
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// One control on the map.
 class MapControlButton extends StatelessWidget {
@@ -286,6 +288,21 @@ class _AppMapSearchFieldState extends State<AppMapSearchField> {
     setState(() {});
   }
 
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if ((event is! KeyDownEvent && event is! KeyRepeatEvent) ||
+        (event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.numpadEnter) ||
+        _controller.value.composing.isValid) {
+      return KeyEventResult.ignored;
+    }
+    // Submitted here: a canvas around the map binds Enter for itself.
+    if (event is KeyDownEvent) {
+      widget.onSubmitted(_controller.text);
+      _focus.unfocus();
+    }
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) {
     return PreviewToolbar(
@@ -348,28 +365,37 @@ class _AppMapSearchFieldState extends State<AppMapSearchField> {
                 ),
                 const SizedBox(width: 7),
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focus,
-                    onSubmitted: widget.onSubmitted,
-                    onChanged: widget.onChanged,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.2,
-                      color: palette.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      isCollapsed: true,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      hoverColor: Colors.transparent,
-                      hintText: widget.hintText,
-                      hintStyle: TextStyle(
-                        fontSize: 13,
-                        height: 1.2,
-                        color: palette.textMuted,
+                  // Otherwise the page, canvas or dashboard holding the map
+                  // takes Backspace, Delete and the arrows for itself.
+                  child: TextEntryShortcuts(
+                    child: Focus(
+                      canRequestFocus: false,
+                      skipTraversal: true,
+                      onKeyEvent: _onKey,
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focus,
+                        onSubmitted: widget.onSubmitted,
+                        onChanged: widget.onChanged,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.2,
+                          color: palette.textPrimary,
+                        ),
+                        decoration: InputDecoration(
+                          isCollapsed: true,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          hoverColor: Colors.transparent,
+                          hintText: widget.hintText,
+                          hintStyle: TextStyle(
+                            fontSize: 13,
+                            height: 1.2,
+                            color: palette.textMuted,
+                          ),
+                        ),
                       ),
                     ),
                   ),

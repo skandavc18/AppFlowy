@@ -31,7 +31,8 @@ Future<void> _pumpCard(
         body: Center(
           child: SizedBox(
             width: 320,
-            height: 136,
+            // The heights the templates page and the apply dialog give them.
+            height: compact ? 112 : 286,
             child: Builder(
               builder: (context) => TemplateCard(
                 template: _template(),
@@ -50,23 +51,42 @@ Future<void> _pumpCard(
 
 void main() {
   group('pressing a template card', () {
-    // A card is mostly empty space. `GestureDetector` defers to its child by
-    // default, so without an opaque hit test the Spacer swallows the press and
-    // the card reads as a dead button.
-    testWidgets('a press on the empty middle still chooses it', (tester) async {
+    // `GestureDetector` defers to its child by default, so without an opaque
+    // hit test the parts that draw nothing interactive — the picture, a gap —
+    // swallow the press and the card reads as a dead button.
+    testWidgets('a press on the picture chooses it', (tester) async {
       var chosen = 0;
       await _pumpCard(tester, onChosen: () => chosen++);
 
-      // The middle of a card is a gap: below the name and above the footer,
-      // with nothing drawn in it. Nothing there answers a press on its own.
-      final middle = tester.getCenter(find.byType(TemplateCard));
+      final picture = find.descendant(
+        of: find.byType(TemplateCard),
+        matching: find.byType(IgnorePointer),
+      );
+      expect(
+        picture,
+        findsWidgets,
+        reason: 'the picture is drawn, not pressed: it ignores the pointer',
+      );
+
+      await tester.tapAt(tester.getCenter(picture.first));
+      await tester.pump();
+      expect(chosen, 1);
+    });
+
+    testWidgets('a press on the empty middle of a compact card chooses it',
+        (tester) async {
+      var chosen = 0;
+      await _pumpCard(tester, onChosen: () => chosen++, compact: true);
+
+      // A compact card's middle is a gap: below the name and above the
+      // footer, with nothing drawn in it.
       expect(
         tester.widget<Column>(find.byType(Column).first).children,
         contains(isA<Spacer>()),
         reason: 'the test is meaningless unless the card really has a gap',
       );
 
-      await tester.tapAt(middle);
+      await tester.tapAt(tester.getCenter(find.byType(TemplateCard)));
       await tester.pump();
       expect(chosen, 1);
     });
@@ -87,15 +107,6 @@ void main() {
 
       final card = tester.getRect(find.byType(TemplateCard));
       await tester.tapAt(card.bottomLeft + const Offset(4, -4));
-      await tester.pump();
-      expect(chosen, 1);
-    });
-
-    testWidgets('a compact card answers a press too', (tester) async {
-      var chosen = 0;
-      await _pumpCard(tester, onChosen: () => chosen++, compact: true);
-
-      await tester.tapAt(tester.getCenter(find.byType(TemplateCard)));
       await tester.pump();
       expect(chosen, 1);
     });

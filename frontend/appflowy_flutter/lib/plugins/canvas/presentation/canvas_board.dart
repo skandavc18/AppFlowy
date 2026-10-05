@@ -22,6 +22,7 @@ import 'package:appflowy/plugins/document/presentation/embedded_blocks/page_bloc
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/text_field_focus.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
@@ -132,7 +133,10 @@ class CanvasBoardState extends State<CanvasBoard> {
   Offset? _connectPoint;
   String? _connectTarget;
   Rect? _dropTarget;
-  List<Offset>? _stroke;
+
+  /// The stroke being drawn. The stroke layer listens to it directly, so a
+  /// pen moving does not rebuild the board.
+  final CanvasLiveStroke _liveStroke = CanvasLiveStroke();
   Offset? _frameAnchor;
   Rect? _framing;
   bool _panning = false;
@@ -140,8 +144,20 @@ class CanvasBoardState extends State<CanvasBoard> {
   // Find
   late CanvasFindController _find;
   CanvasEdgePainter? _edgePainter;
+  final CanvasEdgePaintCache _edgePaint = CanvasEdgePaintCache();
   int _findReveal = 0;
   bool get _searching => _find.isOpen;
+
+  /// The card and frame widgets of the last build, each with what it was
+  /// built from. The camera moves on every frame of a pan or a zoom; a card
+  /// that did not change is handed back as the SAME widget, so Flutter skips
+  /// it — body, preview, embedded editor and all — instead of rebuilding
+  /// every card on the screen sixty times a second.
+  Map<String, (_CardInputs, Widget)> _builtCards = const {};
+  Map<String, (_FrameInputs, Widget)> _builtFrames = const {};
+
+  /// How many cards each frame holds, worked out once per document.
+  (CanvasDocument, Map<String, int>)? _frameCounts;
 
   /// What was last copied on this canvas. Kept in the widget rather than on the
   /// system clipboard because a card is a structure, not text.
@@ -186,6 +202,8 @@ class CanvasBoardState extends State<CanvasBoard> {
       ..removeListener(_onResolved)
       ..dispose();
     _focus.dispose();
+    _liveStroke.dispose();
+    _edgePaint.dispose();
     super.dispose();
   }
 
@@ -644,11 +662,17 @@ class CanvasBoardState extends State<CanvasBoard> {
       context,
       scene: node.text,
       editable: widget.editable,
-      onSceneChanged: (scene) => _controller.updateNode(
-        id,
-        (current) => current.copyWith(text: scene),
-        transient: true,
-      ),
+      onSceneChanged: (scene) {
+        // The scene read as the window closes may land after the board went.
+        if (!mounted) {
+          return;
+        }
+        _controller.updateNode(
+          id,
+          (current) => current.copyWith(text: scene),
+          transient: true,
+        );
+      },
     );
     if (!mounted) {
       return;
@@ -779,7 +803,7 @@ class CanvasBoardState extends State<CanvasBoard> {
       case CanvasTool.hand:
         _panning = true;
       case CanvasTool.draw:
-        setState(() => _stroke = <Offset>[scene]);
+        _liveStroke.start(scene);
       case CanvasTool.erase:
         _controller.eraseStrokesNear(scene, radius: 14 / _camera.zoom);
       case CanvasTool.frame:
@@ -810,8 +834,8 @@ class CanvasBoardState extends State<CanvasBoard> {
       return;
     }
     final scene = _toScene(globalPosition);
-    if (_stroke != null) {
-      setState(() => _stroke = [..._stroke!, scene]);
+    if (_liveStroke.isDrawing) {
+      _liveStroke.add(scene);
       return;
     }
     if (_controller.tool == CanvasTool.erase) {
@@ -836,9 +860,9 @@ class CanvasBoardState extends State<CanvasBoard> {
 
   void _backgroundEnd() {
     if (!widget.editable) {
+      _liveStroke.finish();
       setState(() {
         _panning = false;
-        _stroke = null;
         _framing = null;
         _frameAnchor = null;
         _marquee = null;
@@ -850,7 +874,7 @@ class CanvasBoardState extends State<CanvasBoard> {
       setState(() => _panning = false);
       return;
     }
-    final stroke = _stroke;
+    final stroke = _liveStroke.finish();
     if (stroke != null) {
       if (stroke.length > 1) {
         _controller.addStroke(
@@ -860,7 +884,6 @@ class CanvasBoardState extends State<CanvasBoard> {
           ),
         );
       }
-      setState(() => _stroke = null);
       return;
     }
     final framing = _framing;
@@ -1175,6 +1198,17 @@ class CanvasBoardState extends State<CanvasBoard> {
   // ---------------------------------------------------------------------
   // The keyboard
   // ---------------------------------------------------------------------
+
+  /// What the board still answers while a text field on it has the keyboard.
+  static const Set<ShortcutActivator> _keysWhileTyping = {
+    SingleActivator(LogicalKeyboardKey.escape),
+    SingleActivator(LogicalKeyboardKey.tab),
+    SingleActivator(LogicalKeyboardKey.enter),
+    SingleActivator(LogicalKeyboardKey.equal, control: true),
+    SingleActivator(LogicalKeyboardKey.minus, control: true),
+    SingleActivator(LogicalKeyboardKey.digit0, control: true),
+    SingleActivator(LogicalKeyboardKey.digit1, control: true),
+  };
 
   Map<ShortcutActivator, VoidCallback> get _shortcuts => {
         const SingleActivator(LogicalKeyboardKey.keyA, control: true):
@@ -2016,7 +2050,7 @@ class CanvasBoardState extends State<CanvasBoard> {
                   if (!mounted) {
                     return;
                   }
-                  final stored = _controller.settings.viewport;
+                  final stored = _controller.viewport;
                   if (stored.offset == Offset.zero && stored.zoom == 1) {
                     zoomToFit();
                   } else {
@@ -2030,7 +2064,10 @@ class CanvasBoardState extends State<CanvasBoard> {
             }
 
             return PremiumScrollExclusion(
-              child: CallbackShortcuts(
+              child: CallbackShortcutsUnlessTyping(
+                // A card's text keeps its editing keys; Enter and Tab still
+                // grow a mind map from the card being written in.
+                whileTyping: _keysWhileTyping,
                 bindings: widget.editable
                     ? _shortcuts
                     : {
@@ -2217,6 +2254,45 @@ class CanvasBoardState extends State<CanvasBoard> {
             : document.bounds.expandToInclude(visible))
         .inflate(2000);
 
+    final hits = _find.isOpen ? _hitIds : const <String>{};
+    final builtFrames = <String, (_FrameInputs, Widget)>{};
+    final builtCards = <String, (_CardInputs, Widget)>{};
+    final placed = <Widget>[
+      for (final frame in document.frames)
+        if (frame.rect.overlaps(visible))
+          Positioned(
+            key: ValueKey(('canvas-frame', frame.id)),
+            left: frame.position.dx - layer.left,
+            top: frame.position.dy - layer.top,
+            width: frame.size.width,
+            height: frame.collapsed && !expandedForFind.contains(frame.id)
+                ? CanvasMetrics.frameHeaderHeight
+                : frame.size.height,
+            child: _frameWidget(
+              expandedForFind.contains(frame.id)
+                  ? frame.copyWith(collapsed: false)
+                  : frame,
+              palette,
+              builtFrames,
+            ),
+          ),
+      for (final node in document.nodes)
+        if ((node.rect.overlaps(visible) || _controller.editing == node.id) &&
+            !collapsedFrames.contains(node.frameId))
+          Positioned(
+            key: ValueKey(('canvas-node', node.id)),
+            left: node.position.dx - layer.left,
+            top: node.position.dy - layer.top,
+            width: node.size.width,
+            height: node.size.height,
+            child: _cardWidget(node, palette, hits, builtCards),
+          ),
+    ];
+    // Only what was built this time is kept: a card scrolled out of view is
+    // let go, and is built afresh when it comes back.
+    _builtFrames = builtFrames;
+    _builtCards = builtCards;
+
     return Positioned.fill(
       child: Stack(
         clipBehavior: Clip.none,
@@ -2239,6 +2315,7 @@ class CanvasBoardState extends State<CanvasBoard> {
                   findQuery: _find.isOpen ? _find.query : '',
                   findOptions: _find.options,
                   currentFind: _find.current,
+                  cache: _edgePaint,
                 ),
               ),
             ),
@@ -2284,38 +2361,7 @@ class CanvasBoardState extends State<CanvasBoard> {
                 layerSize: layer.size,
                 child: Stack(
                   clipBehavior: Clip.none,
-                  children: [
-                    for (final frame in document.frames)
-                      if (frame.rect.overlaps(visible))
-                        Positioned(
-                          key: ValueKey(('canvas-frame', frame.id)),
-                          left: frame.position.dx - layer.left,
-                          top: frame.position.dy - layer.top,
-                          width: frame.size.width,
-                          height: frame.collapsed &&
-                                  !expandedForFind.contains(frame.id)
-                              ? CanvasMetrics.frameHeaderHeight
-                              : frame.size.height,
-                          child: _frameBox(
-                            expandedForFind.contains(frame.id)
-                                ? frame.copyWith(collapsed: false)
-                                : frame,
-                            palette,
-                          ),
-                        ),
-                    for (final node in document.nodes)
-                      if ((node.rect.overlaps(visible) ||
-                              _controller.editing == node.id) &&
-                          !collapsedFrames.contains(node.frameId))
-                        Positioned(
-                          key: ValueKey(('canvas-node', node.id)),
-                          left: node.position.dx - layer.left,
-                          top: node.position.dy - layer.top,
-                          width: node.size.width,
-                          height: node.size.height,
-                          child: _card(node, palette),
-                        ),
-                  ],
+                  children: placed,
                 ),
               ),
             ),
@@ -2330,7 +2376,7 @@ class CanvasBoardState extends State<CanvasBoard> {
                     camera: _camera,
                     palette: palette,
                     strokes: document.strokes,
-                    live: _stroke,
+                    live: _liveStroke,
                     liveColour: _controller.accent,
                   ),
                 ),
@@ -2353,20 +2399,82 @@ class CanvasBoardState extends State<CanvasBoard> {
     return null;
   }
 
-  Widget _card(CanvasNode node, CanvasPalette palette) {
-    return CanvasCard(
-      key: ValueKey(node.id),
+  /// The card for [node]: the one built last time when nothing it is built
+  /// from has changed, a fresh one otherwise. Each sits behind its own repaint
+  /// boundary, so moving the camera — or another card — does not repaint it.
+  Widget _cardWidget(
+    CanvasNode node,
+    CanvasPalette palette,
+    Set<String> hits,
+    Map<String, (_CardInputs, Widget)> built,
+  ) {
+    final inputs = (
       node: node,
       palette: palette,
-      resolver: _resolver,
       zoom: _camera.zoom,
       selected: _controller.isSelected(node.id),
       editing:
           widget.editable && !node.locked && _controller.editing == node.id,
       editable: widget.editable && _controller.tool != CanvasTool.hand,
-      searchHit: _find.isOpen && _hitIds.contains(node.id),
+      searchHit: hits.contains(node.id),
       connectingFrom: _connectFrom == node.id,
       connectTarget: _connectTarget == node.id,
+    );
+    final previous = _builtCards[node.id];
+    final card = previous != null && previous.$1 == inputs
+        ? previous.$2
+        : RepaintBoundary(child: _card(inputs));
+    built[node.id] = (inputs, card);
+    return card;
+  }
+
+  Widget _frameWidget(
+    CanvasFrame frame,
+    CanvasPalette palette,
+    Map<String, (_FrameInputs, Widget)> built,
+  ) {
+    final inputs = (
+      frame: frame,
+      palette: palette,
+      zoom: _camera.zoom,
+      selected: _controller.isSelected(frame.id),
+      editable: widget.editable && _controller.tool != CanvasTool.hand,
+      cardCount: _cardCountIn(frame.id),
+    );
+    final previous = _builtFrames[frame.id];
+    final box = previous != null && previous.$1 == inputs
+        ? previous.$2
+        : RepaintBoundary(child: _frameBox(inputs));
+    built[frame.id] = (inputs, box);
+    return box;
+  }
+
+  int _cardCountIn(String frameId) {
+    final document = _controller.document;
+    var counts = _frameCounts;
+    if (counts == null || !identical(counts.$1, document)) {
+      counts = _frameCounts = (document, <String, int>{});
+    }
+    return counts.$2.putIfAbsent(
+      frameId,
+      () => document.nodesInFrame(frameId).length,
+    );
+  }
+
+  Widget _card(_CardInputs inputs) {
+    final node = inputs.node;
+    return CanvasCard(
+      key: ValueKey(node.id),
+      node: node,
+      palette: inputs.palette,
+      resolver: _resolver,
+      zoom: inputs.zoom,
+      selected: inputs.selected,
+      editing: inputs.editing,
+      editable: inputs.editable,
+      searchHit: inputs.searchHit,
+      connectingFrom: inputs.connectingFrom,
+      connectTarget: inputs.connectTarget,
       onTap: (shift) {
         if (widget.editable && _controller.tool == CanvasTool.connect) {
           final from = _connectFrom;
@@ -2440,15 +2548,16 @@ class CanvasBoardState extends State<CanvasBoard> {
     );
   }
 
-  Widget _frameBox(CanvasFrame frame, CanvasPalette palette) {
+  Widget _frameBox(_FrameInputs inputs) {
+    final frame = inputs.frame;
     return CanvasFrameBox(
       key: ValueKey(frame.id),
       frame: frame,
-      palette: palette,
-      zoom: _camera.zoom,
-      selected: _controller.isSelected(frame.id),
-      editable: widget.editable && _controller.tool != CanvasTool.hand,
-      cardCount: _controller.document.nodesInFrame(frame.id).length,
+      palette: inputs.palette,
+      zoom: inputs.zoom,
+      selected: inputs.selected,
+      editable: inputs.editable,
+      cardCount: inputs.cardCount,
       onTap: (shift) => _controller.select([frame.id], toggle: shift),
       onDoubleTap: () => _controller.selectInsideFrame(frame.id),
       onContextMenu: (position) => _showFrameMenu(frame, position),
@@ -2483,6 +2592,33 @@ class CanvasBoardState extends State<CanvasBoard> {
         ),
       );
 
+  /// Chrome built last time, by slot, with what it was built from. The
+  /// toolbar and the zoom reading have nothing to do with where the camera
+  /// is, so a pan must not rebuild their dozen buttons on every frame.
+  final Map<Object, (Object?, Widget)> _keptChrome = {};
+
+  Widget _keep(Object slot, Object? inputs, Widget Function() build) {
+    final previous = _keptChrome[slot];
+    if (previous != null && previous.$1 == inputs) {
+      return previous.$2;
+    }
+    final built = build();
+    _keptChrome[slot] = (inputs, built);
+    return built;
+  }
+
+  (CanvasDocument, List<CanvasSearchHit>)? _outline;
+
+  List<CanvasSearchHit> _outlineOf(CanvasDocument document) {
+    final known = _outline;
+    if (known != null && identical(known.$1, document)) {
+      return known.$2;
+    }
+    final entries = canvasOutline(document);
+    _outline = (document, entries);
+    return entries;
+  }
+
   List<Widget> _chrome(CanvasPalette palette, Size size) {
     final compact = size.width < 560;
     final document = _controller.document;
@@ -2502,19 +2638,23 @@ class CanvasBoardState extends State<CanvasBoard> {
           left: 0,
           right: 0,
           bottom: CanvasMetrics.space4,
-          child: Align(
-            child: CanvasToolbar(
-              palette: palette,
-              tool: _controller.tool,
-              compact: compact,
-              onToolChanged: (tool) {
-                _controller.setTool(tool);
-                if (tool == CanvasTool.connect) {
-                  setState(() => _connectFrom = null);
-                }
-              },
-              onAdd: _showAddMenu,
-              onMore: _showMoreMenu,
+          child: _keep(
+            #toolbar,
+            (palette, _controller.tool, compact),
+            () => Align(
+              child: CanvasToolbar(
+                palette: palette,
+                tool: _controller.tool,
+                compact: compact,
+                onToolChanged: (tool) {
+                  _controller.setTool(tool);
+                  if (tool == CanvasTool.connect) {
+                    setState(() => _connectFrom = null);
+                  }
+                },
+                onAdd: _showAddMenu,
+                onMore: _showMoreMenu,
+              ),
             ),
           ),
         ),
@@ -2522,28 +2662,33 @@ class CanvasBoardState extends State<CanvasBoard> {
         Positioned(
           left: CanvasMetrics.space4,
           bottom: CanvasMetrics.space4,
-          child: Tooltip(
-            message: LocaleKeys.canvas_readOnlyHint.tr(),
-            child: CanvasSurface(
-              palette: palette,
-              padding: const EdgeInsets.symmetric(
-                horizontal: CanvasMetrics.space3,
-                vertical: CanvasMetrics.space1,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  WorkspaceGlyph(
-                    Icons.lock_outline_rounded,
-                    size: 13,
-                    color: palette.textMuted,
-                  ),
-                  const SizedBox(width: CanvasMetrics.space1),
-                  Text(
-                    LocaleKeys.canvas_readOnly.tr(),
-                    style: canvasLabelStyle(palette, color: palette.textMuted),
-                  ),
-                ],
+          child: _keep(
+            #readOnly,
+            palette,
+            () => Tooltip(
+              message: LocaleKeys.canvas_readOnlyHint.tr(),
+              child: CanvasSurface(
+                palette: palette,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: CanvasMetrics.space3,
+                  vertical: CanvasMetrics.space1,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    WorkspaceGlyph(
+                      Icons.lock_outline_rounded,
+                      size: 13,
+                      color: palette.textMuted,
+                    ),
+                    const SizedBox(width: CanvasMetrics.space1),
+                    Text(
+                      LocaleKeys.canvas_readOnly.tr(),
+                      style:
+                          canvasLabelStyle(palette, color: palette.textMuted),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2551,13 +2696,17 @@ class CanvasBoardState extends State<CanvasBoard> {
       Positioned(
         right: CanvasMetrics.space4,
         bottom: CanvasMetrics.space4,
-        child: CanvasZoomCluster(
-          palette: palette,
-          zoom: _camera.zoom,
-          onZoomIn: () => _zoomBy(1.2),
-          onZoomOut: () => _zoomBy(1 / 1.2),
-          onReset: resetZoom,
-          onFit: () => zoomToFit(selectionOnly: _controller.hasSelection),
+        child: _keep(
+          #zoom,
+          (palette, _camera.zoom),
+          () => CanvasZoomCluster(
+            palette: palette,
+            zoom: _camera.zoom,
+            onZoomIn: () => _zoomBy(1.2),
+            onZoomOut: () => _zoomBy(1 / 1.2),
+            onReset: resetZoom,
+            onFit: () => zoomToFit(selectionOnly: _controller.hasSelection),
+          ),
         ),
       ),
       if (_controller.settings.showMinimap && !document.isEmpty)
@@ -2587,7 +2736,7 @@ class CanvasBoardState extends State<CanvasBoard> {
           top: CanvasMetrics.space4,
           child: CanvasOutlinePanel(
             palette: palette,
-            entries: canvasOutline(document),
+            entries: _outlineOf(document),
             selected: _controller.selection,
             onGoTo: revealObject,
             onHide: () => _controller.updateSettings(
@@ -2602,15 +2751,19 @@ class CanvasBoardState extends State<CanvasBoard> {
           left: 0,
           right: 0,
           top: CanvasMetrics.space4,
-          child: Align(
-            child: CanvasHintBar(
-              palette: palette,
-              message: switch (_controller.tool) {
-                CanvasTool.connect => LocaleKeys.canvas_hint_connectFrom.tr(),
-                CanvasTool.draw => LocaleKeys.canvas_hint_drawing.tr(),
-                _ => LocaleKeys.canvas_hint_framing.tr(),
-              },
-              onDismiss: () => _controller.setTool(CanvasTool.select),
+          child: _keep(
+            #hint,
+            (palette, _controller.tool),
+            () => Align(
+              child: CanvasHintBar(
+                palette: palette,
+                message: switch (_controller.tool) {
+                  CanvasTool.connect => LocaleKeys.canvas_hint_connectFrom.tr(),
+                  CanvasTool.draw => LocaleKeys.canvas_hint_drawing.tr(),
+                  _ => LocaleKeys.canvas_hint_framing.tr(),
+                },
+                onDismiss: () => _controller.setTool(CanvasTool.select),
+              ),
             ),
           ),
         ),
@@ -2631,6 +2784,30 @@ class CanvasBoardState extends State<CanvasBoard> {
     ];
   }
 }
+
+/// Everything a card widget is built from. When all of it is equal to last
+/// time, the card from last time is used again; a card's callbacks read the
+/// board when they run, so they are not part of it.
+typedef _CardInputs = ({
+  CanvasNode node,
+  CanvasPalette palette,
+  double zoom,
+  bool selected,
+  bool editing,
+  bool editable,
+  bool searchHit,
+  bool connectingFrom,
+  bool connectTarget,
+});
+
+typedef _FrameInputs = ({
+  CanvasFrame frame,
+  CanvasPalette palette,
+  double zoom,
+  bool selected,
+  bool editable,
+  int cardCount,
+});
 
 /// What appears when several things are selected: the actions that only make
 /// sense for a group, where they can be reached without a right click.

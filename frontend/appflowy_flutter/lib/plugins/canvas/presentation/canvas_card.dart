@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
 import 'package:appflowy/shared/find_replace/find_highlight.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
+import 'package:appflowy/shared/json_equality.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
@@ -160,6 +161,60 @@ class _CanvasCardState extends State<CanvasCard> {
   bool _moving = false;
   DateTime? _lastTap;
   Offset? _pressedAt;
+
+  /// The body of the last build. The card is rebuilt on every frame of a
+  /// zoom — its grips keep their size on screen — and whenever it is hovered,
+  /// moved or resized; what it shows changes far more rarely. The SAME body
+  /// widget is handed back until it does, so a diagram, a drawing or an
+  /// embedded editor is not rebuilt for any of that.
+  CanvasNodeBody? _body;
+
+  CanvasNodeBody _bodyFor(CanvasNode node, CanvasPalette palette) {
+    final editable = widget.editable && !node.locked;
+    final reportsData = widget.onDataChanged != null;
+    final previous = _body;
+    if (previous != null &&
+        _sameContent(previous.node, node) &&
+        previous.palette == palette &&
+        identical(previous.resolver, widget.resolver) &&
+        previous.editable == editable &&
+        previous.editing == widget.editing &&
+        (previous.onDataChanged != null) == reportsData) {
+      return previous;
+    }
+    // The callbacks go through this state to the card's CURRENT handlers, so
+    // a body kept from an earlier build never calls a stale one.
+    return _body = CanvasNodeBody(
+      node: node,
+      palette: palette,
+      resolver: widget.resolver,
+      editable: editable,
+      editing: widget.editing,
+      onTextChanged: _textChanged,
+      onEditingFinished: _editingFinished,
+      onOpen: _open,
+      onDataChanged: reportsData ? _dataChanged : null,
+    );
+  }
+
+  void _textChanged(String text) => widget.onTextChanged(text);
+  void _editingFinished() => widget.onEditingFinished();
+  void _open() => widget.onOpen();
+  void _dataChanged(String key, Object? value) =>
+      widget.onDataChanged?.call(key, value);
+
+  /// Whether two versions of a card show the same thing. Where it is and how
+  /// big it is are the card's business, not its body's.
+  static bool _sameContent(CanvasNode a, CanvasNode b) =>
+      identical(a, b) ||
+      (a.id == b.id &&
+          a.kind == b.kind &&
+          a.title == b.title &&
+          a.text == b.text &&
+          a.url == b.url &&
+          a.reference == b.reference &&
+          a.color == b.color &&
+          jsonValuesEqual(a.data, b.data));
 
   bool get _showChrome =>
       widget.editable && (_hovered || widget.selected) && !widget.editing;
@@ -346,17 +401,9 @@ class _CanvasCardState extends State<CanvasCard> {
         // the board could never drag it: the field would win the arena.
         child: IgnorePointer(
           ignoring: !widget.editing,
-          child: CanvasNodeBody(
-            node: node,
-            palette: palette,
-            resolver: widget.resolver,
-            editable: widget.editable && !node.locked,
-            editing: widget.editing,
-            onTextChanged: widget.onTextChanged,
-            onEditingFinished: widget.onEditingFinished,
-            onOpen: widget.onOpen,
-            onDataChanged: widget.onDataChanged,
-          ),
+          // Hovering or selecting a card redraws its frame; the body behind
+          // this boundary is left alone.
+          child: RepaintBoundary(child: _bodyFor(node, palette)),
         ),
       ),
     );

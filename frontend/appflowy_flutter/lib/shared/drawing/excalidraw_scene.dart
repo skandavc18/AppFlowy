@@ -346,6 +346,39 @@ class DrawScene {
     return null;
   }
 
+  /// [decode], remembered for the last few sources.
+  ///
+  /// A drawing is shown from its stored text, and whatever holds it — a page
+  /// block, a canvas card — is rebuilt far more often than the drawing
+  /// changes. Decoding is the expensive part of showing one, and the same
+  /// scene instance also lets the preview skip repainting. The scene is
+  /// shared: treat it as read only, as every edit here makes a new one anyway.
+  static DrawScene? decodeCached(String source) {
+    for (var index = 0; index < _decoded.length; index++) {
+      final entry = _decoded[index];
+      if (identical(entry.$1, source) ||
+          (entry.$1.length == source.length && entry.$1 == source)) {
+        if (index > 0) {
+          _decoded
+            ..removeAt(index)
+            ..insert(0, entry);
+        }
+        return entry.$2;
+      }
+    }
+    final scene = decode(source);
+    if (scene != null) {
+      _decoded.insert(0, (source, scene));
+      if (_decoded.length > _decodedCapacity) {
+        _decoded.removeLast();
+      }
+    }
+    return scene;
+  }
+
+  static final List<(String, DrawScene)> _decoded = [];
+  static const int _decodedCapacity = 24;
+
   final List<DrawElement> elements;
   final DrawAppState appState;
   final Map<String, dynamic> files;

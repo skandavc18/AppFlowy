@@ -50,6 +50,19 @@ class CanvasController extends ChangeNotifier {
   bool _writing = false;
   bool _dirty = false;
 
+  /// Where the camera is now, when that is not yet in the document. Kept apart
+  /// because the camera moves on every frame of a pan, and a canvas written
+  /// back for each one would stall the very pan it was recording.
+  CanvasViewport? _viewport;
+  Timer? _viewportTimer;
+
+  /// How long the camera must rest before where it was left is written.
+  static const Duration viewportDebounce = Duration(seconds: 3);
+
+  /// The extras most recently written, so their echoes from the backend are
+  /// recognised as such without parsing a whole canvas to find out.
+  final List<String> _written = <String>[];
+
   Set<String> _selection = <String>{};
   CanvasTool _tool = CanvasTool.select;
   int? _accent;
@@ -72,6 +85,10 @@ class CanvasController extends ChangeNotifier {
   String? get editing => _editing;
 
   CanvasSettings get settings => _document.settings;
+
+  /// Where the canvas was left: the camera as last remembered, even before
+  /// that has been written into the document.
+  CanvasViewport get viewport => _viewport ?? _document.settings.viewport;
 
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
@@ -691,18 +708,36 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Remember where the canvas was left. Deliberately silent: the viewport
-  /// changes on every pan, and repainting the whole surface for it would make
-  /// panning cost a rebuild per frame.
+  /// Remember where the canvas was left. Deliberately silent and lazy: the
+  /// viewport changes on every frame of a pan, so it is held aside and only
+  /// written once the camera has rested, or with the next real change.
   void rememberViewport(CanvasCamera camera) {
     final viewport = CanvasViewport(offset: camera.offset, zoom: camera.zoom);
-    if (viewport == _document.settings.viewport) {
+    if (viewport == this.viewport) {
       return;
+    }
+    _viewport = viewport;
+    _viewportTimer?.cancel();
+    _viewportTimer = Timer(viewportDebounce, () {
+      _viewportTimer = null;
+      if (_takeViewport()) {
+        _schedulePersist();
+      }
+    });
+  }
+
+  /// Fold the remembered camera into the document. Silent: nothing on the
+  /// canvas changed. Returns whether there was anything to fold in.
+  bool _takeViewport() {
+    final viewport = _viewport;
+    _viewport = null;
+    if (viewport == null || viewport == _document.settings.viewport) {
+      return false;
     }
     _document = _document.copyWith(
       settings: _document.settings.copyWith(viewport: viewport),
     );
-    _schedulePersist();
+    return true;
   }
 
   // ---------------------------------------------------------------------
@@ -714,11 +749,30 @@ class CanvasController extends ChangeNotifier {
     if (_writing || _dirty || view.id != viewId) {
       return;
     }
+    // The echo of a write of our own carries nothing new, and parsing a whole
+    // canvas to find that out is exactly the work it is cheapest to skip.
+    final extra = view.extra;
+    for (final written in _written) {
+      if (identical(written, extra) ||
+          (written.length == extra.length && written == extra)) {
+        return;
+      }
+    }
     final incoming = view.canvas?.document;
-    if (incoming == null || incoming == _document) {
+    if (incoming == null) {
       return;
     }
-    _document = incoming;
+    // The camera is this window's own; another copy of the canvas does not
+    // get to move it.
+    final adopted = incoming.copyWith(
+      settings: incoming.settings.copyWith(
+        viewport: _document.settings.viewport,
+      ),
+    );
+    if (adopted == _document) {
+      return;
+    }
+    _document = adopted;
     notifyListeners();
   }
 
@@ -736,6 +790,11 @@ class CanvasController extends ChangeNotifier {
   Future<void> flush() async {
     _persist?.cancel();
     _persist = null;
+    _viewportTimer?.cancel();
+    _viewportTimer = null;
+    if (_takeViewport()) {
+      _dirty = true;
+    }
     if (_dirty) {
       await _write();
     }
@@ -747,16 +806,24 @@ class CanvasController extends ChangeNotifier {
       return;
     }
     _writing = true;
+    // Where the camera rests goes out with whatever is being written anyway.
+    _viewportTimer?.cancel();
+    _viewportTimer = null;
+    _takeViewport();
     final document = _document;
     try {
       // Re-read first: the view's extra also carries the cover, the icon and
       // whatever else has been marked on it, and a stale copy would erase it.
       final current = await ViewBackendService.getView(viewId);
       final extra = current.fold((view) => view.extra, (_) => '');
-      await ViewBackendService.updateView(
-        viewId: viewId,
-        extra: CanvasMetadata(document: document).mergeIntoExtra(extra),
-      );
+      final written = CanvasMetadata(document: document).mergeIntoExtra(extra);
+      // Remembered before it is sent: the echo can arrive before the write
+      // is acknowledged.
+      _written.insert(0, written);
+      if (_written.length > 3) {
+        _written.removeLast();
+      }
+      await ViewBackendService.updateView(viewId: viewId, extra: written);
     } finally {
       _writing = false;
       // Anything changed while the write was in flight is still unsaved.
@@ -771,6 +838,11 @@ class CanvasController extends ChangeNotifier {
   void dispose() {
     _persist?.cancel();
     _persist = null;
+    _viewportTimer?.cancel();
+    _viewportTimer = null;
+    if (_takeViewport()) {
+      _dirty = true;
+    }
     if (_dirty) {
       unawaited(_write());
     }

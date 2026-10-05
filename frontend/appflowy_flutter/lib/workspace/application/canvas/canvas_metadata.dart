@@ -63,6 +63,18 @@ class CanvasMetadata {
       CanvasMetadata(document: document ?? CanvasDocument.blank())
           .mergeIntoExtra('');
 
+  /// Whether [extra] carries a canvas this version can read — exactly when
+  /// [fromExtra] would return one, without building the whole document. The
+  /// sidebar, the tabs and the router ask this of every view, often.
+  static bool isCanvasExtra(String extra) {
+    final envelope = decodeViewExtra(extra)[envelopeKey];
+    if (envelope is! Map) {
+      return false;
+    }
+    final version = envelope['version'];
+    return version is int && version >= 1 && version <= currentVersion;
+  }
+
   @override
   bool operator ==(Object other) =>
       other is CanvasMetadata && other.document == document;
@@ -75,5 +87,6 @@ extension CanvasViewExtension on ViewPB {
   CanvasMetadata? get canvas => CanvasMetadata.fromExtra(extra);
 
   /// A canvas is a document page, never a database view.
-  bool get isCanvas => layout == ViewLayoutPB.Document && canvas != null;
+  bool get isCanvas =>
+      layout == ViewLayoutPB.Document && CanvasMetadata.isCanvasExtra(extra);
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/table_views/property_ink.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
@@ -454,7 +455,7 @@ class TableViewEmpty extends StatelessWidget {
     this.onAction,
   });
 
-  final TableViewPalette palette;
+  final PropertyInk palette;
   final IconData icon;
   final String message;
   final String detail;
@@ -528,11 +529,7 @@ class TableViewEmpty extends StatelessWidget {
               boxShadow: palette.chromeShadow,
             ),
             alignment: Alignment.center,
-            child: Icon(
-              icon,
-              size: 26,
-              color: palette.accent.withValues(alpha: 0.75),
-            ),
+            child: WorkspaceGlyph(icon, size: 30, color: palette.accent),
           ),
         ],
       ),
@@ -573,7 +570,7 @@ class TableViewAction extends StatefulWidget {
     this.primary = true,
   });
 
-  final TableViewPalette palette;
+  final PropertyInk palette;
   final String label;
   final VoidCallback onTap;
   final IconData? icon;
@@ -592,7 +589,7 @@ class _TableViewActionState extends State<TableViewAction> {
     final tint = widget.primary ? palette.accent : palette.textSecondary;
     final fill = widget.primary
         ? palette.accent.withValues(alpha: _hovered ? 0.2 : 0.12)
-        : (_hovered ? palette.hover : palette.hoverAtRest);
+        : (_hovered ? palette.hover : palette.hover.withValues(alpha: 0));
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,

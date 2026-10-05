@@ -314,7 +314,8 @@ TablePropertyKind classifyTableProperty({
       if (_namesRating(heading)) {
         return TablePropertyKind.rating;
       }
-      if (_namesProgress(heading) || trimmed.endsWith('%') || facts.hasRange) {
+      // A spread of values alone does not make a budget or a count a bar.
+      if (_namesProgress(heading) || trimmed.endsWith('%')) {
         return TablePropertyKind.progress;
       }
       return TablePropertyKind.number;

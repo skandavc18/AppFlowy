@@ -142,6 +142,9 @@ enum DashboardWidgetGroup {
   /// Anything that reads a source: databases, collections, charts, metrics.
   data,
 
+  /// Money: portfolios, watchlists, options books, net worth, loans.
+  money,
+
   /// Clocks, calendars, countdowns, reminders.
   time,
 

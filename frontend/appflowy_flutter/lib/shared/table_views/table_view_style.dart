@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/table_views/property_ink.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
 
@@ -49,7 +50,7 @@ abstract final class TableViewMetrics {
 
 /// The colours a table view is drawn in.
 @immutable
-class TableViewPalette {
+class TableViewPalette implements PropertyInk {
   const TableViewPalette({
     required this.canvas,
     required this.surface,
@@ -70,21 +71,32 @@ class TableViewPalette {
   final Color canvas;
 
   /// The face of a card.
+  @override
   final Color surface;
 
   /// A panel standing on a card.
+  @override
   final Color raised;
 
   /// A well cut into a card, such as a progress track.
+  @override
   final Color sunken;
 
+  @override
   final Color hover;
+  @override
   final Color border;
+  @override
   final Color textPrimary;
+  @override
   final Color textSecondary;
+  @override
   final Color textMuted;
+  @override
   final Color accent;
+  @override
   final Color shadow;
+  @override
   final bool isDark;
   final bool isPaper;
 
@@ -100,6 +112,7 @@ class TableViewPalette {
     Color(0xFF6366F1),
   ];
 
+  @override
   Color swatchFor(String value) {
     if (value.trim().isEmpty) {
       return accent;
@@ -129,6 +142,7 @@ class TableViewPalette {
     ];
   }
 
+  @override
   List<BoxShadow> get chromeShadow => [
         BoxShadow(
           color: shadow.withValues(alpha: isDark ? 0.42 : 0.12),

@@ -47,6 +47,7 @@ import 'package:appflowy/workspace/presentation/command_palette/widgets/search_r
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_preview/view_preview_scope.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
@@ -337,6 +338,10 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
   late final UserWorkspaceBloc? _workspaceBloc;
   late final WorkspaceContentSearchController _contentSearch;
   late final WorkspaceTitleSearchController _titleSearch;
+
+  /// What the previews beside the results read through; nothing it keeps
+  /// outlives the palette.
+  late final ViewPreviewReads _previewReads;
   late String _draft;
   StreamSubscription<CommandPaletteState>? _paletteSubscription;
   StreamSubscription<UserWorkspaceState>? _workspaceSubscription;
@@ -393,6 +398,9 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
     _draft = widget.initialQuery ?? _paletteBloc.state.query ?? '';
     _fieldController = TextEditingController(text: _draft);
     final provider = widget.contentReadProvider;
+    _previewReads = provider == null
+        ? ViewPreviewReads.native()
+        : ViewPreviewReads(readDocument: provider.readDocument);
     _contentSearch = provider == null
         ? WorkspaceContentSearchController.native(
             isWorkspaceCurrent: _workspaceIsCurrent,
@@ -860,6 +868,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
     _contentSearch.dispose();
     _titleSearch.removeListener(_titleChanged);
     _titleSearch.dispose();
+    _previewReads.dispose();
     _sourceRefresh.dispose();
     _fieldFocus.dispose();
     _fieldController.dispose();
@@ -1221,7 +1230,6 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                               resultItems: resultItems,
                               resultSummaries: const [],
                               query: rawQuery,
-                              metadataOnly: true,
                               canUseResult: (id) =>
                                   _titleSearch.canUseResult(id, _draft),
                               commands: matchedCommands,
@@ -1385,7 +1393,10 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                       focusNode: _resultsFocus,
                       canRequestFocus: false,
                       skipTraversal: true,
-                      child: body,
+                      child: ViewPreviewScope(
+                        reads: _previewReads,
+                        child: body,
+                      ),
                     ),
                   ),
                   LayoutBuilder(

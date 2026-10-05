@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/board/application/board_bloc.dart';
+import 'package:appflowy/plugins/database/board/application/board_group_colors.dart';
 import 'package:appflowy/plugins/database/board/group_ext.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_style.dart';
-import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/plugins/database/board/presentation/widgets/board_group_menu.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/util/field_type_extension.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -119,50 +123,41 @@ class GroupOptionsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppFlowyPopover(
-      clickHandler: PopoverClickHandler.gestureDetector,
-      margin: const EdgeInsets.all(8),
-      constraints: BoxConstraints.loose(const Size(168, 300)),
-      direction: PopoverDirection.bottomWithLeftAligned,
-      child: FlowyIconButton(
+    // The menu hangs off the button itself, not off the whole header.
+    return Builder(
+      builder: (buttonContext) => FlowyIconButton(
         width: 20,
         icon: const FlowySvg(FlowySvgs.details_horizontal_s),
         iconColorOnHover: Theme.of(context).colorScheme.onSurface,
+        onPressed: () => _showMenu(buttonContext),
       ),
-      popupBuilder: (popoverContext) {
-        final customGroupData = groupData.customData as GroupData;
-        final isDefault = customGroupData.group.isDefault;
-        final menuItems = GroupOption.values.toList();
-        if (!customGroupData.fieldType.canEditHeader || isDefault) {
-          menuItems.remove(GroupOption.rename);
-        }
-        if (!customGroupData.fieldType.canDeleteGroup || isDefault) {
-          menuItems.remove(GroupOption.delete);
-        }
-        return SeparatedColumn(
-          mainAxisSize: MainAxisSize.min,
-          separatorBuilder: () => const VSpace(4),
-          children: [
-            ...menuItems.map(
-              (action) => SizedBox(
-                height: GridSize.popoverItemHeight,
-                child: FlowyButton(
-                  leftIcon: FlowySvg(action.icon),
-                  text: FlowyText(
-                    action.text,
-                    lineHeight: 1.0,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () {
-                    run(context, action, customGroupData.group);
-                    PopoverContainer.of(popoverContext).close();
-                  },
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+    );
+  }
+
+  void _showMenu(BuildContext context) {
+    final customGroupData = groupData.customData as GroupData;
+    final group = customGroupData.group;
+    final isDefault = group.isDefault;
+    final databaseController = context.read<BoardBloc>().databaseController;
+    final view = databaseController.view;
+    final colors = BoardGroupColorRegistry.instance;
+    unawaited(
+      showAppMenuForWidget<void>(
+        context: context,
+        placement: AppMenuPlacement.below,
+        entries: boardGroupMenuEntries(
+          context,
+          canRename: customGroupData.fieldType.canEditHeader && !isDefault,
+          canDelete: customGroupData.fieldType.canDeleteGroup && !isDefault,
+          color: colors.colorsFor(view)[group.groupId],
+          optionColor: group.groupOptionColor(databaseController),
+          onRename: () => run(context, GroupOption.rename, group),
+          onHide: () => run(context, GroupOption.hide, group),
+          onDelete: () => run(context, GroupOption.delete, group),
+          onColorChanged: (color) =>
+              unawaited(colors.set(view, group.groupId, color)),
+        ),
+      ),
     );
   }
 
@@ -273,17 +268,5 @@ class _DefaultColumnHeaderContent extends StatelessWidget {
 enum GroupOption {
   rename,
   hide,
-  delete;
-
-  FlowySvgData get icon => switch (this) {
-        rename => FlowySvgs.edit_s,
-        hide => FlowySvgs.hide_s,
-        delete => FlowySvgs.delete_s,
-      };
-
-  String get text => switch (this) {
-        rename => LocaleKeys.board_column_renameColumn.tr(),
-        hide => LocaleKeys.board_column_hideColumn.tr(),
-        delete => LocaleKeys.board_column_deleteColumn.tr(),
-      };
+  delete,
 }

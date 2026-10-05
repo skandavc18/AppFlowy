@@ -417,6 +417,66 @@ void main() {
       );
       await tester.pumpWidget(const SizedBox.shrink());
     });
+
+    testWidgets(
+        'an equal copy handed back by the host keeps the editor and what was '
+        'typed since', (tester) async {
+      final changes = <Map<String, Object?>>[];
+      Map<String, Object?> document = Document(
+        root: pageNode(children: [paragraphNode(text: 'hello')]),
+      ).toJson();
+      late StateSetter rebuild;
+      await _mount(
+        tester,
+        'light',
+        StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return EmbeddedBlocksView(
+              document: document,
+              onChanged: changes.add,
+            );
+          },
+        ),
+      );
+      EditorState editing() => tester
+          .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+          .editorState;
+      final editorState = editing();
+      Node first() => editorState.document.root.children.first;
+
+      await editorState.apply(
+        editorState.transaction..insertText(first(), 5, ' world'),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(changes, hasLength(1));
+
+      // Typed after that save and not handed out yet.
+      await editorState
+          .apply(editorState.transaction..insertText(first(), 11, '!'));
+      // The host saved and read its copy back: equal, but not the same map.
+      rebuild(
+        () => document =
+            jsonDecode(jsonEncode(changes.last)) as Map<String, Object?>,
+      );
+      await tester.pump();
+      expect(editing(), same(editorState));
+      expect(first().delta!.toPlainText(), 'hello world!');
+
+      // A document really changed elsewhere replaces what is shown.
+      rebuild(
+        () => document = Document(
+          root: pageNode(children: [paragraphNode(text: 'from elsewhere')]),
+        ).toJson(),
+      );
+      await tester.pump();
+      expect(editing(), isNot(same(editorState)));
+      expect(
+        editing().document.root.children.first.delta!.toPlainText(),
+        'from elsewhere',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   });
 
   group('canvases hold widgets and blocks', () {

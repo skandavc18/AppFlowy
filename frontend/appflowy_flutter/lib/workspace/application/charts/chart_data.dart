@@ -16,18 +16,21 @@ class ChartTable {
     required this.columns,
     required this.rows,
     this.columnIds = const [],
+    this.rowIds = const [],
   });
 
   /// Builds a table from a delimited export, taking the first row as names.
   factory ChartTable.fromRows(
     List<List<String>> source, {
     List<String> columnIds = const [],
+    List<String> rowIds = const [],
     bool keepEmptyRows = false,
   }) {
     if (source.isEmpty) {
       return ChartTable.empty;
     }
     assert(columnIds.isEmpty || columnIds.length == source.first.length);
+    assert(rowIds.isEmpty || rowIds.length == source.length - 1);
     final header = source.first.map((cell) => cell.trim()).toList();
     final reserved = header.toSet();
     final seen = <String>{};
@@ -47,13 +50,22 @@ class ChartTable {
       seen.add(name);
       columns.add(name);
     }
+    final rows = <List<String>>[];
+    final keptIds = <String>[];
+    for (var index = 1; index < source.length; index++) {
+      final row = source[index];
+      if (keepEmptyRows || row.any((cell) => cell.trim().isNotEmpty)) {
+        rows.add(row);
+        if (rowIds.isNotEmpty) {
+          keptIds.add(rowIds[index - 1]);
+        }
+      }
+    }
     return ChartTable(
       columns: columns,
       columnIds: columnIds,
-      rows: [
-        for (final row in source.skip(1))
-          if (keepEmptyRows || row.any((cell) => cell.trim().isNotEmpty)) row,
-      ],
+      rows: rows,
+      rowIds: keptIds,
     );
   }
 
@@ -65,6 +77,10 @@ class ChartTable {
   /// Field ids in the same order as [columns] and the cells in every row.
   /// Name-only tables (for example a CSV) leave this empty.
   final List<String> columnIds;
+
+  /// Database row ids in the same order as [rows], so a widget can write a
+  /// cell back. Name-only tables leave this empty.
+  final List<String> rowIds;
 
   bool get isEmpty => columns.isEmpty || rows.isEmpty;
 

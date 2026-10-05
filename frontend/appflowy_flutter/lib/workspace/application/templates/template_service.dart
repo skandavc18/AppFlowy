@@ -11,7 +11,9 @@ import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
+import 'package:appflowy/workspace/application/templates/template_guides.dart';
 import 'package:appflowy/workspace/application/templates/workspace_template.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
@@ -26,8 +28,8 @@ import 'package:nanoid/nanoid.dart';
 class TemplateOutcome {
   const TemplateOutcome({required this.primary, required this.created});
 
-  /// The thing to open afterwards: the folder for a template of several
-  /// parts, otherwise the one thing it made.
+  /// The thing to open afterwards: the board a template made, else the
+  /// folder for a template of several parts, else the one thing it made.
   final ViewPB primary;
 
   /// Every view the template made, in the order it made them.
@@ -74,6 +76,7 @@ abstract final class TemplateService {
 
     final created = <ViewPB>[];
     final ids = <String, String>{};
+    ViewPB? board;
     for (final part in parts) {
       final view = await _buildPart(
         parentViewId: parent,
@@ -83,12 +86,16 @@ abstract final class TemplateService {
         created: Map.unmodifiable(ids),
         // Parts inside a folder inherit its section.
         section: holder == null ? section : null,
+        guide: templateGuide(template.id),
       );
       if (view == null) {
         continue;
       }
       created.add(view);
       ids[part.key] = view.id;
+      if (part.blueprint is TemplateDashboard) {
+        board ??= view;
+      }
       if (part.icon.isNotEmpty) {
         await ViewBackendService.updateViewIcon(
           view: view,
@@ -100,7 +107,47 @@ abstract final class TemplateService {
     if (created.isEmpty) {
       return null;
     }
-    return TemplateOutcome(primary: holder ?? created.first, created: created);
+    // A board is what such a template is for; its tables sit beside it.
+    return TemplateOutcome(
+      primary: board ?? holder ?? created.first,
+      created: created,
+    );
+  }
+
+  /// Makes a board bundle's tables beneath [dashboardViewId] and returns its
+  /// board bound to them, or null when the template is not a board bundle.
+  static Future<DashboardDocument?> buildBoard({
+    required String dashboardViewId,
+    required WorkspaceTemplate template,
+  }) async {
+    final board = template.boardPart;
+    if (!template.isBoardBundle || board == null) {
+      return null;
+    }
+    final ids = <String, String>{};
+    for (final part in template.parts) {
+      if (part.blueprint is! TemplateDatabase) {
+        continue;
+      }
+      final view = await _buildPart(
+        parentViewId: dashboardViewId,
+        part: part,
+        created: Map.unmodifiable(ids),
+      );
+      if (view == null) {
+        continue;
+      }
+      ids[part.key] = view.id;
+      if (part.icon.isNotEmpty) {
+        await ViewBackendService.updateViewIcon(
+          view: view,
+          viewIcon: EmojiIconData.emoji(part.icon),
+        );
+      }
+    }
+    return (board.blueprint as TemplateDashboard)
+        .build(ids)
+        .copyWith(guide: templateGuide(template.id));
   }
 
   /// Lays a single-part template over a view that already exists.
@@ -113,7 +160,28 @@ abstract final class TemplateService {
     required WorkspaceTemplate template,
   }) async {
     final parts = template.parts;
-    if (parts.length != 1 || !template.appliesTo(view)) {
+    if (!template.appliesTo(view)) {
+      return false;
+    }
+
+    if (template.isBoardBundle) {
+      final document = await buildBoard(
+        dashboardViewId: view.id,
+        template: template,
+      );
+      if (document == null) {
+        return false;
+      }
+      final current = await ViewBackendService.getView(view.id)
+          .fold((found) => found, (_) => null);
+      final result = await ViewBackendService.updateView(
+        viewId: view.id,
+        extra: DashboardMetadata(document: document)
+            .mergeIntoExtra(current?.extra ?? view.extra),
+      );
+      return result.fold((_) => true, (_) => false);
+    }
+    if (parts.length != 1) {
       return false;
     }
 
@@ -127,8 +195,10 @@ abstract final class TemplateService {
       case TemplateDashboard(build: final build):
         final result = await ViewBackendService.updateView(
           viewId: view.id,
-          extra: DashboardMetadata(document: build(const {}))
-              .mergeIntoExtra(extra),
+          extra: DashboardMetadata(
+            document:
+                build(const {}).copyWith(guide: templateGuide(template.id)),
+          ).mergeIntoExtra(extra),
         );
         return result.fold((_) => true, (_) => false);
 
@@ -156,6 +226,7 @@ abstract final class TemplateService {
     required TemplatePart part,
     required TemplateContext created,
     ViewSectionPB? section,
+    List<String> guide = const [],
   }) async {
     final name = part.name();
     switch (part.blueprint) {
@@ -165,7 +236,9 @@ abstract final class TemplateService {
           parentViewId: parentViewId,
           name: name,
           section: section,
-          extra: DashboardMetadata.newExtra(document: build(created)),
+          extra: DashboardMetadata.newExtra(
+            document: build(created).copyWith(guide: guide),
+          ),
         );
 
       case TemplateCanvas(build: final build):
@@ -297,7 +370,10 @@ abstract final class TemplateService {
         .fold((fields) => fields, (_) => const <FieldPB>[]);
     for (final field in existing) {
       if (field.id != primary.id) {
-        await FieldBackendService.deleteField(viewId: viewId, fieldId: field.id);
+        await FieldBackendService.deleteField(
+          viewId: viewId,
+          fieldId: field.id,
+        );
       }
     }
 
@@ -419,7 +495,9 @@ abstract final class TemplateService {
     required Map<int, String> fieldIds,
     required Map<int, Map<String, String>> optionIds,
   }) async {
-    for (var index = 0; index < values.length && index < columns.length; index++) {
+    for (var index = 0;
+        index < values.length && index < columns.length;
+        index++) {
       final value = values[index].trim();
       final fieldId = fieldIds[index];
       if (value.isEmpty || fieldId == null) {

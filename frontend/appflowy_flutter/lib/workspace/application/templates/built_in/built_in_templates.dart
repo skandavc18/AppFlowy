@@ -40,7 +40,6 @@ const _dashboardShelves = <String, TemplateCategory>{
   'content': TemplateCategory.work,
   'team': TemplateCategory.work,
   'executive': TemplateCategory.work,
-  'finance': TemplateCategory.finance,
   'study': TemplateCategory.knowledge,
 };
 
@@ -119,6 +118,7 @@ const featuredTemplateIds = <String>[
   'vedic_astrology',
   'tracker',
   'stocks',
+  'options',
   'assets',
   'news_weather',
   'landing',

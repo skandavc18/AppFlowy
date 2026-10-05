@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
 
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/slides/slide_card.dart';
@@ -10,6 +9,7 @@ import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 /// Drives a deck from outside it.
@@ -45,6 +45,7 @@ class SlideDeck extends StatefulWidget {
     super.key,
     required this.cards,
     required this.palette,
+    this.viewId = '',
     this.controller,
     this.flow = SlideFlow.deck,
     this.wrap = false,
@@ -60,6 +61,9 @@ class SlideDeck extends StatefulWidget {
 
   final List<SlideCardData> cards;
   final SlidePalette palette;
+
+  /// The table the slides are read from.
+  final String viewId;
   final SlideDeckController? controller;
   final SlideFlow flow;
   final bool wrap;
@@ -95,16 +99,20 @@ class _SlideDeckState extends State<SlideDeck>
 
   final FocusNode _focus = FocusNode(debugLabel: 'SlideDeck');
 
-  double _from = 0;
-  double _to = 0;
+  /// Where the current glide is heading, in slides.
+  double _target = 0;
   int _settled = 0;
   int _reportedIndex = 0;
 
   /// Set while a drag is moving the deck, so it is not snapped back mid gesture.
   bool _dragging = false;
   bool _trackpadDragging = false;
-  double _panStartPosition = 0;
+
+  /// Where the deck stood when the gesture now moving it began.
+  double _gestureStart = 0;
   Timer? _wheelSettle;
+  Duration? _lastNotchAt;
+  int _lastNotchDirection = 0;
 
   Size _stage = Size.zero;
 
@@ -115,10 +123,7 @@ class _SlideDeckState extends State<SlideDeck>
   @override
   void initState() {
     super.initState();
-    _drive = AnimationController(
-      vsync: this,
-      duration: SlideMetrics.settle,
-    )..addListener(_onDrive);
+    _drive = AnimationController.unbounded(vsync: this)..addListener(_onDrive);
     widget.controller?._deck = this;
     _settled = _clampIndex(widget.index);
     _reportedIndex = _settled;
@@ -186,9 +191,13 @@ class _SlideDeckState extends State<SlideDeck>
   }
 
   void _onDrive() {
-    final eased = SlideMetrics.settleCurve.transform(_drive.value);
-    _setPosition(lerpDouble(_from, _to, eased)!);
-    if (_drive.isCompleted) _reportSettledIndex();
+    if (_drive.isCompleted) {
+      // The spring stops within its tolerance; land exactly on the slide.
+      _setPosition(_target);
+      _reportSettledIndex();
+    } else {
+      _setPosition(_drive.value);
+    }
   }
 
   void _reportSettledIndex() {
@@ -212,23 +221,41 @@ class _SlideDeckState extends State<SlideDeck>
     }
   }
 
-  void _glideTo(double target, {Duration? duration}) {
+  /// Glides to [target] on a spring that starts at [velocity] (slides a
+  /// second), so a released swipe carries on instead of stopping dead first.
+  /// Without one, a glide already under way keeps its momentum.
+  void _glideTo(double target, {double? velocity}) {
+    final carried = velocity ?? (_drive.isAnimating ? _drive.velocity : 0.0);
     _drive.stop();
-    _from = _position.value;
-    _to = target;
-    if ((_to - _from).abs() < 0.0005 ||
+    _target = target;
+    final from = _position.value;
+    if ((target - from).abs() < 0.0005 ||
         (MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
-      _setPosition(_to);
+      _setPosition(target);
       _reportSettledIndex();
       return;
     }
-    _drive
-      ..duration = duration ?? SlideMetrics.settle
-      ..value = 0
-      ..forward();
+    unawaited(
+      _drive.animateWith(
+        SpringSimulation(
+          SlideMetrics.settleSpring,
+          from,
+          target,
+          carried.clamp(
+            -SlideMetrics.maxSettleVelocity,
+            SlideMetrics.maxSettleVelocity,
+          ),
+          tolerance: SlideMetrics.settleTolerance,
+        ),
+      ),
+    );
   }
 
-  void step(int by) => goTo(_settled + by);
+  /// The slide the deck rests on, or is gliding to.
+  int get _destination =>
+      _drive.isAnimating ? _clampIndex(_target.round()) : _settled;
+
+  void step(int by) => goTo(_destination + by);
 
   void goTo(int index, {bool animate = true}) {
     if (_count == 0) {
@@ -252,21 +279,37 @@ class _SlideDeckState extends State<SlideDeck>
     }
   }
 
-  /// Settles on whichever slide the deck is nearest.
-  void _snap({double velocity = 0}) {
+  /// Settles where the gesture that began at [from] was heading.
+  ///
+  /// A flick, or a deliberate push of [SlideMetrics.commitDistance], turns to
+  /// the next slide in its direction; anything less returns. [velocity] is the
+  /// release speed in pixels a second, negative when moving to later slides.
+  void _settle({required double from, double velocity = 0}) {
     if (_count == 0) {
       return;
     }
-    var target = _position.value.round();
-    if (velocity.abs() > SlideMetrics.flingVelocity) {
-      // Carry to the next integer in the flick's direction. Adding another
-      // slide after crossing the midpoint used to skip two slides at once.
-      target = velocity < 0 ? _position.value.ceil() : _position.value.floor();
-    }
+    final position = _position.value;
+    final step = _layout.step;
+    final slidesPerSecond = step > 0 ? -velocity / step : 0.0;
+    final flung = velocity.abs() > SlideMetrics.flingVelocity;
+    final moved = position - from;
+    final heading = flung
+        ? slidesPerSecond.sign
+        : moved.abs() >= SlideMetrics.commitDistance
+            ? moved.sign
+            : 0.0;
+    // A flick carries on from wherever it was released; a slow push only
+    // counts once it is the commit distance past a slide.
+    final reach = flung ? 0.0 : SlideMetrics.commitDistance;
+    var target = heading > 0
+        ? (position - reach).floor() + 1
+        : heading < 0
+            ? (position + reach).ceil() - 1
+            : position.round();
     if (!widget.wrap) {
       target = target.clamp(0, _count - 1);
     }
-    _glideTo(target.toDouble());
+    _glideTo(target.toDouble(), velocity: slidesPerSecond);
   }
 
   void _nudge(double slides) {
@@ -299,19 +342,50 @@ class _SlideDeckState extends State<SlideDeck>
     if (!amount.isFinite || amount == 0) {
       return;
     }
-    _nudge(amount / 120 * SlideMetrics.wheelStep);
+    if (event.kind != PointerDeviceKind.trackpad &&
+        amount.abs() >= SlideMetrics.wheelNotch) {
+      _onWheelNotch(event.timeStamp, amount > 0 ? 1 : -1);
+      return;
+    }
+    // A touchpad's fine deltas follow the fingers, then settle where they
+    // were heading once the scrolling pauses.
+    if (_wheelSettle == null) {
+      _drive.stop();
+      _gestureStart = _position.value;
+    }
+    final step = _layout.step;
+    if (step > 0) {
+      _nudge(amount / step);
+    }
     _wheelSettle?.cancel();
-    _wheelSettle = Timer(const Duration(milliseconds: 130), () {
+    _wheelSettle = Timer(SlideMetrics.wheelQuiet, () {
       _wheelSettle = null;
-      _snap();
+      _settle(from: _gestureStart);
     });
+  }
+
+  /// One notch turns one slide, queued onto any glide already under way;
+  /// a burst of events from a single notch only counts once.
+  void _onWheelNotch(Duration at, int direction) {
+    _wheelSettle?.cancel();
+    _wheelSettle = null;
+    final last = _lastNotchAt;
+    if (last != null &&
+        direction == _lastNotchDirection &&
+        at >= last &&
+        at - last < SlideMetrics.wheelStepGap) {
+      return;
+    }
+    _lastNotchAt = at;
+    _lastNotchDirection = direction;
+    step(direction);
   }
 
   void _onPanZoomStart(PointerPanZoomStartEvent event) {
     _wheelSettle?.cancel();
     _wheelSettle = null;
     _drive.stop();
-    _panStartPosition = _position.value;
+    _gestureStart = _position.value;
     _dragging = true;
     _trackpadDragging = true;
   }
@@ -328,31 +402,32 @@ class _SlideDeckState extends State<SlideDeck>
     // its axis. Neither a nested map nor a vertical scroll can move the deck.
     _setPosition(
       _layout.clampPosition(
-        _panStartPosition - pan.dx / step,
+        _gestureStart - pan.dx / step,
         _count,
         give: widget.wrap ? 0 : 0.25,
       ),
     );
   }
 
-  void _onPanZoomEnd(PointerPanZoomEndEvent event) {
+  void _onPanZoomEnd(double velocity) {
     if (!_trackpadDragging) return;
     _trackpadDragging = false;
     _dragging = false;
-    _snap();
+    _settle(from: _gestureStart, velocity: velocity);
   }
 
   void _onPanZoomCancel() {
     if (!_trackpadDragging) return;
     _trackpadDragging = false;
     _dragging = false;
-    _glideTo(_panStartPosition.roundToDouble());
+    _glideTo(_gestureStart.roundToDouble());
   }
 
   void _onDragStart(DragStartDetails details) {
     _wheelSettle?.cancel();
     _wheelSettle = null;
     _drive.stop();
+    _gestureStart = _position.value;
     _dragging = true;
     _focus.requestFocus();
   }
@@ -370,13 +445,16 @@ class _SlideDeckState extends State<SlideDeck>
 
   void _onDragEnd(DragEndDetails details) {
     _dragging = false;
-    _snap(velocity: details.velocity.pixelsPerSecond.dx);
+    _settle(
+      from: _gestureStart,
+      velocity: details.velocity.pixelsPerSecond.dx,
+    );
   }
 
   void _onDragCancel() {
     if (!_dragging || _trackpadDragging) return;
     _dragging = false;
-    _snap();
+    _settle(from: _gestureStart);
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -560,6 +638,7 @@ class _SlideDeckState extends State<SlideDeck>
             prominence: placement.prominence,
             live: live,
             showPageContent: widget.showPageContent,
+            viewId: widget.viewId,
             onOpen: widget.onOpen == null
                 ? null
                 : () => _openOrCentre(placement.index, card),
@@ -602,7 +681,9 @@ class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
 
   ValueChanged<PointerPanZoomStartEvent>? onStart;
   ValueChanged<Offset>? onUpdate;
-  ValueChanged<PointerPanZoomEndEvent>? onEnd;
+
+  /// Called with the release speed in pixels a second.
+  ValueChanged<double>? onEnd;
   VoidCallback? onCancel;
 
   PointerPanZoomStartEvent? _start;
@@ -610,6 +691,9 @@ class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
   bool _won = false;
   bool _horizontal = false;
   bool _started = false;
+
+  /// Recent (time, horizontal total) samples, for the release speed.
+  final List<(Duration, double)> _samples = [];
 
   @override
   bool isPointerAllowed(PointerDownEvent event) => false;
@@ -631,11 +715,16 @@ class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
   void handleEvent(PointerEvent event) {
     if (event.pointer != _start?.pointer) return;
     if (event is PointerPanZoomUpdateEvent) {
+      // Two fingers sliding sideways never hold perfectly still relative to
+      // each other: once the swipe is under way only a real pinch or turn
+      // ends it, or the deck jumps back mid swipe.
+      final scaleLimit = _started ? 0.08 : 0.01;
+      final rotationLimit = _started ? 0.12 : 0.01;
       if (!event.localPanDelta.isFinite ||
           !event.scale.isFinite ||
           !event.rotation.isFinite ||
-          (event.scale - 1).abs() > 0.01 ||
-          event.rotation.abs() > 0.01) {
+          (event.scale - 1).abs() > scaleLimit ||
+          event.rotation.abs() > rotationLimit) {
         _reject();
         return;
       }
@@ -643,6 +732,7 @@ class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
       // translation. Deltas preserve just the displacement and local scale in
       // the coordinate space captured when this recognizer started tracking.
       _pan += event.localPanDelta;
+      _record(event.timeStamp);
       if (!_horizontal) {
         if (_pan.dx.abs() < 12 && _pan.dy.abs() < 12) return;
         if (_pan.dx.abs() < 2 * _pan.dy.abs()) {
@@ -658,15 +748,44 @@ class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
       _report();
     } else if (event is PointerPanZoomEndEvent) {
       final started = _started;
+      final velocity = _releaseVelocity(event.timeStamp);
       _clear();
       if (started) {
-        onEnd?.call(event);
+        onEnd?.call(velocity);
       } else {
         resolve(GestureDisposition.rejected);
       }
     } else if (event is PointerCancelEvent) {
       _reject();
     }
+  }
+
+  void _record(Duration at) {
+    _samples.add((at, _pan.dx));
+    while (_samples.length > 2 &&
+        at - _samples.first.$1 > const Duration(milliseconds: 120)) {
+      _samples.removeAt(0);
+    }
+  }
+
+  /// How fast the fingers were moving as they lifted, in pixels a second.
+  ///
+  /// Windows hands over no inertia of its own, so this is the only flick
+  /// there is; fingers that stopped before lifting carry none.
+  double _releaseVelocity(Duration end) {
+    if (_samples.length < 2) {
+      return 0;
+    }
+    final (lastAt, lastDx) = _samples.last;
+    if (end - lastAt > const Duration(milliseconds: 80)) {
+      return 0;
+    }
+    final (firstAt, firstDx) = _samples.firstWhere(
+      (sample) => lastAt - sample.$1 <= const Duration(milliseconds: 100),
+    );
+    final seconds =
+        (lastAt - firstAt).inMicroseconds / Duration.microsecondsPerSecond;
+    return seconds < 0.008 ? 0 : (lastDx - firstDx) / seconds;
   }
 
   void _report() {
@@ -689,6 +808,7 @@ class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
     final pointer = _start?.pointer;
     _start = null;
     _pan = Offset.zero;
+    _samples.clear();
     _won = false;
     _horizontal = false;
     _started = false;
@@ -781,9 +901,15 @@ class SlideRail extends StatelessWidget {
             width: active ? SlideMetrics.railWidth : SlideMetrics.railHeight,
             height: SlideMetrics.railHeight,
             decoration: BoxDecoration(
-              color: active
-                  ? palette.accent
-                  : palette.textMuted.withValues(alpha: 0.35),
+              color: active ? null : palette.textMuted.withValues(alpha: 0.3),
+              gradient: active
+                  ? LinearGradient(
+                      colors: [
+                        palette.accent,
+                        Color.lerp(palette.accent, Colors.white, 0.35)!,
+                      ],
+                    )
+                  : null,
               borderRadius: BorderRadius.circular(SlideMetrics.railHeight),
             ),
           ),

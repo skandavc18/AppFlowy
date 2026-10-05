@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_sample_tables.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
@@ -283,7 +284,8 @@ class _ChartBodyState extends State<_ChartBody> {
       _source = null;
       return;
     }
-    final source = ChartSource(viewId: viewId)..addListener(_onChanged);
+    final source = dashboardChartSource(context, viewId)
+      ..addListener(_onChanged);
     _source = source;
     unawaited(source.load());
   }
@@ -344,11 +346,15 @@ class _ChartBodyState extends State<_ChartBody> {
     final category = source.groupField.isNotEmpty
         ? source.groupField
         : (table.columns.isNotEmpty ? table.columns.first : null);
-    final value = source.field.isNotEmpty
-        ? [source.field]
-        : (table.numericColumns.isEmpty
-            ? const <String>[]
-            : [table.numericColumns.first]);
+    // Counting reads no column: "how many in each group".
+    final counts = settings.setting(_keyAggregate) == 'count';
+    final value = counts
+        ? const <String>[]
+        : source.field.isNotEmpty
+            ? [source.field]
+            : (table.numericColumns.isEmpty
+                ? const <String>[]
+                : [table.numericColumns.first]);
     return ChartSpec(
       type: ChartType.values.firstWhere(
         (type) => type.name == settings.setting(_keyChartType, fallback: 'bar'),
@@ -834,7 +840,8 @@ class _AggregateBodyState extends State<_AggregateBody> {
       _source = null;
       return;
     }
-    final source = ChartSource(viewId: viewId)..addListener(_onChanged);
+    final source = dashboardChartSource(context, viewId)
+      ..addListener(_onChanged);
     _source = source;
     unawaited(source.load());
   }
