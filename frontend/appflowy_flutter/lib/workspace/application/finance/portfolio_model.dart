@@ -72,7 +72,8 @@ class Holding {
   }) {
     final columns = FinanceColumns.resolve(table, roles, settings: settings);
     final sheet = FinanceSheet(table);
-    final nameColumn = columns.has(FinanceRole.name) ? columns[FinanceRole.name] : 0;
+    final nameColumn =
+        columns.has(FinanceRole.name) ? columns[FinanceRole.name] : 0;
     final holdings = <Holding>[];
     for (var row = 0; row < sheet.length; row++) {
       final symbol = sheet.text(row, columns[FinanceRole.symbol]).toUpperCase();
@@ -334,7 +335,8 @@ class PortfolioSnapshot {
       if (percent == null) {
         continue;
       }
-      if (found == null || percent * direction > found.dayPercent! * direction) {
+      if (found == null ||
+          percent * direction > found.dayPercent! * direction) {
         found = holding;
       }
     }

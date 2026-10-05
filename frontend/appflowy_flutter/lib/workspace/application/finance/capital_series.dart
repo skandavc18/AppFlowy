@@ -171,7 +171,8 @@ class ContributedReturn {
 
     final steps = <(DateTime, double, double)>[
       for (final point in value.points)
-        if (paidAt(point.time) case final paid?) (point.time, point.value, paid),
+        if (paidAt(point.time) case final paid?)
+          (point.time, point.value, paid),
     ];
     if (steps.length < 2) {
       return null;

@@ -125,7 +125,8 @@ Widget _pickJournal(DashboardWidgetContext data, FinanceGhostShape shape) =>
       shape: shape,
       icon: Icons.stacked_line_chart_rounded,
       message: LocaleKeys.dashboard_money_pickJournal.tr(),
-      action: data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
+      action:
+          data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
       onAction: () => unawaited(financePickTable(data)),
       color: data.tone.strong,
     );
@@ -192,8 +193,9 @@ PayoffLabels _payoffLabels() => PayoffLabels(
       price: LocaleKeys.dashboard_money_atPrice.tr(),
     );
 
-String _boundText(double value, bool unlimited, MoneyStyle money) =>
-    unlimited ? LocaleKeys.dashboard_money_unlimited.tr() : money.fit(value, signed: true);
+String _boundText(double value, bool unlimited, MoneyStyle money) => unlimited
+    ? LocaleKeys.dashboard_money_unlimited.tr()
+    : money.fit(value, signed: true);
 
 // ------------------------------------------------------------------ summary
 
@@ -259,13 +261,15 @@ class _Summary extends StatelessWidget {
         final reading = _Book.read(feed.table, data.spec.settings, feed.market);
         final book = reading.book;
         final money = financeMoney(data);
-        final capital = data.spec.number(_keyCapital, fallback: _defaultCapital);
+        final capital =
+            data.spec.number(_keyCapital, fallback: _defaultCapital);
         final open = book.openMarkToMarket(reading.priceOf);
         final booked = book.realized;
         final total = open + booked;
         final roi = percentOf(total, capital);
         final margin = book.marginUsed;
-        final marginShare = capital > 0 ? (margin / capital).clamp(0.0, 1.0) : 0.0;
+        final marginShare =
+            capital > 0 ? (margin / capital).clamp(0.0, 1.0) : 0.0;
         final openCount = book.open.length;
         final nextExpiry = book.nextExpiry;
         final ink = data.tone.label;
@@ -427,7 +431,8 @@ class _MarginGauge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = colors.palette;
-    final warm = palette.isPaper ? const Color(0xFFC08A2E) : const Color(0xFFF59E0B);
+    final warm =
+        palette.isPaper ? const Color(0xFFC08A2E) : const Color(0xFFF59E0B);
     return FinanceRing(
       value: share,
       still: still,
@@ -617,8 +622,7 @@ class _BookView extends StatelessWidget {
               300,
               maximum: 4,
             );
-            final width =
-                (constraints.maxWidth - (columns - 1) * 12) / columns;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
             return Column(
               children: [
                 Expanded(
@@ -758,7 +762,8 @@ class _StrategyCard extends StatelessWidget {
                       ),
                       Text(
                         [
-                          if (strategy.underlying.isNotEmpty) strategy.underlying,
+                          if (strategy.underlying.isNotEmpty)
+                            strategy.underlying,
                           if (strategy.expiry != null)
                             DateFormat.MMMd().format(strategy.expiry!),
                           _daysLeft(strategy.expiry),
@@ -946,7 +951,8 @@ class _ClosedStrategies extends StatelessWidget {
                 ),
                 Text(
                   money.fit(strategy.realized, signed: true),
-                  style: financeNumber(colors.change(strategy.realized), size: 12),
+                  style:
+                      financeNumber(colors.change(strategy.realized), size: 12),
                 ),
               ],
             ),
@@ -1489,7 +1495,8 @@ class _PayoffViewState extends State<_PayoffView> {
                 ),
                 FinanceStat(
                   label: LocaleKeys.dashboard_money_maxLoss.tr(),
-                  value: _boundText(bounds.maxLoss, bounds.unlimitedLoss, money),
+                  value:
+                      _boundText(bounds.maxLoss, bounds.unlimitedLoss, money),
                   valueColor: colors.loss,
                   palette: palette,
                 ),
@@ -1639,7 +1646,8 @@ final _chain = DashboardWidgetDefinition(
       maximum: 30,
       onChanged: (value) => data.setSettings({_keyAround: value.round()}),
     ),
-    financeTableField(data, label: LocaleKeys.dashboard_money_yourPosition.tr()),
+    financeTableField(data,
+        label: LocaleKeys.dashboard_money_yourPosition.tr()),
   ],
 );
 
@@ -1691,10 +1699,10 @@ class _ChainViewState extends State<_ChainView> {
     final palette = data.palette;
     final colors = FinanceColors.of(palette);
     final still = financeStill(data, context);
-    final underlying = (_underlying ??
-            data.spec.setting(_keyUnderlying, fallback: 'NIFTY'))
-        .trim()
-        .toUpperCase();
+    final underlying =
+        (_underlying ?? data.spec.setting(_keyUnderlying, fallback: 'NIFTY'))
+            .trim()
+            .toUpperCase();
     return FinanceView(
       data: data,
       builder: (context, feed) {
@@ -2201,9 +2209,7 @@ class _ChainRow extends StatelessWidget {
     final putInMoney = spot != null && row.strike > spot;
     final itm = palette.isDark
         ? Colors.white.withValues(alpha: 0.04)
-        : (palette.isPaper
-            ? const Color(0x14B08A55)
-            : const Color(0xFFFFF8E6));
+        : (palette.isPaper ? const Color(0x14B08A55) : const Color(0xFFFFF8E6));
     final call = row.call;
     final put = row.put;
     final callPositions =
@@ -2237,7 +2243,9 @@ class _ChainRow extends StatelessWidget {
           ),
           if (change != null)
             Text(
-              change > 0 ? '+${change.toStringAsFixed(1)}' : change.toStringAsFixed(1),
+              change > 0
+                  ? '+${change.toStringAsFixed(1)}'
+                  : change.toStringAsFixed(1),
               style: financeNumber(colors.change(change), size: 9.5),
             ),
         ],
@@ -2305,7 +2313,8 @@ class _ChainRow extends StatelessWidget {
             children: [
               Expanded(
                 flex: 17,
-                child: ColoredBox(color: callInMoney ? itm : Colors.transparent),
+                child:
+                    ColoredBox(color: callInMoney ? itm : Colors.transparent),
               ),
               const Spacer(flex: 5),
               Expanded(
@@ -2407,7 +2416,8 @@ class _StrikeCell extends StatelessWidget {
       if (legs.isEmpty) {
         return const SizedBox(width: 6);
       }
-      final net = legs.fold<double>(0, (sum, leg) => sum + leg.sign * leg.quantity);
+      final net =
+          legs.fold<double>(0, (sum, leg) => sum + leg.sign * leg.quantity);
       final color = net >= 0 ? colors.gain : colors.loss;
       return Tooltip(
         message: legs.map(_legLabel).join('\n'),

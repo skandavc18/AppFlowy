@@ -37,7 +37,10 @@ List<DashboardConfigField> _holdingsConfig(DashboardWidgetContext data) => [
         (FinanceRole.name, LocaleKeys.dashboard_money_name.tr()),
         (FinanceRole.symbol, LocaleKeys.dashboard_money_symbol.tr()),
         (FinanceRole.quantity, LocaleKeys.dashboard_money_quantity.tr()),
-        (FinanceRole.averagePrice, LocaleKeys.dashboard_money_averagePrice.tr()),
+        (
+          FinanceRole.averagePrice,
+          LocaleKeys.dashboard_money_averagePrice.tr()
+        ),
         (FinanceRole.lastPrice, LocaleKeys.dashboard_money_lastPrice.tr()),
         (FinanceRole.sector, LocaleKeys.dashboard_money_sector.tr()),
         (FinanceRole.date, LocaleKeys.dashboard_money_boughtOn.tr()),
@@ -50,7 +53,8 @@ Widget _pickHoldings(DashboardWidgetContext data, FinanceGhostShape shape) =>
       shape: shape,
       icon: Icons.show_chart_rounded,
       message: LocaleKeys.dashboard_money_pickHoldings.tr(),
-      action: data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
+      action:
+          data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
       onAction: () => unawaited(financePickTable(data)),
       color: data.tone.strong,
     );
@@ -62,11 +66,13 @@ Widget _reading(DashboardPalette palette, bool still) => Padding(
         children: [
           FinanceShimmer(palette: palette, width: 120, still: still),
           const SizedBox(height: 14),
-          FinanceShimmer(palette: palette, width: 220, height: 30, still: still),
+          FinanceShimmer(
+              palette: palette, width: 220, height: 30, still: still),
           const SizedBox(height: 14),
           FinanceShimmer(palette: palette, height: 10, still: still),
           const SizedBox(height: 8),
-          FinanceShimmer(palette: palette, width: 180, height: 10, still: still),
+          FinanceShimmer(
+              palette: palette, width: 180, height: 10, still: still),
         ],
       ),
     );
@@ -82,7 +88,8 @@ List<double> portfolioHistory(List<PricedHolding> holdings) {
   if (tracked.isEmpty) {
     return const [];
   }
-  final length = tracked.map((holding) => holding.intraday.length).reduce(math.min);
+  final length =
+      tracked.map((holding) => holding.intraday.length).reduce(math.min);
   final fixed = holdings
       .where((holding) => !tracked.contains(holding))
       .fold<double>(0, (sum, holding) => sum + holding.value);
@@ -92,7 +99,8 @@ List<double> portfolioHistory(List<PricedHolding> holdings) {
           tracked.fold<double>(0, (sum, holding) {
             final closes = holding.intraday;
             return sum +
-                closes[closes.length - length + index] * holding.holding.quantity;
+                closes[closes.length - length + index] *
+                    holding.holding.quantity;
           }),
   ];
 }
@@ -178,8 +186,8 @@ class _PortfolioHero extends StatelessWidget {
           feed.market,
           holdings.map((holding) => holding.holding.symbol),
         );
-        final bySector = data.spec.setting(_keyGroupBy, fallback: 'sector') ==
-            'sector';
+        final bySector =
+            data.spec.setting(_keyGroupBy, fallback: 'sector') == 'sector';
         final slices = snapshot.allocation(
           (holding) => bySector && holding.holding.sector.isNotEmpty
               ? holding.holding.sector
@@ -196,7 +204,8 @@ class _PortfolioHero extends StatelessWidget {
             final tall = height >= 180;
             final roomy = height >= 120;
             final wide = constraints.maxWidth >= 600 && tall;
-            final figureSize = constraints.maxWidth < 360 || !roomy ? 30.0 : 40.0;
+            final figureSize =
+                constraints.maxWidth < 360 || !roomy ? 30.0 : 40.0;
             final ink = data.tone.label;
             final main = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,7 +539,8 @@ class _MoversPanel extends StatelessWidget {
           (worst.dayPercent ?? 0) < 0)
         worst,
     ];
-    final monthChange = history.length >= 2 ? history.last - history.first : null;
+    final monthChange =
+        history.length >= 2 ? history.last - history.first : null;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
@@ -569,7 +579,8 @@ class _MoversPanel extends StatelessWidget {
                           ? null
                           : monthChange / history.first * 100,
                     ),
-                    style: financeNumber(colors.change(monthChange), size: 11.5),
+                    style:
+                        financeNumber(colors.change(monthChange), size: 11.5),
                   ),
               ],
             ),
@@ -768,7 +779,8 @@ class _HoldingsListState extends State<_HoldingsList> {
                                 narrow: narrow,
                                 expanded: _expanded == key,
                                 onTap: () => setState(
-                                  () => _expanded = _expanded == key ? null : key,
+                                  () =>
+                                      _expanded = _expanded == key ? null : key,
                                 ),
                               ),
                             );
@@ -1586,7 +1598,8 @@ class _WatchlistState extends State<_Watchlist> {
         shape: FinanceGhostShape.rows,
         icon: Icons.show_chart_rounded,
         message: LocaleKeys.dashboard_money_emptyWatchlist.tr(),
-        action: data.isTypable ? LocaleKeys.dashboard_money_addSymbol.tr() : null,
+        action:
+            data.isTypable ? LocaleKeys.dashboard_money_addSymbol.tr() : null,
         onAction: () => _addSymbol(data),
         color: data.tone.strong,
       );
@@ -1642,7 +1655,8 @@ String marketPrice(String symbol, double value) {
   }
   return MoneyStyle(
     symbol: currency,
-    grouping: currency == '₹' ? MoneyGrouping.indian : MoneyGrouping.international,
+    grouping:
+        currency == '₹' ? MoneyGrouping.indian : MoneyGrouping.international,
   ).price(value);
 }
 
@@ -1672,7 +1686,9 @@ class _WatchRow extends StatelessWidget {
         duration: DashboardMetrics.hover,
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
         decoration: BoxDecoration(
-          color: hovered ? palette.hover.withValues(alpha: 0.6) : palette.hoverBase,
+          color: hovered
+              ? palette.hover.withValues(alpha: 0.6)
+              : palette.hoverBase,
           borderRadius: BorderRadius.circular(12),
         ),
         child: LayoutBuilder(

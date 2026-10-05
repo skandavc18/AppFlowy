@@ -210,8 +210,7 @@ class FinanceSheet {
       row >= 0 && row < table.rowIds.length ? table.rowIds[row] : null;
 
   /// The field id of [column], for writing a cell back.
-  String? fieldId(int column) =>
-      column >= 0 && column < table.columnIds.length
-          ? table.columnIds[column]
-          : null;
+  String? fieldId(int column) => column >= 0 && column < table.columnIds.length
+      ? table.columnIds[column]
+      : null;
 }

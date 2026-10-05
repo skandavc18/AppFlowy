@@ -70,7 +70,8 @@ String financeAgo(DateTime time, {DateTime? now}) {
 
 /// Whether [time] is recent enough to call the price live.
 bool financeIsFresh(DateTime? time) =>
-    time != null && DateTime.now().difference(time) < const Duration(minutes: 5);
+    time != null &&
+    DateTime.now().difference(time) < const Duration(minutes: 5);
 
 /// A dot and a few words saying how current the prices are.
 class FinanceFreshness extends StatelessWidget {
@@ -101,8 +102,7 @@ class FinanceFreshness extends StatelessWidget {
     } else if (time == null) {
       text = LocaleKeys.dashboard_money_reading.tr();
     } else if (live) {
-      text =
-          '${LocaleKeys.dashboard_money_live.tr()} · ${financeAgo(time)}';
+      text = '${LocaleKeys.dashboard_money_live.tr()} · ${financeAgo(time)}';
     } else {
       text =
           '${LocaleKeys.dashboard_money_lastKnown.tr()} · ${financeAgo(time)}';
@@ -226,12 +226,13 @@ Color balanceCategoryColor(BalanceCategory category, FinanceColors colors) {
   };
 }
 
-String balanceLiquidityLabel(BalanceLiquidity liquidity) =>
-    switch (liquidity) {
-      BalanceLiquidity.liquid => LocaleKeys.dashboard_money_liquidityLiquid.tr(),
+String balanceLiquidityLabel(BalanceLiquidity liquidity) => switch (liquidity) {
+      BalanceLiquidity.liquid =>
+        LocaleKeys.dashboard_money_liquidityLiquid.tr(),
       BalanceLiquidity.moderate =>
         LocaleKeys.dashboard_money_liquidityModerate.tr(),
-      BalanceLiquidity.locked => LocaleKeys.dashboard_money_liquidityLocked.tr(),
+      BalanceLiquidity.locked =>
+        LocaleKeys.dashboard_money_liquidityLocked.tr(),
     };
 
 // ------------------------------------------------------------ configuration
@@ -355,8 +356,9 @@ List<String> financeStringList(Object? value) {
 
 /// The colour of a holding or category by its index, shared by every widget
 /// that draws the same breakdown.
-Color sliceColor(FinanceColors colors, int index, {bool other = false}) =>
-    other ? colors.palette.textMuted.withValues(alpha: 0.55) : colors.hue(index);
+Color sliceColor(FinanceColors colors, int index, {bool other = false}) => other
+    ? colors.palette.textMuted.withValues(alpha: 0.55)
+    : colors.hue(index);
 
 /// Room enough for [count] columns of at least [minimum] pixels.
 int financeColumnsFor(double width, double minimum, {int maximum = 6}) =>

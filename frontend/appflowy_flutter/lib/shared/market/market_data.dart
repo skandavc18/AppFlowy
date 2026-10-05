@@ -47,7 +47,8 @@ class MarketQuote {
         if (price != null) 'price': price,
         if (previousClose != null) 'previousClose': previousClose,
         if (closes.isNotEmpty) 'closes': closes,
-        if (updatedAt != null) 'updatedAt': updatedAt!.toUtc().toIso8601String(),
+        if (updatedAt != null)
+          'updatedAt': updatedAt!.toUtc().toIso8601String(),
       };
 
   static MarketQuote? fromJson(Object? json) {

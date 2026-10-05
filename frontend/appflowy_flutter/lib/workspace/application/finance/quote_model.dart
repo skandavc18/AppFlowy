@@ -138,7 +138,8 @@ List<QuoteEntry> readQuotes(
     settings: settings,
   );
   final sheet = FinanceSheet(table);
-  final textColumn = columns.has(QuoteRoles.text) ? columns[QuoteRoles.text] : 0;
+  final textColumn =
+      columns.has(QuoteRoles.text) ? columns[QuoteRoles.text] : 0;
   final quotes = <QuoteEntry>[];
   for (var row = 0; row < sheet.length; row++) {
     final text = sheet.text(row, textColumn);
@@ -167,9 +168,9 @@ int quoteOfTheDay(int count, DateTime day, {int salt = 0}) {
   if (count <= 0) {
     return -1;
   }
-  final days = DateTime.utc(day.year, day.month, day.day)
-          .millisecondsSinceEpoch ~/
-      Duration.millisecondsPerDay;
+  final days =
+      DateTime.utc(day.year, day.month, day.day).millisecondsSinceEpoch ~/
+          Duration.millisecondsPerDay;
   // Walk the list in a fixed shuffled order rather than hashing each day,
   // so every quote comes round once before any comes round twice.
   final cycle = days ~/ count;

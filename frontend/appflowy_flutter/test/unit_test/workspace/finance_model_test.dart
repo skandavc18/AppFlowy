@@ -139,7 +139,8 @@ void main() {
       );
       expect(slices.length, 4);
       expect(slices.last.isOther, isTrue);
-      expect(slices.fold<double>(0, (sum, s) => sum + s.share), closeTo(1, 1e-9));
+      expect(
+          slices.fold<double>(0, (sum, s) => sum + s.share), closeTo(1, 1e-9));
     });
 
     test('annualises a return from dated cash flows', () {
@@ -202,7 +203,9 @@ void main() {
       ]);
       expect(readSeries(journal).last?.value, 1050);
       expect(
-        readSeries(journal, valueRole: SeriesRoles.pnl).points.map((p) => p.value),
+        readSeries(journal, valueRole: SeriesRoles.pnl)
+            .points
+            .map((p) => p.value),
         [100, -50],
       );
       expect(
@@ -307,12 +310,90 @@ void main() {
         'Status',
         'Margin',
       ],
-      ['Condor', 'NIFTY', 'CE', 'Sell', '22800', '65', '42.5', '30', '', day(expiry), 'Open', '110000'],
-      ['Condor', 'NIFTY', 'CE', 'Buy', '23000', '65', '16.8', '10', '', day(expiry), 'Open', ''],
-      ['Condor', 'NIFTY', 'PE', 'Sell', '22000', '65', '38.2', '28', '', day(expiry), 'Open', ''],
-      ['Condor', 'NIFTY', 'PE', 'Buy', '21800', '65', '14.6', '9', '', day(expiry), 'Open', ''],
-      ['Straddle', 'NIFTY', 'CE', 'Sell', '22500', '65', '118', '', '64', day(expiry), 'Closed', ''],
-      ['Straddle', 'NIFTY', 'PE', 'Sell', '22500', '65', '104', '', '131', day(expiry), 'Closed', ''],
+      [
+        'Condor',
+        'NIFTY',
+        'CE',
+        'Sell',
+        '22800',
+        '65',
+        '42.5',
+        '30',
+        '',
+        day(expiry),
+        'Open',
+        '110000'
+      ],
+      [
+        'Condor',
+        'NIFTY',
+        'CE',
+        'Buy',
+        '23000',
+        '65',
+        '16.8',
+        '10',
+        '',
+        day(expiry),
+        'Open',
+        ''
+      ],
+      [
+        'Condor',
+        'NIFTY',
+        'PE',
+        'Sell',
+        '22000',
+        '65',
+        '38.2',
+        '28',
+        '',
+        day(expiry),
+        'Open',
+        ''
+      ],
+      [
+        'Condor',
+        'NIFTY',
+        'PE',
+        'Buy',
+        '21800',
+        '65',
+        '14.6',
+        '9',
+        '',
+        day(expiry),
+        'Open',
+        ''
+      ],
+      [
+        'Straddle',
+        'NIFTY',
+        'CE',
+        'Sell',
+        '22500',
+        '65',
+        '118',
+        '',
+        '64',
+        day(expiry),
+        'Closed',
+        ''
+      ],
+      [
+        'Straddle',
+        'NIFTY',
+        'PE',
+        'Sell',
+        '22500',
+        '65',
+        '104',
+        '',
+        '131',
+        day(expiry),
+        'Closed',
+        ''
+      ],
       ['Half typed', 'NIFTY', '', 'Buy', '', '', '', '', '', '', '', ''],
     ]);
 
@@ -434,13 +515,31 @@ void main() {
 
   group('a balance sheet', () {
     final table = _table([
-      ['Name', 'Type', 'Category', 'Value', 'Invested', 'Borrowed', 'Rate %', 'EMI'],
+      [
+        'Name',
+        'Type',
+        'Category',
+        'Value',
+        'Invested',
+        'Borrowed',
+        'Rate %',
+        'EMI'
+      ],
       ['SGB 2028', 'Asset', '', '285000', '168000', '', '2.5', ''],
       ['Apartment', 'Asset', 'Real estate', '9500000', '6200000', '', '', ''],
       ['EPF', 'Asset', 'Provident fund', '1460000', '', '', '8.25', ''],
       ['NPS Tier I', 'Asset', 'NPS', '840000', '620000', '', '', ''],
       ['Savings', 'Asset', 'Cash & bank', '340000', '', '', '3', ''],
-      ['HDFC home loan', 'Liability', '', '4850000', '', '6000000', '8.5', '52068'],
+      [
+        'HDFC home loan',
+        'Liability',
+        '',
+        '4850000',
+        '',
+        '6000000',
+        '8.5',
+        '52068'
+      ],
       ['Card', 'Liability', 'Credit card', '38000', '', '', '42', ''],
     ]);
 
@@ -467,7 +566,8 @@ void main() {
       expect(summary.liquid, 340000);
       expect(summary.monthlyEmi, 52068);
       expect(summary.debtRatio, closeTo(4888000 / 12425000 * 100, 1e-9));
-      expect(summary.assetCategories.first.category, BalanceCategory.realEstate);
+      expect(
+          summary.assetCategories.first.category, BalanceCategory.realEstate);
     });
 
     test('works out when a loan ends', () {
@@ -493,7 +593,13 @@ void main() {
       final quotes = readQuotes(
         _table([
           ['Quote', 'Who said it', 'Where from', 'Theme', 'Favourite'],
-          ['“Simplify, simplify.”', 'Thoreau', 'Walden', 'Life, Stillness', 'Yes'],
+          [
+            '“Simplify, simplify.”',
+            'Thoreau',
+            'Walden',
+            'Life, Stillness',
+            'Yes'
+          ],
           ['', 'Nobody', '', '', 'No'],
         ]),
       );

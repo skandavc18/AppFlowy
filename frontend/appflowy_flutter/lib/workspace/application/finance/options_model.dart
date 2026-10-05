@@ -262,7 +262,8 @@ List<OptionLeg> readOptionLegs(
     quantity = quantity.abs();
     final exit = sheet.number(row, columns[OptionRoles.exit]);
     final statusText = sheet.text(row, columns[OptionRoles.status]);
-    final closed = statusText.isEmpty ? exit != null : _closedStatus(statusText);
+    final closed =
+        statusText.isEmpty ? exit != null : _closedStatus(statusText);
     legs.add(
       OptionLeg(
         strategy: sheet.text(row, columns[OptionRoles.strategy]),
@@ -596,9 +597,7 @@ class BlackScholes {
     double rate = optionRiskFreeRate,
   }) {
     if (years <= 0 || volatility <= 0 || spot <= 0 || strike <= 0) {
-      return call
-          ? math.max(spot - strike, 0)
-          : math.max(strike - spot, 0);
+      return call ? math.max(spot - strike, 0) : math.max(strike - spot, 0);
     }
     final root = math.sqrt(years);
     final d1 = (math.log(spot / strike) +
@@ -826,18 +825,16 @@ class StrategyAnalysis {
     }
     final spread = sigma * math.sqrt(years);
     final drift = (optionRiskFreeRate - sigma * sigma / 2) * years;
-    double below(double price) => price <= 0
-        ? 0
-        : normalCdf((math.log(price / spot) - drift) / spread);
+    double below(double price) =>
+        price <= 0 ? 0 : normalCdf((math.log(price / spot) - drift) / spread);
 
     final edges = [0.0, ...bounds.breakevens, double.infinity];
     var chance = 0.0;
     for (var index = 0; index < edges.length - 1; index++) {
       final low = edges[index];
       final high = edges[index + 1];
-      final probe = high.isInfinite
-          ? math.max(low * 1.5, low + 1)
-          : (low + high) / 2;
+      final probe =
+          high.isInfinite ? math.max(low * 1.5, low + 1) : (low + high) / 2;
       if (strategy.payoffAt(probe) > 0) {
         chance += (high.isInfinite ? 1 : below(high)) - below(low);
       }

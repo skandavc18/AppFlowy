@@ -34,8 +34,9 @@ String _ago(int days) {
   return _day(DateTime(today.year, today.month, today.day - days));
 }
 
-String _amount(num value) =>
-    value == value.roundToDouble() ? '${value.round()}' : value.toStringAsFixed(2);
+String _amount(num value) => value == value.roundToDouble()
+    ? '${value.round()}'
+    : value.toStringAsFixed(2);
 
 DashboardWidgetSpec _quote(
   String symbol, {
@@ -140,13 +141,29 @@ TemplateTable _holdingsTable() {
         ('Reliance Industries', 'RELIANCE.NS', energy, 40, 1185.5, 1167.7, 540),
         ('HDFC Bank', 'HDFCBANK.NS', banking, 120, 612.4, 721.2, 720),
         ('Infosys', 'INFY.NS', technology, 60, 1420.0, 1035.0, 610),
-        ('Tata Consultancy Services', 'TCS.NS', technology, 25, 2950.0, 2075.0, 480),
+        (
+          'Tata Consultancy Services',
+          'TCS.NS',
+          technology,
+          25,
+          2950.0,
+          2075.0,
+          480
+        ),
         ('ICICI Bank', 'ICICIBANK.NS', banking, 70, 988.0, 1310.6, 820),
         ('Bharti Airtel', 'BHARTIARTL.NS', telecom, 45, 1180.0, 1741.1, 700),
         ('ITC', 'ITC.NS', consumer, 300, 289.5, 255.9, 380),
         ('Maruti Suzuki', 'MARUTI.NS', auto, 6, 10450.0, 11386.0, 400),
         ('Sun Pharma', 'SUNPHARMA.NS', pharma, 30, 1520.0, 1801.0, 560),
-        ('Nifty 50 index fund', 'NIFTYBEES.NS', indexFund, 400, 236.8, 257.25, 900),
+        (
+          'Nifty 50 index fund',
+          'NIFTYBEES.NS',
+          indexFund,
+          400,
+          236.8,
+          257.25,
+          900
+        ),
       ])
         [
           name,
@@ -164,7 +181,8 @@ TemplateTable _holdingsTable() {
 
 /// The market's last known price for [symbol], when the Stocks extension has
 /// one, so a new portfolio opens at today's prices rather than old ones.
-double? _marketPrice(String symbol) => MarketData.provider?.quote(symbol)?.price;
+double? _marketPrice(String symbol) =>
+    MarketData.provider?.quote(symbol)?.price;
 
 /// A year of month-ends: what went in, and what it was worth.
 TemplateTable _valueHistoryTable() {
@@ -243,7 +261,14 @@ DashboardDocument _stocksBoard(TemplateContext created) {
           h: 5,
           title: LocaleKeys.templates_text_indices.tr(),
           settings: const {
-            'symbols': ['^NSEI', '^NSEBANK', '^BSESN', '^CNXIT', 'GC=F', 'INR=X'],
+            'symbols': [
+              '^NSEI',
+              '^NSEBANK',
+              '^BSESN',
+              '^CNXIT',
+              'GC=F',
+              'INR=X'
+            ],
           },
         ),
       ]),
@@ -445,16 +470,166 @@ TemplateTable _legsTable() {
       TemplateColumn.text(LocaleKeys.templates_column_notes.tr()),
     ],
     rows: [
-      [condor, 'NIFTY', 'CE', sell, _strike(nifty, 400, 50), '65', '42.5', '31.4', '', _day(weekly), open, '110000', _ago(4), ''],
-      [condor, 'NIFTY', 'CE', buy, _strike(nifty, 600, 50), '65', '16.8', '11.2', '', _day(weekly), open, '', _ago(4), ''],
-      [condor, 'NIFTY', 'PE', sell, _strike(nifty, -400, 50), '65', '38.2', '29.5', '', _day(weekly), open, '', _ago(4), ''],
-      [condor, 'NIFTY', 'PE', buy, _strike(nifty, -600, 50), '65', '14.6', '10.1', '', _day(weekly), open, '', _ago(4), ''],
-      [putSpread, 'BANKNIFTY', 'PE', sell, _strike(bank, -500, 100), '30', '412', '356', '', _day(monthly), open, '95000', _ago(6), ''],
-      [putSpread, 'BANKNIFTY', 'PE', buy, _strike(bank, -1000, 100), '30', '268', '231', '', _day(monthly), open, '', _ago(6), ''],
-      [callSpread, 'NIFTY', 'CE', sell, _strike(nifty, 800, 50), '65', '96', '84.5', '', _day(monthly), open, '62000', _ago(2), ''],
-      [callSpread, 'NIFTY', 'CE', buy, _strike(nifty, 1100, 50), '65', '48', '41', '', _day(monthly), open, '', _ago(2), ''],
-      [straddle, 'NIFTY', 'CE', sell, _strike(nifty, 0, 50), '65', '118', '', '64', _day(lastWeek), closed, '', _ago(9), ''],
-      [straddle, 'NIFTY', 'PE', sell, _strike(nifty, 0, 50), '65', '104', '', '131', _day(lastWeek), closed, '', _ago(9), ''],
+      [
+        condor,
+        'NIFTY',
+        'CE',
+        sell,
+        _strike(nifty, 400, 50),
+        '65',
+        '42.5',
+        '31.4',
+        '',
+        _day(weekly),
+        open,
+        '110000',
+        _ago(4),
+        ''
+      ],
+      [
+        condor,
+        'NIFTY',
+        'CE',
+        buy,
+        _strike(nifty, 600, 50),
+        '65',
+        '16.8',
+        '11.2',
+        '',
+        _day(weekly),
+        open,
+        '',
+        _ago(4),
+        ''
+      ],
+      [
+        condor,
+        'NIFTY',
+        'PE',
+        sell,
+        _strike(nifty, -400, 50),
+        '65',
+        '38.2',
+        '29.5',
+        '',
+        _day(weekly),
+        open,
+        '',
+        _ago(4),
+        ''
+      ],
+      [
+        condor,
+        'NIFTY',
+        'PE',
+        buy,
+        _strike(nifty, -600, 50),
+        '65',
+        '14.6',
+        '10.1',
+        '',
+        _day(weekly),
+        open,
+        '',
+        _ago(4),
+        ''
+      ],
+      [
+        putSpread,
+        'BANKNIFTY',
+        'PE',
+        sell,
+        _strike(bank, -500, 100),
+        '30',
+        '412',
+        '356',
+        '',
+        _day(monthly),
+        open,
+        '95000',
+        _ago(6),
+        ''
+      ],
+      [
+        putSpread,
+        'BANKNIFTY',
+        'PE',
+        buy,
+        _strike(bank, -1000, 100),
+        '30',
+        '268',
+        '231',
+        '',
+        _day(monthly),
+        open,
+        '',
+        _ago(6),
+        ''
+      ],
+      [
+        callSpread,
+        'NIFTY',
+        'CE',
+        sell,
+        _strike(nifty, 800, 50),
+        '65',
+        '96',
+        '84.5',
+        '',
+        _day(monthly),
+        open,
+        '62000',
+        _ago(2),
+        ''
+      ],
+      [
+        callSpread,
+        'NIFTY',
+        'CE',
+        buy,
+        _strike(nifty, 1100, 50),
+        '65',
+        '48',
+        '41',
+        '',
+        _day(monthly),
+        open,
+        '',
+        _ago(2),
+        ''
+      ],
+      [
+        straddle,
+        'NIFTY',
+        'CE',
+        sell,
+        _strike(nifty, 0, 50),
+        '65',
+        '118',
+        '',
+        '64',
+        _day(lastWeek),
+        closed,
+        '',
+        _ago(9),
+        ''
+      ],
+      [
+        straddle,
+        'NIFTY',
+        'PE',
+        sell,
+        _strike(nifty, 0, 50),
+        '65',
+        '104',
+        '',
+        '131',
+        _day(lastWeek),
+        closed,
+        '',
+        _ago(9),
+        ''
+      ],
     ],
   );
 }
@@ -719,19 +894,162 @@ TemplateTable _balanceSheetTable() {
     ],
     rows: [
       // Name, type, category, value, invested, borrowed, rate, EMI, updated.
-      ['Gold jewellery', asset, gold, '620000', '410000', '', '', '', _ago(12), '22 carat, 52 g'],
-      ['Sovereign Gold Bonds', asset, gold, '285000', '168000', '', '2.5', '', _ago(12), 'Tax-free at maturity'],
-      ['Apartment in Pune', asset, realEstate, '9500000', '6200000', '', '', '', _ago(40), '2 BHK, self-occupied'],
-      ['Employee Provident Fund', asset, providentFund, '1460000', '', '', '8.25', '', _ago(20), ''],
-      ['Public Provident Fund', asset, providentFund, '610000', '480000', '', '7.1', '', _ago(20), 'Matures in 2031'],
-      ['NPS Tier I', asset, nps, '840000', '620000', '', '', '', _ago(9), '75% equity'],
-      ['Flexi-cap mutual funds', asset, mutualFunds, '1275000', '960000', '', '', '', _ago(3), 'Monthly SIP'],
-      ['Direct equity', asset, stocks, '930000', '690000', '', '', '', _ago(1), ''],
-      ['Fixed deposits', asset, deposits, '500000', '500000', '', '7.25', '', _ago(30), ''],
-      ['Savings account', asset, cash, '340000', '', '', '3', '', _ago(1), 'Emergency fund'],
-      ['Home loan', liability, homeLoan, '4850000', '', '6000000', '8.5', '52068', _ago(5), ''],
-      ['Car loan', liability, vehicleLoan, '420000', '', '800000', '9.2', '16700', _ago(5), ''],
-      ['Credit card', liability, creditCard, '38000', '', '', '42', '', _ago(2), 'Due on the 18th'],
+      [
+        'Gold jewellery',
+        asset,
+        gold,
+        '620000',
+        '410000',
+        '',
+        '',
+        '',
+        _ago(12),
+        '22 carat, 52 g'
+      ],
+      [
+        'Sovereign Gold Bonds',
+        asset,
+        gold,
+        '285000',
+        '168000',
+        '',
+        '2.5',
+        '',
+        _ago(12),
+        'Tax-free at maturity'
+      ],
+      [
+        'Apartment in Pune',
+        asset,
+        realEstate,
+        '9500000',
+        '6200000',
+        '',
+        '',
+        '',
+        _ago(40),
+        '2 BHK, self-occupied'
+      ],
+      [
+        'Employee Provident Fund',
+        asset,
+        providentFund,
+        '1460000',
+        '',
+        '',
+        '8.25',
+        '',
+        _ago(20),
+        ''
+      ],
+      [
+        'Public Provident Fund',
+        asset,
+        providentFund,
+        '610000',
+        '480000',
+        '',
+        '7.1',
+        '',
+        _ago(20),
+        'Matures in 2031'
+      ],
+      [
+        'NPS Tier I',
+        asset,
+        nps,
+        '840000',
+        '620000',
+        '',
+        '',
+        '',
+        _ago(9),
+        '75% equity'
+      ],
+      [
+        'Flexi-cap mutual funds',
+        asset,
+        mutualFunds,
+        '1275000',
+        '960000',
+        '',
+        '',
+        '',
+        _ago(3),
+        'Monthly SIP'
+      ],
+      [
+        'Direct equity',
+        asset,
+        stocks,
+        '930000',
+        '690000',
+        '',
+        '',
+        '',
+        _ago(1),
+        ''
+      ],
+      [
+        'Fixed deposits',
+        asset,
+        deposits,
+        '500000',
+        '500000',
+        '',
+        '7.25',
+        '',
+        _ago(30),
+        ''
+      ],
+      [
+        'Savings account',
+        asset,
+        cash,
+        '340000',
+        '',
+        '',
+        '3',
+        '',
+        _ago(1),
+        'Emergency fund'
+      ],
+      [
+        'Home loan',
+        liability,
+        homeLoan,
+        '4850000',
+        '',
+        '6000000',
+        '8.5',
+        '52068',
+        _ago(5),
+        ''
+      ],
+      [
+        'Car loan',
+        liability,
+        vehicleLoan,
+        '420000',
+        '',
+        '800000',
+        '9.2',
+        '16700',
+        _ago(5),
+        ''
+      ],
+      [
+        'Credit card',
+        liability,
+        creditCard,
+        '38000',
+        '',
+        '',
+        '42',
+        '',
+        _ago(2),
+        'Due on the 18th'
+      ],
     ],
   );
 }
@@ -771,7 +1089,8 @@ TemplateTable _netWorthHistoryTable() {
           // Loans fall a little every month as EMIs are paid.
           final owed = index == assets.length - 1
               ? 5308000
-              : (5640000 - index * 27000 + math.sin(index * 1.3) * 9000).round();
+              : (5640000 - index * 27000 + math.sin(index * 1.3) * 9000)
+                  .round();
           return [
             DateFormat('MMM yyyy').format(date),
             _day(date),

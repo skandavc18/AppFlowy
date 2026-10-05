@@ -179,7 +179,9 @@ void main() {
     test('refuses an empty answer', () {
       expect(
         () => parseNseChain(
-          {'records': {'data': []}},
+          {
+            'records': {'data': []}
+          },
           underlying: 'NIFTY',
           expiry: DateTime(2026, 10, 6),
         ),
@@ -252,13 +254,17 @@ void main() {
     test('reads a chain for the nearest expiry, then a chosen one', () async {
       provider.lease().want(
         symbols: const {},
-        chains: {ChainRequest('nifty'), ChainRequest('NIFTY', DateTime(2026, 10, 13))},
+        chains: {
+          ChainRequest('nifty'),
+          ChainRequest('NIFTY', DateTime(2026, 10, 13))
+        },
       );
       await provider.refresh();
       final nearest = provider.chain(ChainRequest('NIFTY'));
       expect(nearest?.expiry, DateTime(2026, 10, 6));
       expect(nearest?.rows, isNotEmpty);
-      final chosen = provider.chain(ChainRequest('NIFTY', DateTime(2026, 10, 13)));
+      final chosen =
+          provider.chain(ChainRequest('NIFTY', DateTime(2026, 10, 13)));
       expect(chosen?.expiry, DateTime(2026, 10, 13));
       expect(provider.expiries('NIFTY').length, 3);
       // The expiry list is read once and reused.

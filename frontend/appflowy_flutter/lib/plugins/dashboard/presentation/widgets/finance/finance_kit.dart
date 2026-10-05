@@ -94,7 +94,8 @@ class FinanceColors {
   }
 
   /// A soft coloured lift under something in [color].
-  List<BoxShadow> glow(Color color, {double strength = 1, bool lifted = false}) {
+  List<BoxShadow> glow(Color color,
+      {double strength = 1, bool lifted = false}) {
     if (isDark) {
       return [
         BoxShadow(
@@ -113,7 +114,8 @@ class FinanceColors {
     final tint = isPaper ? 0.6 : 1.0;
     return [
       BoxShadow(
-        color: color.withValues(alpha: (lifted ? 0.26 : 0.16) * strength * tint),
+        color:
+            color.withValues(alpha: (lifted ? 0.26 : 0.16) * strength * tint),
         blurRadius: lifted ? 22 : 14,
         spreadRadius: -6,
         offset: Offset(0, lifted ? 10 : 6),
@@ -697,9 +699,8 @@ class _SegmentState extends State<_Segment> {
     final palette = widget.palette;
     final selected = widget.selected;
     return MouseRegion(
-      cursor: widget.onTap == null
-          ? MouseCursor.defer
-          : SystemMouseCursors.click,
+      cursor:
+          widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
@@ -859,9 +860,8 @@ class _FinanceShimmerState extends State<FinanceShimmer>
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
-    final base = palette.isDark
-        ? Colors.white.withValues(alpha: 0.07)
-        : palette.sunken;
+    final base =
+        palette.isDark ? Colors.white.withValues(alpha: 0.07) : palette.sunken;
     final light = palette.isDark
         ? Colors.white.withValues(alpha: 0.14)
         : Color.alphaBlend(Colors.white.withValues(alpha: 0.7), palette.sunken);
@@ -1025,9 +1025,7 @@ class _FinanceHoverState extends State<FinanceHover> {
     final child = widget.builder(context, _hovered);
     return MouseRegion(
       cursor: widget.cursor ??
-          (widget.onTap == null
-              ? MouseCursor.defer
-              : SystemMouseCursors.click),
+          (widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click),
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: widget.onTap == null

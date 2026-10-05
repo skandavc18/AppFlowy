@@ -40,7 +40,8 @@ Widget _pickTable(
       shape: shape,
       icon: icon,
       message: LocaleKeys.dashboard_money_needsDates.tr(),
-      action: data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
+      action:
+          data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
       onAction: () => unawaited(financePickTable(data)),
       color: data.tone.strong,
     );
@@ -164,7 +165,8 @@ class _Trend extends StatelessWidget {
       data: data,
       builder: (context, feed) {
         if (!feed.bound) {
-          return _pickTable(data, FinanceGhostShape.line, Icons.show_chart_rounded);
+          return _pickTable(
+              data, FinanceGhostShape.line, Icons.show_chart_rounded);
         }
         if (feed.loading) {
           return _loading(data, context);
@@ -177,7 +179,8 @@ class _Trend extends StatelessWidget {
           settings: settings,
         );
         if (series.length < 2) {
-          return _pickTable(data, FinanceGhostShape.line, Icons.show_chart_rounded);
+          return _pickTable(
+              data, FinanceGhostShape.line, Icons.show_chart_rounded);
         }
         final span = _rangeSpan(_rangeOf(data));
         // A history shown whole is counted from its start; a range only
@@ -193,7 +196,11 @@ class _Trend extends StatelessWidget {
           }
         }
         final money = financeMoney(data);
-        final roles = [SeriesRoles.date, SeriesRoles.value, SeriesRoles.baseline];
+        final roles = [
+          SeriesRoles.date,
+          SeriesRoles.value,
+          SeriesRoles.baseline
+        ];
         final valueName =
             _columnName(feed.table, roles, SeriesRoles.value, settings);
         final baseName =
@@ -208,9 +215,7 @@ class _Trend extends StatelessWidget {
         final change = paidIn?.gain ?? series.change ?? 0;
         final changePercent = paidIn?.percent ?? series.changePercent;
         final drawdown = paidIn?.drawdown ?? series.maxDrawdown;
-        final cagr = paidIn == null
-            ? _annualized(series)
-            : paidIn.annualized;
+        final cagr = paidIn == null ? _annualized(series) : paidIn.annualized;
         final timeSpan = last.time.difference(series.first!.time);
         final lines = [
           TrendLine(
@@ -409,7 +414,8 @@ List<_Part> _partsOf(
   FinanceColors colors,
 ) {
   final other = LocaleKeys.dashboard_money_otherSlice.tr();
-  final explicit = (settings[FinanceRole.sector.key] as String? ?? '').isNotEmpty;
+  final explicit =
+      (settings[FinanceRole.sector.key] as String? ?? '').isNotEmpty;
   final balance = FinanceColumns.resolve(
     table,
     BalanceRoles.all,
@@ -528,8 +534,9 @@ class _AllocationState extends State<_Allocation> {
             shape: FinanceGhostShape.donut,
             icon: Icons.donut_large_rounded,
             message: LocaleKeys.dashboard_money_allocationHint.tr(),
-            action:
-                data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
+            action: data.isTypable
+                ? LocaleKeys.dashboard_money_chooseTable.tr()
+                : null,
             onAction: () => unawaited(financePickTable(data)),
             color: data.tone.strong,
           );
@@ -920,14 +927,16 @@ class _PnlCalendarState extends State<_PnlCalendar> {
       data: data,
       builder: (context, feed) {
         if (!feed.bound) {
-          return _pickTable(data, FinanceGhostShape.grid, Icons.calendar_month_rounded);
+          return _pickTable(
+              data, FinanceGhostShape.grid, Icons.calendar_month_rounded);
         }
         if (feed.loading) {
           return _loading(data, context);
         }
         final daily = _dailyPnl(feed.table, data.spec.settings);
         if (daily.isEmpty) {
-          return _pickTable(data, FinanceGhostShape.grid, Icons.calendar_month_rounded);
+          return _pickTable(
+              data, FinanceGhostShape.grid, Icons.calendar_month_rounded);
         }
         final money = financeMoney(data);
         final latest = daily.last!.time;
@@ -939,7 +948,8 @@ class _PnlCalendarState extends State<_PnlCalendar> {
         var green = 0;
         var red = 0;
         for (final point in daily.points) {
-          if (point.time.year == month.year && point.time.month == month.month) {
+          if (point.time.year == month.year &&
+              point.time.month == month.month) {
             total += point.value;
             if (point.value > 0) {
               green++;
@@ -1119,14 +1129,16 @@ class _PnlStats extends StatelessWidget {
       data: data,
       builder: (context, feed) {
         if (!feed.bound) {
-          return _pickTable(data, FinanceGhostShape.bars, Icons.insights_rounded);
+          return _pickTable(
+              data, FinanceGhostShape.bars, Icons.insights_rounded);
         }
         if (feed.loading) {
           return _loading(data, context);
         }
         final stats = PnlStats.of(_dailyPnl(feed.table, data.spec.settings));
         if (stats.isEmpty) {
-          return _pickTable(data, FinanceGhostShape.bars, Icons.insights_rounded);
+          return _pickTable(
+              data, FinanceGhostShape.bars, Icons.insights_rounded);
         }
         final money = financeMoney(data);
         final winRate = stats.winRate ?? 0;
@@ -1163,7 +1175,8 @@ class _PnlStats extends StatelessWidget {
             LocaleKeys.dashboard_money_streak.tr(),
             streak >= 0
                 ? LocaleKeys.dashboard_money_winStreak.tr(args: ['$streak'])
-                : LocaleKeys.dashboard_money_lossStreak.tr(args: ['${-streak}']),
+                : LocaleKeys.dashboard_money_lossStreak
+                    .tr(args: ['${-streak}']),
             streak >= 0 ? colors.gain : colors.loss,
           ),
         ];
@@ -1202,7 +1215,8 @@ class _PnlStats extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              formatPercent(winRate, decimals: 0, signed: false),
+                              formatPercent(winRate,
+                                  decimals: 0, signed: false),
                               style: financeNumber(
                                 palette.textPrimary,
                                 size: 22,
@@ -1211,7 +1225,8 @@ class _PnlStats extends StatelessWidget {
                             ),
                             Text(
                               LocaleKeys.dashboard_money_winRate.tr(),
-                              style: financeLabel(palette.textMuted, size: 10.5),
+                              style:
+                                  financeLabel(palette.textMuted, size: 10.5),
                             ),
                             Text(
                               LocaleKeys.dashboard_money_tradingDays.tr(
@@ -1240,10 +1255,13 @@ class _PnlStats extends StatelessWidget {
                                   Expanded(
                                     child: row * columns + column < shown
                                         ? FinanceStat(
-                                            label: tiles[row * columns + column].$1,
-                                            value: tiles[row * columns + column].$2,
+                                            label: tiles[row * columns + column]
+                                                .$1,
+                                            value: tiles[row * columns + column]
+                                                .$2,
                                             valueColor:
-                                                tiles[row * columns + column].$3,
+                                                tiles[row * columns + column]
+                                                    .$3,
                                             palette: palette,
                                             size: 14,
                                           )

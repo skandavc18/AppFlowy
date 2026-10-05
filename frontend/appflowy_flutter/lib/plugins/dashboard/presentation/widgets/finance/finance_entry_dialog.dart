@@ -240,9 +240,8 @@ class _FinanceEntryDialogState extends State<_FinanceEntryDialog> {
                     DashboardButton(
                       label: LocaleKeys.dashboard_money_cancel.tr(),
                       palette: palette,
-                      onPressed: _saving
-                          ? null
-                          : () => Navigator.of(context).pop(),
+                      onPressed:
+                          _saving ? null : () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 8),
                     DashboardButton(
@@ -376,7 +375,8 @@ class _EntryFieldState extends State<_EntryField> {
                   final now = DateTime.now();
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: DateTime.tryParse(widget.controller.text) ?? now,
+                    initialDate:
+                        DateTime.tryParse(widget.controller.text) ?? now,
                     firstDate: DateTime(1950),
                     lastDate: DateTime(now.year + 30),
                   );

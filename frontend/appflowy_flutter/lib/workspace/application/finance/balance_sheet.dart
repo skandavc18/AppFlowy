@@ -385,8 +385,8 @@ List<BalanceItem> readBalanceItems(
     }
     final sideText = sheet.text(row, columns[BalanceRoles.side]).toLowerCase();
     final categoryText = sheet.text(row, columns[BalanceRoles.category]);
-    final named = matchBalanceCategory(categoryText) ??
-        matchBalanceCategory(name);
+    final named =
+        matchBalanceCategory(categoryText) ?? matchBalanceCategory(name);
     final BalanceSide side;
     if (sideText.isNotEmpty) {
       side = _liabilityWords.any(sideText.contains) ||

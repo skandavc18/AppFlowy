@@ -35,7 +35,8 @@ Widget _pickSheet(DashboardWidgetContext data, FinanceGhostShape shape) =>
       shape: shape,
       icon: Icons.savings_rounded,
       message: LocaleKeys.dashboard_money_pickBalanceSheet.tr(),
-      action: data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
+      action:
+          data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
       onAction: () => unawaited(financePickTable(data)),
       color: data.tone.strong,
     );
@@ -199,13 +200,15 @@ class _NetWorth extends StatelessWidget {
                     _Dot(
                       color: worthColor,
                       label: LocaleKeys.dashboard_money_assets.tr(),
-                      value: _pairFit(money, summary.assets, summary.liabilities),
+                      value:
+                          _pairFit(money, summary.assets, summary.liabilities),
                       palette: palette,
                     ),
                     _Dot(
                       color: debtColor,
                       label: LocaleKeys.dashboard_money_liabilities.tr(),
-                      value: _pairFit(money, summary.liabilities, summary.assets),
+                      value:
+                          _pairFit(money, summary.liabilities, summary.assets),
                       palette: palette,
                     ),
                   ],
@@ -261,9 +264,8 @@ class _NetWorth extends StatelessWidget {
                           signed: false,
                         ),
                         palette: palette,
-                        color: (summary.debtRatio ?? 0) > 40
-                            ? colors.loss
-                            : null,
+                        color:
+                            (summary.debtRatio ?? 0) > 40 ? colors.loss : null,
                       ),
                       if (summary.monthlyEmi > 0)
                         _Pill(
@@ -617,8 +619,7 @@ class _BalanceSheet extends StatelessWidget {
         return LayoutBuilder(
           builder: (context, constraints) {
             final columns = financeColumnsFor(constraints.maxWidth, 215);
-            final width =
-                (constraints.maxWidth - (columns - 1) * 12) / columns;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
             return Column(
               children: [
                 Expanded(
@@ -635,7 +636,9 @@ class _BalanceSheet extends StatelessWidget {
                             spacing: 12,
                             runSpacing: 12,
                             children: [
-                              for (var index = 0; index < totals.length; index++)
+                              for (var index = 0;
+                                  index < totals.length;
+                                  index++)
                                 SizedBox(
                                   width: width,
                                   child: FinanceEntrance(
@@ -1070,8 +1073,7 @@ void _addEntry(
           initial: DateFormat('yyyy-MM-dd').format(DateTime.now()),
         ),
       ],
-      onSave: (values) =>
-          financeAddRow(data, table, BalanceRoles.all, values),
+      onSave: (values) => financeAddRow(data, table, BalanceRoles.all, values),
     ),
   );
 }
@@ -1163,8 +1165,7 @@ class _Loans extends StatelessWidget {
               280,
               maximum: 4,
             );
-            final width =
-                (constraints.maxWidth - (columns - 1) * 12) / columns;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1332,7 +1333,8 @@ class _LoanCard extends StatelessWidget {
                     child: Text(
                       repaid == null
                           ? '—'
-                          : formatPercent(repaid * 100, decimals: 0, signed: false),
+                          : formatPercent(repaid * 100,
+                              decimals: 0, signed: false),
                       style: financeNumber(palette.textPrimary),
                     ),
                   ),
@@ -1353,7 +1355,8 @@ class _LoanCard extends StatelessWidget {
                             if (loan.emi != null)
                               TextSpan(
                                 text: LocaleKeys.dashboard_money_emi.tr(),
-                                style: financeLabel(palette.textMuted, size: 11),
+                                style:
+                                    financeLabel(palette.textMuted, size: 11),
                               ),
                             if (loan.rate != null)
                               TextSpan(
@@ -1387,7 +1390,9 @@ class _LoanCard extends StatelessWidget {
                       if (outlook.payoffDate != null)
                         Text(
                           LocaleKeys.dashboard_money_paidOffBy.tr(
-                            args: [DateFormat.yMMM().format(outlook.payoffDate!)],
+                            args: [
+                              DateFormat.yMMM().format(outlook.payoffDate!)
+                            ],
                           ),
                           maxLines: 1,
                           style: financeLabel(palette.textMuted, size: 11),

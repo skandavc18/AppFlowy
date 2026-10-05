@@ -42,10 +42,34 @@ ChartTable _table(List<List<String>> rows) => ChartTable.fromRows(
 final _tables = <String, ChartTable>{
   'holdings': _table([
     ['Name', 'Symbol', 'Sector', 'Qty', 'Avg price', 'LTP', 'Bought on'],
-    ['Reliance Industries', 'RELIANCE.NS', 'Energy', '40', '1185.5', '1167.7', '2025-04-01'],
-    ['HDFC Bank', 'HDFCBANK.NS', 'Banking', '120', '612.4', '721.2', '2024-10-01'],
+    [
+      'Reliance Industries',
+      'RELIANCE.NS',
+      'Energy',
+      '40',
+      '1185.5',
+      '1167.7',
+      '2025-04-01'
+    ],
+    [
+      'HDFC Bank',
+      'HDFCBANK.NS',
+      'Banking',
+      '120',
+      '612.4',
+      '721.2',
+      '2024-10-01'
+    ],
     ['Infosys', 'INFY.NS', 'Technology', '60', '1420', '1035', '2025-01-15'],
-    ['Nifty 50 index fund', 'NIFTYBEES.NS', 'Index fund', '400', '236.8', '257.25', '2024-04-01'],
+    [
+      'Nifty 50 index fund',
+      'NIFTYBEES.NS',
+      'Index fund',
+      '400',
+      '236.8',
+      '257.25',
+      '2024-04-01'
+    ],
   ]),
   'history': _table([
     ['Label', 'Date', 'Value', 'Invested'],
@@ -58,13 +82,104 @@ final _tables = <String, ChartTable>{
       ],
   ]),
   'legs': _table([
-    ['Strategy', 'Underlying', 'Type', 'Side', 'Strike', 'Qty', 'Entry', 'LTP', 'Exit', 'Expiry', 'Status', 'Margin'],
-    ['NIFTY condor', 'NIFTY', 'CE', 'Sell', '22800', '65', '42.5', '31.4', '', _day(_expiry), 'Open', '110000'],
-    ['NIFTY condor', 'NIFTY', 'CE', 'Buy', '23000', '65', '16.8', '11.2', '', _day(_expiry), 'Open', ''],
-    ['NIFTY condor', 'NIFTY', 'PE', 'Sell', '22000', '65', '38.2', '29.5', '', _day(_expiry), 'Open', ''],
-    ['NIFTY condor', 'NIFTY', 'PE', 'Buy', '21800', '65', '14.6', '10.1', '', _day(_expiry), 'Open', ''],
-    ['NIFTY straddle', 'NIFTY', 'CE', 'Sell', '22500', '65', '118', '', '64', _day(_expiry), 'Closed', ''],
-    ['NIFTY straddle', 'NIFTY', 'PE', 'Sell', '22500', '65', '104', '', '131', _day(_expiry), 'Closed', ''],
+    [
+      'Strategy',
+      'Underlying',
+      'Type',
+      'Side',
+      'Strike',
+      'Qty',
+      'Entry',
+      'LTP',
+      'Exit',
+      'Expiry',
+      'Status',
+      'Margin'
+    ],
+    [
+      'NIFTY condor',
+      'NIFTY',
+      'CE',
+      'Sell',
+      '22800',
+      '65',
+      '42.5',
+      '31.4',
+      '',
+      _day(_expiry),
+      'Open',
+      '110000'
+    ],
+    [
+      'NIFTY condor',
+      'NIFTY',
+      'CE',
+      'Buy',
+      '23000',
+      '65',
+      '16.8',
+      '11.2',
+      '',
+      _day(_expiry),
+      'Open',
+      ''
+    ],
+    [
+      'NIFTY condor',
+      'NIFTY',
+      'PE',
+      'Sell',
+      '22000',
+      '65',
+      '38.2',
+      '29.5',
+      '',
+      _day(_expiry),
+      'Open',
+      ''
+    ],
+    [
+      'NIFTY condor',
+      'NIFTY',
+      'PE',
+      'Buy',
+      '21800',
+      '65',
+      '14.6',
+      '10.1',
+      '',
+      _day(_expiry),
+      'Open',
+      ''
+    ],
+    [
+      'NIFTY straddle',
+      'NIFTY',
+      'CE',
+      'Sell',
+      '22500',
+      '65',
+      '118',
+      '',
+      '64',
+      _day(_expiry),
+      'Closed',
+      ''
+    ],
+    [
+      'NIFTY straddle',
+      'NIFTY',
+      'PE',
+      'Sell',
+      '22500',
+      '65',
+      '104',
+      '',
+      '131',
+      _day(_expiry),
+      'Closed',
+      ''
+    ],
   ]),
   'journal': _table([
     ['Note', 'Date', 'P&L', 'Capital', 'Deposits'],
@@ -78,14 +193,41 @@ final _tables = <String, ChartTable>{
       ],
   ]),
   'sheet': _table([
-    ['Name', 'Type', 'Category', 'Value', 'Invested', 'Borrowed', 'Rate %', 'EMI'],
+    [
+      'Name',
+      'Type',
+      'Category',
+      'Value',
+      'Invested',
+      'Borrowed',
+      'Rate %',
+      'EMI'
+    ],
     ['Gold jewellery', 'Asset', 'Gold', '620000', '410000', '', '', ''],
     ['Apartment', 'Asset', 'Real estate', '9500000', '6200000', '', '', ''],
     ['EPF', 'Asset', 'Provident fund', '1460000', '', '', '8.25', ''],
     ['NPS Tier I', 'Asset', 'NPS', '840000', '620000', '', '', ''],
     ['Savings', 'Asset', 'Cash & bank', '340000', '', '', '3', ''],
-    ['Home loan', 'Liability', 'Home loan', '4850000', '', '6000000', '8.5', '52068'],
-    ['Car loan', 'Liability', 'Vehicle loan', '420000', '', '800000', '9.2', '16700'],
+    [
+      'Home loan',
+      'Liability',
+      'Home loan',
+      '4850000',
+      '',
+      '6000000',
+      '8.5',
+      '52068'
+    ],
+    [
+      'Car loan',
+      'Liability',
+      'Vehicle loan',
+      '420000',
+      '',
+      '800000',
+      '9.2',
+      '16700'
+    ],
   ]),
   'quotes': _table([
     ['Quote', 'Who said it', 'Where from', 'Theme', 'Favourite'],
@@ -103,9 +245,21 @@ final _tables = <String, ChartTable>{
       'Life, Stillness',
       'Yes',
     ],
-    ['We suffer more often in imagination than in reality.', 'Seneca', 'Letters', 'Courage', 'No'],
+    [
+      'We suffer more often in imagination than in reality.',
+      'Seneca',
+      'Letters',
+      'Courage',
+      'No'
+    ],
     ['Simplify, simplify.', 'Thoreau', 'Walden', 'Stillness', 'No'],
-    ['Well done is better than well said.', 'Benjamin Franklin', '', 'Work', 'No'],
+    [
+      'Well done is better than well said.',
+      'Benjamin Franklin',
+      '',
+      'Work',
+      'No'
+    ],
   ]),
 };
 
@@ -162,7 +316,9 @@ class _FakeMarket extends ChangeNotifier implements MarketDataProvider {
         symbol: symbol,
         price: price,
         previousClose: close,
-        closes: [for (var day = 0; day < 20; day++) close * (1 + (day % 5 - 2) / 100)],
+        closes: [
+          for (var day = 0; day < 20; day++) close * (1 + (day % 5 - 2) / 100)
+        ],
         updatedAt: now,
       );
     }
@@ -268,7 +424,9 @@ Future<void> _mount(
   final controller = DashboardController(
     viewId: '',
     document: DashboardDocument(
-      sections: [DashboardSection(id: 'section', widgets: [spec])],
+      sections: [
+        DashboardSection(id: 'section', widgets: [spec])
+      ],
     ),
     mode: DashboardMode.focus,
     persistDebounce: const Duration(days: 1),
@@ -419,7 +577,8 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1400, 1100);
     addTearDown(tester.view.reset);
-    await _mount(tester, 'paper', _spec('quote_wall', 'quotes'), _cells(12, 12));
+    await _mount(
+        tester, 'paper', _spec('quote_wall', 'quotes'), _cells(12, 12));
     expect(find.text('Seneca'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'simplify');
     await tester.pump(const Duration(seconds: 1));
@@ -439,7 +598,12 @@ void main() {
       _spec('quote_spotlight', 'quotes'),
       _cells(8, 7),
     );
-    const authors = ['Henry David Thoreau', 'Seneca', 'Thoreau', 'Benjamin Franklin'];
+    const authors = [
+      'Henry David Thoreau',
+      'Seneca',
+      'Thoreau',
+      'Benjamin Franklin'
+    ];
     String shown() => authors.firstWhere(
           (author) => find.text(author).evaluate().isNotEmpty,
         );
@@ -459,7 +623,8 @@ void main() {
     tester.view.physicalSize = const Size(1400, 1100);
     addTearDown(tester.view.reset);
     MarketData.attach(market);
-    await _mount(tester, 'light', _spec('option_chain', 'legs'), _cells(12, 10));
+    await _mount(
+        tester, 'light', _spec('option_chain', 'legs'), _cells(12, 10));
     expect(
       find.textContaining(LocaleKeys.dashboard_money_spot.tr()),
       findsWidgets,
@@ -475,7 +640,8 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1400, 1100);
     addTearDown(tester.view.reset);
-    await _mount(tester, 'light', _spec('option_chain', 'legs'), _cells(12, 10));
+    await _mount(
+        tester, 'light', _spec('option_chain', 'legs'), _cells(12, 10));
     expect(
       find.text(LocaleKeys.dashboard_money_chainNeedsExtension.tr()),
       findsOneWidget,

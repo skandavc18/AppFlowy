@@ -110,7 +110,8 @@ Widget _pickQuotes(DashboardWidgetContext data) => FinanceGhost(
       shape: FinanceGhostShape.quote,
       icon: Icons.format_quote_rounded,
       message: LocaleKeys.dashboard_money_pickQuotes.tr(),
-      action: data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
+      action:
+          data.isTypable ? LocaleKeys.dashboard_money_chooseTable.tr() : null,
       onAction: () => unawaited(financePickTable(data)),
       color: data.tone.strong,
     );
@@ -541,9 +542,8 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
         final quotes = readQuotes(feed.table, settings: data.spec.settings);
         reconcile(quotes);
         final which = data.spec.setting(_keyWhich, fallback: 'daily');
-        var pool = which == 'favourites'
-            ? quotes.where(isFavourite).toList()
-            : quotes;
+        var pool =
+            which == 'favourites' ? quotes.where(isFavourite).toList() : quotes;
         if (pool.isEmpty) {
           pool = quotes;
         }
@@ -588,7 +588,8 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                         fontFamilyFallback: quoteFontFallback,
                         fontSize: math.min(200, constraints.maxHeight * 0.75),
                         height: 1,
-                        color: hue.withValues(alpha: palette.isDark ? 0.16 : 0.14),
+                        color:
+                            hue.withValues(alpha: palette.isDark ? 0.16 : 0.14),
                       ),
                     ),
                   ),
@@ -633,7 +634,10 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                           switchOutCurve: Curves.easeInCubic,
                           layoutBuilder: (current, previous) => Stack(
                             alignment: Alignment.topLeft,
-                            children: [...previous, if (current != null) current],
+                            children: [
+                              ...previous,
+                              if (current != null) current
+                            ],
                           ),
                           transitionBuilder: (child, animation) =>
                               FadeTransition(
@@ -647,7 +651,8 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                             ),
                           ),
                           child: _FittedQuote(
-                            key: ValueKey('${quote.rowId}|$index|${quote.text.hashCode}'),
+                            key: ValueKey(
+                                '${quote.rowId}|$index|${quote.text.hashCode}'),
                             quote: quote,
                             color: data.tone.ink,
                             hue: hue,
@@ -706,7 +711,8 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                             if (!compact) ...[
                               _RoundButton(
                                 icon: Icons.shuffle_rounded,
-                                tooltip: LocaleKeys.dashboard_money_shuffle.tr(),
+                                tooltip:
+                                    LocaleKeys.dashboard_money_shuffle.tr(),
                                 palette: palette,
                                 onTap: () => _shuffle(count),
                               ),
@@ -714,7 +720,8 @@ class _SpotlightState extends State<_Spotlight> with _Favourites {
                             ],
                             _RoundButton(
                               icon: Icons.chevron_right_rounded,
-                              tooltip: LocaleKeys.dashboard_money_nextQuote.tr(),
+                              tooltip:
+                                  LocaleKeys.dashboard_money_nextQuote.tr(),
                               palette: palette,
                               onTap: () => _step(1),
                             ),
@@ -1057,7 +1064,8 @@ class _WallState extends State<_Wall> with _Favourites {
                               padding: const EdgeInsets.only(right: 6),
                               child: Center(
                                 child: _ThemeChip(
-                                  label: LocaleKeys.dashboard_money_allThemes.tr(),
+                                  label:
+                                      LocaleKeys.dashboard_money_allThemes.tr(),
                                   color: data.tone.strong,
                                   palette: palette,
                                   selected: _theme == null && !_favouritesOnly,
@@ -1073,7 +1081,8 @@ class _WallState extends State<_Wall> with _Favourites {
                               padding: const EdgeInsets.only(right: 6),
                               child: Center(
                                 child: _ThemeChip(
-                                  label: LocaleKeys.dashboard_money_favourites.tr(),
+                                  label: LocaleKeys.dashboard_money_favourites
+                                      .tr(),
                                   icon: Icons.favorite_rounded,
                                   color: const Color(0xFFE5484D),
                                   palette: palette,
@@ -1095,8 +1104,9 @@ class _WallState extends State<_Wall> with _Favourites {
                                     selected: _theme == entry.key,
                                     count: entry.value,
                                     onTap: () => setState(
-                                      () => _theme =
-                                          _theme == entry.key ? null : entry.key,
+                                      () => _theme = _theme == entry.key
+                                          ? null
+                                          : entry.key,
                                     ),
                                   ),
                                 ),
@@ -1110,7 +1120,8 @@ class _WallState extends State<_Wall> with _Favourites {
                           label: LocaleKeys.dashboard_money_addQuote.tr(),
                           palette: palette,
                           icon: Icons.add_rounded,
-                          onPressed: () => _addQuote(data, feed.table, themes.keys),
+                          onPressed: () =>
+                              _addQuote(data, feed.table, themes.keys),
                         ),
                       ],
                     ],

@@ -157,7 +157,8 @@ class StockMarketProvider extends ChangeNotifier implements MarketDataProvider {
     var changed = false;
     try {
       for (var start = 0; start < due.length; start += batchSize) {
-        final batch = due.sublist(start, math.min(start + batchSize, due.length));
+        final batch =
+            due.sublist(start, math.min(start + batchSize, due.length));
         for (final symbol in batch) {
           _attempted[symbol] = now;
         }
@@ -509,8 +510,8 @@ DateTime? parseNseDate(String text) {
   }
   final day = int.parse(match.group(1)!);
   final monthText = match.group(2)!;
-  final month = int.tryParse(monthText) ??
-      (_months.indexOf(monthText.toLowerCase()) + 1);
+  final month =
+      int.tryParse(monthText) ?? (_months.indexOf(monthText.toLowerCase()) + 1);
   final year = int.parse(match.group(3)!);
   if (month < 1 || month > 12 || day < 1 || day > 31) {
     return null;
@@ -765,12 +766,14 @@ class NseSession {
       // cookie parser rejects, and one bad cookie must not lose the rest.
       request.headers.set(
         HttpHeaders.cookieHeader,
-        _cookies.entries.map((entry) => '${entry.key}=${entry.value}').join('; '),
+        _cookies.entries
+            .map((entry) => '${entry.key}=${entry.value}')
+            .join('; '),
       );
     }
     final response = await request.close().timeout(timeout);
-    for (final header in response.headers[HttpHeaders.setCookieHeader] ??
-        const <String>[]) {
+    for (final header
+        in response.headers[HttpHeaders.setCookieHeader] ?? const <String>[]) {
       final pair = header.split(';').first;
       final equals = pair.indexOf('=');
       if (equals > 0) {

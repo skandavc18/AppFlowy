@@ -86,7 +86,8 @@ List<double> niceTicks(double low, double high, {int count = 4}) {
     return [low];
   }
   final raw = (high - low) / count;
-  final magnitude = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+  final magnitude =
+      math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
   final step = [1.0, 2.0, 2.5, 5.0, 10.0]
           .map((factor) => factor * magnitude)
           .firstWhere((candidate) => candidate >= raw, orElse: () => raw) *
@@ -535,8 +536,7 @@ class _TrendGeometry {
 
   DateTime timeAt(double dx) => start.add(
         Duration(
-          minutes:
-              ((dx - plot.left) / math.max(1, plot.width) * _span).round(),
+          minutes: ((dx - plot.left) / math.max(1, plot.width) * _span).round(),
         ),
       );
 
@@ -790,7 +790,8 @@ class _TrendPainter extends CustomPainter {
         }
         final point = Offset(x, geometry.y(value));
         canvas
-          ..drawCircle(point, 7, Paint()..color = line.color.withValues(alpha: 0.2))
+          ..drawCircle(
+              point, 7, Paint()..color = line.color.withValues(alpha: 0.2))
           ..drawCircle(point, 4.2, Paint()..color = palette.surface)
           ..drawCircle(point, 3, Paint()..color = line.color);
       }
@@ -837,8 +838,7 @@ class _TrendTooltip extends StatelessWidget {
     final y = geometry.y(primary.values[index]);
     const width = 168.0;
     final left = x + 14 + width > size.width ? x - 14 - width : x + 14;
-    final top =
-        (y - 26).clamp(0.0, math.max(0.0, size.height - 80)).toDouble();
+    final top = (y - 26).clamp(0.0, math.max(0.0, size.height - 80)).toDouble();
     return Positioned(
       left: left.clamp(0.0, math.max(0.0, size.width - width)).toDouble(),
       top: top,
@@ -1197,7 +1197,8 @@ List<Rect> squarify(List<double> values, Rect bounds) {
       return double.infinity;
     }
     final square = side * side;
-    return math.max(square * largest / (sum * sum), sum * sum / (square * smallest));
+    return math.max(
+        square * largest / (sum * sum), sum * sum / (square * smallest));
   }
 
   while (start < values.length) {
@@ -1222,7 +1223,8 @@ List<Rect> squarify(List<double> values, Rect bounds) {
         results[index] = Rect.fromLTWH(rect.left, y, width, height);
         y += height;
       }
-      rect = Rect.fromLTRB(rect.left + width, rect.top, rect.right, rect.bottom);
+      rect =
+          Rect.fromLTRB(rect.left + width, rect.top, rect.right, rect.bottom);
     } else {
       final height = rect.width <= 0 ? 0.0 : rowArea / rect.width;
       var x = rect.left;
@@ -1231,7 +1233,8 @@ List<Rect> squarify(List<double> values, Rect bounds) {
         results[index] = Rect.fromLTWH(x, rect.top, width, height);
         x += width;
       }
-      rect = Rect.fromLTRB(rect.left, rect.top + height, rect.right, rect.bottom);
+      rect =
+          Rect.fromLTRB(rect.left, rect.top + height, rect.right, rect.bottom);
     }
     start = end;
   }
@@ -1255,7 +1258,9 @@ Color heatColor(double? percent, FinanceColors colors) {
           : (colors.isDark ? const Color(0xFF0F9D6B) : const Color(0xFF058C5C)))
       : (colors.isPaper
           ? const Color(0xFFB8493A)
-          : (colors.isDark ? const Color(0xFFD9363E) : const Color(0xFFDC2F37)));
+          : (colors.isDark
+              ? const Color(0xFFD9363E)
+              : const Color(0xFFDC2F37)));
   return Color.lerp(neutral, far, 0.25 + 0.75 * eased)!;
 }
 
@@ -1340,7 +1345,8 @@ class _TreemapCell extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color.lerp(item.color, Colors.white, hovered ? 0.16 : 0.08)!,
+                    Color.lerp(
+                        item.color, Colors.white, hovered ? 0.16 : 0.08)!,
                     item.color,
                   ],
                 ),
@@ -1704,9 +1710,8 @@ class _FinancePayoffChartState extends State<FinancePayoffChart>
         final size = constraints.biggest;
         final samples = _samplesOf(size);
         final hoverX = _hoverX;
-        final hoverPrice = hoverX == null || widget.compact
-            ? null
-            : samples.priceAt(hoverX);
+        final hoverPrice =
+            hoverX == null || widget.compact ? null : samples.priceAt(hoverX);
         final chart = RepaintBoundary(
           child: AnimatedBuilder(
             animation: _curve,
@@ -1856,7 +1861,8 @@ class _PayoffPainter extends CustomPainter {
 
     final points = [
       for (var index = 0; index < samples.prices.length; index++)
-        Offset(samples.x(samples.prices[index]), grown(samples.atExpiry[index])),
+        Offset(
+            samples.x(samples.prices[index]), grown(samples.atExpiry[index])),
     ];
     final line = Path()..moveTo(points.first.dx, points.first.dy);
     for (final point in points.skip(1)) {
@@ -1920,8 +1926,8 @@ class _PayoffPainter extends CustomPainter {
           Offset(x, plot.bottom + 2),
           Offset(x, plot.bottom + 7),
           Paint()
-            ..color = (mark.buy ? colors.gain : colors.loss)
-                .withValues(alpha: 0.8)
+            ..color =
+                (mark.buy ? colors.gain : colors.loss).withValues(alpha: 0.8)
             ..strokeWidth = 2
             ..strokeCap = StrokeCap.round,
         );
@@ -1973,7 +1979,8 @@ class _PayoffPainter extends CustomPainter {
       }
       final point = Offset(samples.x(breakeven), zero);
       canvas
-        ..drawCircle(point, chart.compact ? 3 : 4.5, Paint()..color = palette.surface)
+        ..drawCircle(
+            point, chart.compact ? 3 : 4.5, Paint()..color = palette.surface)
         ..drawCircle(
           point,
           chart.compact ? 3 : 4.5,
@@ -2343,7 +2350,8 @@ class FinanceStackedBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = segments.fold<double>(0, (sum, segment) => sum + segment.value);
+    final total =
+        segments.fold<double>(0, (sum, segment) => sum + segment.value);
     return ClipRRect(
       borderRadius: BorderRadius.circular(height),
       child: SizedBox(
@@ -2358,7 +2366,8 @@ class FinanceStackedBar extends StatelessWidget {
             final usable = math.max(0.0, width - gaps);
             return TweenAnimationBuilder<double>(
               tween: Tween(begin: still ? 1 : 0, end: 1),
-              duration: still ? Duration.zero : const Duration(milliseconds: 900),
+              duration:
+                  still ? Duration.zero : const Duration(milliseconds: 900),
               curve: Curves.easeOutCubic,
               builder: (context, grow, _) => Row(
                 children: [
@@ -2429,4 +2438,3 @@ class FinanceGradientText extends StatelessWidget {
         ),
       );
 }
-
