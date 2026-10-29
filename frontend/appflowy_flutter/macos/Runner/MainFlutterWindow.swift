@@ -68,6 +68,7 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
 
     self.registerMethodChannel(flutterViewController: flutterViewController)
+    ExternalFileOpener.shared.attach(to: flutterViewController.engine.binaryMessenger)
 
     self.setFrame(windowFrame, display: true)
     self.titlebarAppearsTransparent = true

@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/database/calendar/calendar.dart';
 import 'package:appflowy/plugins/database/board/board.dart';
 import 'package:appflowy/plugins/database/grid/grid.dart';
 import 'package:appflowy/plugins/database_document/database_document_plugin.dart';
+import 'package:appflowy/plugins/external_file/external_file_plugin.dart';
 import 'package:appflowy/plugins/templates/templates_plugin.dart';
 import 'package:appflowy/plugins/view_library/view_library_plugin.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
@@ -49,6 +50,10 @@ class PluginLoadTask extends LaunchTask {
     registerPlugin(
       builder: ViewLibraryPluginBuilder(ViewLibrary.all),
       config: ViewLibraryPluginConfig(),
+    );
+    registerPlugin(
+      builder: ExternalFilePluginBuilder(),
+      config: ExternalFilePluginConfig(),
     );
     registerPlugin(builder: DocumentPluginBuilder());
     registerPlugin(builder: GridPluginBuilder(), config: GridPluginConfig());

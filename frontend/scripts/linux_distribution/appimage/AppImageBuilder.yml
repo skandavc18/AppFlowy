@@ -8,6 +8,10 @@ script:
   - mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
   - cp scripts/linux_distribution/packaging/appflowy.svg AppDir/usr/share/icons/hicolor/scalable/apps/
 
+  # Desktop entry (deep links and Markdown/text/HTML file associations)
+  - mkdir -p AppDir/usr/share/applications
+  - cp scripts/linux_distribution/appimage/io.appflowy.AppFlowy.desktop AppDir/usr/share/applications/
+
 AppDir:
   path: ./AppDir
   app_info:

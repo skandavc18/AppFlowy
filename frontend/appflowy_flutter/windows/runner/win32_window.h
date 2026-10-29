@@ -59,6 +59,9 @@ class Win32Window {
   // This method enables our app to be with a single instance too.
   bool SendAppLinkToInstance(const std::wstring &title);
 
+  // The window of the AppFlowy already running with |title|, or null.
+  static HWND FindInstance(const std::wstring& title);
+
  protected:
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that

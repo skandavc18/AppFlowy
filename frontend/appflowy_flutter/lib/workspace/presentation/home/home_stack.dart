@@ -841,6 +841,12 @@ class PageManager {
                     ),
                     shrinkWrap: false,
                   );
+                  // A file opened from disk is not a workspace view, so it has
+                  // no history or workspace key to look up.
+                  final viewId =
+                      notifier.plugin.pluginType == PluginType.externalFile
+                          ? ''
+                          : notifier.plugin.id;
 
                   return Padding(
                     padding: builder.contentPadding,
@@ -849,9 +855,9 @@ class PageManager {
                     // the workspace key: one wrapper covers a protected page,
                     // table, folder, collection or file.
                     child: ProtectedViewGate(
-                      viewId: notifier.plugin.id,
+                      viewId: viewId,
                       child: PageVersionHost(
-                        viewId: notifier.plugin.id,
+                        viewId: viewId,
                         child: StartupProfileFrame(
                           phase: 'page_host_frame',
                           child: pluginWidget,

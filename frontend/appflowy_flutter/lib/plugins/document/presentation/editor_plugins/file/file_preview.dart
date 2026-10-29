@@ -34,6 +34,7 @@ import 'csv_preview.dart';
 import 'file_preview_kind.dart';
 import 'html_preview_resource_host.dart';
 import 'markdown_preview_fonts.dart';
+import 'native_markup_preview.dart';
 import 'notebook/notebook_view.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
@@ -257,6 +258,18 @@ class _FilePreviewLoader {
               bare: live.bare,
             );
           },
+        ),
+      // Without a web view (Linux has none) both are drawn natively.
+      FilePreviewKind.html ||
+      FilePreviewKind.markdown when !webMarkupPreviewAvailable =>
+        _buildPreviewScaffold(
+          NativeMarkupPreview(
+            source: await _readText(maxTextPreviewBytes),
+            format: widget.kind == FilePreviewKind.html
+                ? NativeMarkupFormat.html
+                : NativeMarkupFormat.markdown,
+            baseDirectory: widget.file.parent.path,
+          ),
         ),
       FilePreviewKind.html => _buildPreviewScaffold(
           _HtmlPreview(

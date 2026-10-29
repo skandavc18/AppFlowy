@@ -16,6 +16,18 @@
 namespace {
 
 constexpr char kBackgroundChannel[] = "appflowy/background";
+constexpr char kFileOpenChannel[] = "appflowy/file_open";
+
+// Marks the WM_COPYDATA in which an AppFlowy started to open files hands them
+// to the one already running, as UTF-16 paths each ended by a NUL.
+constexpr ULONG_PTR kOpenFilesCopyDataId = 0xAF0F11E5;
+// Far beyond any real selection of paths.
+constexpr DWORD kMaxOpenFilesBytes = 4 * 1024 * 1024;
+// Explorer starts one AppFlowy per file when several are opened together, so
+// the first may still be making its window when the others look for it.
+constexpr int kFindInstanceAttempts = 100;
+constexpr DWORD kFindInstanceIntervalMs = 100;
+constexpr UINT kSendFilesTimeoutMs = 15000;
 
 constexpr UINT kTrayCallbackMessage = WM_APP + 0x41;
 constexpr UINT kQuitMessage = WM_APP + 0x42;
@@ -50,6 +62,45 @@ std::wstring Utf16FromUtf8(const std::string& text) {
   MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
                       result.data(), length);
   return result;
+}
+
+std::string Utf8FromWide(const std::wstring& text) {
+  if (text.empty()) {
+    return std::string();
+  }
+  const int length = WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS, text.data(),
+      static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+  if (length <= 0) {
+    return std::string();
+  }
+  std::string result(length, '\0');
+  if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(),
+                          static_cast<int>(text.size()), result.data(), length,
+                          nullptr, nullptr) != length) {
+    return std::string();
+  }
+  return result;
+}
+
+std::vector<std::wstring> FilesFromCopyData(const COPYDATASTRUCT& data) {
+  std::vector<std::wstring> paths;
+  if (data.lpData == nullptr || data.cbData == 0 ||
+      data.cbData > kMaxOpenFilesBytes || data.cbData % sizeof(wchar_t) != 0) {
+    return paths;
+  }
+  const auto* chars = static_cast<const wchar_t*>(data.lpData);
+  const size_t count = data.cbData / sizeof(wchar_t);
+  size_t start = 0;
+  for (size_t index = 0; index <= count; ++index) {
+    if (index == count || chars[index] == L'\0') {
+      if (index > start) {
+        paths.emplace_back(chars + start, index - start);
+      }
+      start = index + 1;
+    }
+  }
+  return paths;
 }
 
 std::wstring ExecutablePath() {
@@ -146,6 +197,14 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) { HandleBackgroundCall(call, std::move(result)); });
+  file_open_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), kFileOpenChannel,
+          &flutter::StandardMethodCodec::GetInstance());
+  file_open_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) { HandleFileOpenCall(call, std::move(result)); });
   taskbar_created_message_ = RegisterWindowMessageW(L"TaskbarCreated");
   if (started_in_background_) {
     SetTimer(GetHandle(), kBackgroundWatchdogTimer, kBackgroundWatchdogMs,
@@ -171,6 +230,11 @@ void FlutterWindow::OnDestroy() {
     background_channel_->SetMethodCallHandler(nullptr);
     background_channel_ = nullptr;
   }
+  if (file_open_channel_) {
+    file_open_channel_->SetMethodCallHandler(nullptr);
+    file_open_channel_ = nullptr;
+  }
+  dart_takes_files_ = false;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -280,6 +344,76 @@ void FlutterWindow::NotifyDart(
   if (background_channel_) {
     background_channel_->InvokeMethod(method, std::move(arguments));
   }
+}
+
+// static
+bool FlutterWindow::SendFilesToInstance(
+    const std::wstring& title,
+    const std::vector<std::wstring>& paths) {
+  HWND instance = FindInstance(title);
+  for (int attempt = 1; instance == nullptr && attempt < kFindInstanceAttempts;
+       ++attempt) {
+    Sleep(kFindInstanceIntervalMs);
+    instance = FindInstance(title);
+  }
+  if (instance == nullptr) {
+    return false;
+  }
+
+  std::wstring payload;
+  for (const auto& path : paths) {
+    payload.append(path);
+    payload.push_back(L'\0');
+  }
+  COPYDATASTRUCT data = {};
+  data.dwData = kOpenFilesCopyDataId;
+  data.cbData = static_cast<DWORD>(payload.size() * sizeof(wchar_t));
+  data.lpData = payload.data();
+
+  // Explorer let this process take the foreground; the running AppFlowy needs
+  // that to come to the front with the files.
+  DWORD process_id = 0;
+  if (GetWindowThreadProcessId(instance, &process_id) != 0) {
+    AllowSetForegroundWindow(process_id);
+  }
+  DWORD_PTR handled = FALSE;
+  return SendMessageTimeoutW(instance, WM_COPYDATA, 0,
+                             reinterpret_cast<LPARAM>(&data), SMTO_NORMAL,
+                             kSendFilesTimeoutMs, &handled) != 0 &&
+         handled == TRUE;
+}
+
+void FlutterWindow::OpenFiles(const std::vector<std::wstring>& paths) {
+  pending_files_.insert(pending_files_.end(), paths.begin(), paths.end());
+  if (!dart_takes_files_ || !file_open_channel_ || pending_files_.empty()) {
+    return;
+  }
+  file_open_channel_->InvokeMethod(
+      "openFiles",
+      std::make_unique<flutter::EncodableValue>(TakePendingFiles()));
+}
+
+void FlutterWindow::HandleFileOpenCall(
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  if (call.method_name() == "takePendingFiles") {
+    dart_takes_files_ = true;
+    result->Success(flutter::EncodableValue(TakePendingFiles()));
+    return;
+  }
+  result->NotImplemented();
+}
+
+flutter::EncodableList FlutterWindow::TakePendingFiles() {
+  flutter::EncodableList paths;
+  for (const auto& path : pending_files_) {
+    std::string utf8 = Utf8FromWide(path);
+    if (!utf8.empty()) {
+      paths.emplace_back(std::move(utf8));
+    }
+  }
+  pending_files_.clear();
+  return paths;
 }
 
 void FlutterWindow::AddTrayIcon() {
@@ -506,6 +640,16 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case kHideMessage:
       ShowWindow(hwnd, SW_HIDE);
       return 0;
+    case WM_COPYDATA: {
+      const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
+      if (data != nullptr && data->dwData == kOpenFilesCopyDataId) {
+        // The data is only valid during this message, so it is copied out.
+        OpenFiles(FilesFromCopyData(*data));
+        PostMessage(hwnd, kRevealMessage, 0, 0);
+        return TRUE;
+      }
+      break;
+    }
     case WM_TIMER:
       if (wparam == kQuitFallbackTimer) {
         QuitNow();

@@ -155,6 +155,11 @@ String _grammarForLanguage(String language) => switch (language) {
       _ => language,
     };
 
+/// Whether [language] names a grammar the highlighter has, rather than one it
+/// would only guess at (an empty, plain-text or unknown language).
+bool hasSyntaxGrammar(String language) => allLanguages
+    .containsKey(_grammarForLanguage(normalizeCodeLanguage(language)));
+
 TextSpan buildSyntaxHighlightedTextSpan({
   required String code,
   required String language,

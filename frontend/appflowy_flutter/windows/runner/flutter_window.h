@@ -26,6 +26,14 @@ class FlutterWindow : public Win32Window {
                          bool started_in_background = false);
   virtual ~FlutterWindow();
 
+  // Asks the AppFlowy already running with a window titled |title| to open
+  // |paths|. Returns false when no running AppFlowy took them.
+  static bool SendFilesToInstance(const std::wstring& title,
+                                  const std::vector<std::wstring>& paths);
+
+  // Opens the files at |paths| in new tabs, once Dart is listening.
+  void OpenFiles(const std::vector<std::wstring>& paths);
+
  protected:
   // Win32Window:
   bool OnCreate() override;
@@ -46,6 +54,10 @@ class FlutterWindow : public Win32Window {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void NotifyDart(const std::string& method,
                   std::unique_ptr<flutter::EncodableValue> arguments = nullptr);
+  void HandleFileOpenCall(
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  flutter::EncodableList TakePendingFiles();
 
   void AddTrayIcon();
   void RemoveTrayIcon();
@@ -69,6 +81,13 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       background_channel_;
+
+  // Files the system asks AppFlowy to open reach Dart on this channel.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      file_open_channel_;
+  // Paths waiting for Dart, which asks for them once it is listening.
+  std::vector<std::wstring> pending_files_;
+  bool dart_takes_files_ = false;
 
   bool started_in_background_ = false;
   bool keep_running_ = false;

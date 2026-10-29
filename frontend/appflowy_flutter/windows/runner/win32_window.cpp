@@ -294,6 +294,11 @@ void Win32Window::UpdateTheme(HWND const window) {
   }
 }
 
+// static
+HWND Win32Window::FindInstance(const std::wstring& title) {
+  return ::FindWindow(kWindowClassName, title.c_str());
+}
+
 bool Win32Window::SendAppLinkToInstance(const std::wstring &title)
 {
   // Find our exact window

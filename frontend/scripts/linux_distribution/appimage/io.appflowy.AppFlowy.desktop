@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=AppFlowy
+Exec=AppFlowy %U
+Icon=appflowy
+Type=Application
+Terminal=false
+Categories=Office;
+Keywords=Notes;
+MimeType=x-scheme-handler/appflowy-flutter;text/markdown;text/x-markdown;text/plain;text/html;

@@ -6,4 +6,4 @@ Exec=/usr/bin/AppFlowy %U
 Categories=Network;Productivity;
 Keywords=Notes
 Terminal=false
-MimeType=x-scheme-handler/appflowy-flutter;
+MimeType=x-scheme-handler/appflowy-flutter;text/markdown;text/x-markdown;text/plain;text/html;

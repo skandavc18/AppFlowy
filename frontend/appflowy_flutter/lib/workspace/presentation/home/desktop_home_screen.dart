@@ -39,6 +39,7 @@ import '../notifications/notification_panel.dart';
 import '../widgets/edit_panel/edit_panel.dart';
 import '../widgets/sidebar_resizer.dart';
 import 'home_layout.dart';
+import 'external_file_open_host.dart';
 import 'home_stack.dart';
 import 'menu/sidebar/slider_menu_hover_trigger.dart';
 import 'startup_home.dart';
@@ -146,16 +147,18 @@ class DesktopHomeScreen extends StatelessWidget {
                             workspaceLatest.workspaceId,
                         builder: (context, workspaceId) => StartupHome(
                           workspaceId: workspaceId,
-                          child: HomeHotKeys(
-                            userProfile: userProfile,
-                            child: FlowyContainer(
-                              Theme.of(context).colorScheme.surface,
-                              child: LayoutBuilder(
-                                builder: (context, constraints) => _buildBody(
-                                  context,
-                                  userProfile,
-                                  workspaceLatest,
-                                  constraints,
+                          child: ExternalFileOpenHost(
+                            child: HomeHotKeys(
+                              userProfile: userProfile,
+                              child: FlowyContainer(
+                                Theme.of(context).colorScheme.surface,
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) => _buildBody(
+                                    context,
+                                    userProfile,
+                                    workspaceLatest,
+                                    constraints,
+                                  ),
                                 ),
                               ),
                             ),

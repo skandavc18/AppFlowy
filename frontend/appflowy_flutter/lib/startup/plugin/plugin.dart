@@ -25,6 +25,7 @@ enum PluginType {
   recents,
   favorites,
   pageLibrary,
+  externalFile,
 }
 
 typedef PluginId = String;

@@ -428,6 +428,20 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
               ..setSecondaryPlugin(plugin)
               ..showSecondaryPlugin();
           },
+          openStandaloneTab: (Plugin plugin) {
+            final current = state.currentPageManager
+              ..hideSecondaryPlugin()
+              ..setSecondaryPlugin(BlankPagePlugin());
+            // The empty tab a cold start or a closed last tab leaves is used
+            // rather than kept beside the new one.
+            final reuse = !current.isPinned &&
+                current.plugin.pluginType == PluginType.blank;
+            emit(
+              reuse
+                  ? state.openPlugin(plugin: plugin, setLatest: false)
+                  : state.openView(plugin, setLatest: false),
+            );
+          },
           closeSecondaryPlugin: () {
             final pageManager = state.currentPageManager;
             pageManager.hideSecondaryPlugin();
@@ -686,6 +700,11 @@ class TabsEvent with _$TabsEvent {
     ViewPB? view,
     @Default(true) bool setLatest,
   }) = _OpenPlugin;
+
+  /// Opens content that is not a workspace page, such as a file from disk, in
+  /// a tab of its own. It never becomes the folder's latest view.
+  const factory TabsEvent.openStandaloneTab({required Plugin plugin}) =
+      _OpenStandaloneTab;
 
   const factory TabsEvent.openSecondaryPlugin({
     required Plugin plugin,

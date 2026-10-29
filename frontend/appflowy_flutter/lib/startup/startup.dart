@@ -153,6 +153,8 @@ class FlowyRunner {
           if (!mode.isIntegrationTest) AutoUpdateTask(),
           const HotKeyTask(),
           if (isAppFlowyCloudEnabled) InitAppFlowyCloudTask(),
+          // Files that launched AppFlowy are held until the home screen opens.
+          const ExternalFileOpenTask(),
           const InitAppWidgetTask(),
           const InitPlatformServiceTask(),
           const RecentServiceTask(),

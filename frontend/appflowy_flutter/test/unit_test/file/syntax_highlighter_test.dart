@@ -130,4 +130,13 @@ void main() {
       }
     });
   });
+
+  test('only a named, known language counts as having a grammar', () {
+    for (final language in ['dart', 'js', 'sh', 'C++', 'html', 'Python']) {
+      expect(hasSyntaxGrammar(language), isTrue, reason: language);
+    }
+    for (final language in ['', 'auto', 'text', 'plaintext', 'mermaid']) {
+      expect(hasSyntaxGrammar(language), isFalse, reason: language);
+    }
+  });
 }
