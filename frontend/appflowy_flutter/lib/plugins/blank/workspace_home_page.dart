@@ -8,6 +8,7 @@ import 'package:appflowy/features/workspace/presentation/widgets/workspace_cover
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/blank/home/home_agenda.dart';
 import 'package:appflowy/plugins/blank/home/home_customize.dart';
+import 'package:appflowy/plugins/blank/home/home_grid.dart';
 import 'package:appflowy/plugins/blank/home/home_hero.dart';
 import 'package:appflowy/plugins/blank/home/home_arrangement.dart';
 import 'package:appflowy/plugins/blank/home/home_rail.dart';
@@ -24,6 +25,7 @@ import 'package:appflowy/plugins/database/calendar/presentation/calendar_event_d
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:appflowy/shared/calendar/reminder_composer.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
@@ -116,13 +118,15 @@ class WorkspaceHomeScope extends InheritedWidget {
 enum _JumpTab { recent, favorites }
 
 /// Home: a landing page to pick work back up. The workspace cover with the
-/// search bar laid across its edge; the pages worked on lately; and a side
-/// rail with the time, the weather, the page to resume, a calendar, the
-/// day's events and the reminders still waiting.
+/// search bar laid across its edge, then its sections on a twelve-column
+/// grid: the pages worked on lately and, beside them at first, the time, the
+/// weather, the page to resume, a calendar, the day's events and the
+/// reminders still waiting.
 ///
-/// Every part can be moved, taken off and put back, and widgets from the
-/// dashboard library can be added beside them. How Home is arranged is kept
-/// on this device, for each workspace.
+/// Every section can be dragged anywhere on the grid, resized from its edges
+/// or its menu, taken off and put back, and widgets from the dashboard
+/// library can be added among them. How Home is arranged is kept on this
+/// device, for each workspace.
 ///
 /// Building it never creates a page or a tab; the only writes are the
 /// explicit actions somebody takes here.
@@ -167,9 +171,6 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
   /// no view, so it never writes anywhere itself: the layout store keeps it.
   late DashboardController _widgets;
   bool _customizing = false;
-
-  /// The height a widget had when its grip was picked up.
-  int? _resizeFrom;
   late DateTime Function() _clock;
   late DateTime _now;
   late DateTime _month;
@@ -563,7 +564,7 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
               ),
             ),
             // A widget's settings float over Home, as they do over a
-            // dashboard, rather than pushing the columns about.
+            // dashboard, rather than pushing the sections about.
             if (configured != null)
               Positioned(
                 top: 0,
@@ -740,250 +741,127 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
       HomeBlock.events: events,
       HomeBlock.reminders: reminders,
     };
-    Widget? blockFor(String id) {
-      final part = HomeBlock.fromId(id);
-      if (part != null) return parts[part];
-      final spec = layout.widgetFor(id);
-      // A hidden widget keeps its place, and shows only while arranging.
-      if (spec == null || (spec.hidden && !_customizing)) return null;
-      return HomeWidgetCard(
-        controller: _widgets,
-        spec: spec,
-        palette: dashboardPalette,
-      );
-    }
-
-    final bar = HomeCustomizeBar(
-      customizing: _customizing,
-      onCustomize: () => setState(() => _customizing = true),
-      onDone: _finishCustomizing,
-      onReset: () => unawaited(_confirmReset()),
-      addEntries: _addEntries,
-    );
+    final density = _widgets.document.settings.density;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = MediaQuery.textScalerOf(context);
-        final wide = constraints.maxWidth >= scale.scale(940);
-        final railWidth =
-            (constraints.maxWidth * 0.3).clamp(300.0, 360.0).toDouble();
+        final width = constraints.maxWidth;
+        // Sections keep their columns wherever the grid's sides leave each
+        // of them readable; narrower, they pair up, then stack, in reading
+        // order.
+        final mode = width >= scale.scale(660)
+            ? HomeGridMode.grid
+            : width >= scale.scale(460)
+                ? HomeGridMode.pairs
+                : HomeGridMode.single;
+        // In a narrower grid a section takes more columns to stay readable;
+        // what is stored is only changed if it is moved or resized there.
+        final readable = mode == HomeGridMode.grid
+            ? homeGridReadableSpan(
+                width,
+                readable: scale.scale(homeGridReadableWidth),
+              )
+            : 1;
+        final items = [
+          for (final id in layout.blocks)
+            if (_gridItem(
+              layout,
+              id,
+              parts,
+              dashboardPalette,
+              readable: readable,
+            )
+                case final item?)
+              item,
+        ];
+        final bar = HomeCustomizeBar(
+          customizing: _customizing,
+          canResizeWidths: mode == HomeGridMode.grid,
+          onCustomize: () => setState(() => _customizing = true),
+          onDone: _finishCustomizing,
+          onReset: () => unawaited(_confirmReset()),
+          addEntries: _addEntries,
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             bar,
             const SizedBox(height: WorkspaceTokens.space3),
-            if (_customizing)
-              _buildArranging(
-                layout,
-                blockFor,
-                wide: wide,
-                railWidth: railWidth,
-              )
-            else
-              _buildArranged(
-                layout,
-                blockFor,
-                wide: wide,
-                railWidth: railWidth,
-                pairs: constraints.maxWidth >= scale.scale(620),
+            HomeGrid(
+              key: const ValueKey('home-grid'),
+              items: items,
+              editing: _customizing,
+              mode: mode,
+              // The same height units a widget's settings and a dashboard
+              // use, so a widget is as tall here as it says.
+              rowHeight: density.rowHeight,
+              rowGap: density.gap,
+              onArrange: (order, id, placement) => _arrangements.update(
+                _arrangements.arrangement.arrange(
+                  order,
+                  id: id,
+                  placement: placement,
+                ),
               ),
+              onRemove: (id) =>
+                  _arrangements.update(_arrangements.arrangement.remove(id)),
+            ),
           ],
         );
       },
     );
   }
 
-  /// Home as it is used: the main column beside the rail when there is room
-  /// for both, otherwise one column that keeps the rail's cards together.
-  Widget _buildArranged(
-    HomeArrangement layout,
-    Widget? Function(String id) blockFor, {
-    required bool wide,
-    required double railWidth,
-    required bool pairs,
-  }) {
-    List<(String, Widget)> blocks(List<String> ids) => [
-          for (final id in ids)
-            if (blockFor(id) case final block?)
-              (id, KeyedSubtree(key: ValueKey('home-part-$id'), child: block)),
-        ];
-    Widget stack(List<Widget> children, double gap) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              if (index > 0) SizedBox(height: gap),
-              children[index],
-            ],
-          ],
-        );
-    final main = blocks(layout.main);
-    final side = blocks(layout.side);
-
-    if (wide) {
-      final mainColumn = stack(
-        [for (final (_, block) in main) block],
-        WorkspaceTokens.space8,
-      );
-      final sideColumn = stack(
-        [for (final (_, block) in side) block],
-        WorkspaceTokens.space4,
-      );
-      if (side.isEmpty) return mainColumn;
-      if (main.isEmpty) return sideColumn;
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: mainColumn),
-          const SizedBox(width: WorkspaceTokens.space8),
-          SizedBox(
-            key: const ValueKey('home-rail'),
-            width: railWidth,
-            child: sideColumn,
-          ),
-        ],
-      );
-    }
-
-    // One column: the glance card still leads when it heads the rail, then
-    // the main column, then the rest of the rail — two abreast when they fit.
-    final leads = side.isNotEmpty && side.first.$1 == HomeBlock.glance.name;
-    final rest = [for (final (_, block) in leads ? side.skip(1) : side) block];
-    final rows = <Widget>[];
-    if (pairs) {
-      for (var index = 0; index < rest.length; index += 2) {
-        rows.add(
-          index + 1 < rest.length
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: rest[index]),
-                    const SizedBox(width: WorkspaceTokens.space4),
-                    Expanded(child: rest[index + 1]),
-                  ],
-                )
-              : rest[index],
-        );
-      }
-    } else {
-      rows.addAll(rest);
-    }
-    return stack(
-      [
-        if (leads) side.first.$2,
-        for (final (_, block) in main) block,
-        if (rows.isNotEmpty) stack(rows, WorkspaceTokens.space4),
-      ],
-      WorkspaceTokens.space8,
-    );
-  }
-
-  /// Home while it is being arranged: every block in a frame that can be
-  /// dragged, and a place at the end of each column to drop onto.
-  Widget _buildArranging(
-    HomeArrangement layout,
-    Widget? Function(String id) blockFor, {
-    required bool wide,
-    required double railWidth,
-  }) {
-    bool accepts(String dragged) => _arrangements.arrangement.contains(dragged);
-
-    Widget column(HomeColumn column) {
-      final ids = layout.blocksIn(column);
-      return Column(
-        key: ValueKey('home-column-${column.name}'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var index = 0; index < ids.length; index++) ...[
-            _buildFrame(
-              layout,
-              ids[index],
-              column,
-              index,
-              ids.length,
-              blockFor(ids[index]),
-            ),
-            const SizedBox(height: WorkspaceTokens.space4),
-          ],
-          HomeDropSlot(
-            key: ValueKey('home-drop-${column.name}'),
-            empty: ids.isEmpty,
-            canAccept: accepts,
-            onAccept: (dragged) => _moveBlock(
-              dragged,
-              column,
-              _arrangements.arrangement.blocksIn(column).length,
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (wide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: column(HomeColumn.main)),
-          const SizedBox(width: WorkspaceTokens.space8),
-          SizedBox(
-            key: const ValueKey('home-rail'),
-            width: railWidth,
-            child: column(HomeColumn.side),
-          ),
-        ],
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        HomeColumnCaption(label: LocaleKeys.landing_mainColumn.tr()),
-        column(HomeColumn.main),
-        const SizedBox(height: WorkspaceTokens.space8),
-        HomeColumnCaption(label: LocaleKeys.landing_sideColumn.tr()),
-        column(HomeColumn.side),
-      ],
-    );
-  }
-
-  Widget _buildFrame(
+  /// [id] as a section of Home's grid, or null when it shows nothing. It is
+  /// at least [readable] columns wide.
+  HomeGridItem? _gridItem(
     HomeArrangement layout,
     String id,
-    HomeColumn column,
-    int index,
-    int count,
-    Widget? block,
-  ) {
+    Map<HomeBlock, Widget> parts,
+    DashboardPalette palette, {
+    int readable = 1,
+  }) {
+    final part = HomeBlock.fromId(id);
+    if (part != null) {
+      final child = parts[part];
+      if (child == null) return null;
+      final minSpan = math.max(part.minimumSpan, readable);
+      return HomeGridItem(
+        id: id,
+        placement: layout.placementOf(id).widened(minSpan),
+        label: _partLabel(part),
+        icon: _partIcon(part),
+        minSpan: minSpan,
+        minRows: part.minimumRows,
+        child: child,
+      );
+    }
     final spec = layout.widgetFor(id);
-    return HomeBlockFrame(
-      key: ValueKey('home-frame-$id'),
+    // A hidden widget keeps its place, and shows only while arranging.
+    if (spec == null || (spec.hidden && !_customizing)) return null;
+    final definition = DashboardWidgetRegistry.definitionFor(spec.type);
+    // Room for the customise frame's heading, however small it may be on a
+    // dashboard.
+    final minSpan = math.max(
+      readable,
+      math.max(3, definition?.minimumColumnSpan ?? 1),
+    );
+    return HomeGridItem(
       id: id,
+      placement: layout.placementOf(id).widened(minSpan),
       label: _blockLabel(id, spec),
       icon: _blockIcon(id, spec),
-      inSide: column == HomeColumn.side,
-      hidden: spec?.hidden ?? false,
-      canAccept: (dragged) => _arrangements.arrangement.contains(dragged),
-      onDrop: (dragged, before) =>
-          _moveBlock(dragged, column, before ? index : index + 1),
-      onMoveUp: index == 0 ? null : () => _moveBlock(id, column, index - 1),
-      onMoveDown:
-          index == count - 1 ? null : () => _moveBlock(id, column, index + 2),
-      onMoveAcross: () => _moveBlock(
-        id,
-        column.other,
-        _arrangements.arrangement.blocksIn(column.other).length,
-      ),
-      onRemove: () =>
-          _arrangements.update(_arrangements.arrangement.remove(id)),
-      onConfigure: spec == null ? null : () => _widgets.configure(spec.id),
-      onResize:
-          spec == null ? null : (distance) => _resizeWidget(spec.id, distance),
-      child: block ?? const SizedBox.shrink(),
+      minSpan: minSpan,
+      minRows: math.max(1, definition?.minimumRowSpan ?? 1),
+      canFit: false,
+      hidden: spec.hidden,
+      onConfigure: () => _widgets.configure(spec.id),
+      child: HomeWidgetCard(controller: _widgets, spec: spec, palette: palette),
     );
   }
 
   // ------------------------------------------------------------- arranging
-
-  void _moveBlock(String id, HomeColumn column, int slot) =>
-      _arrangements.update(_arrangements.arrangement.move(id, column, slot));
 
   void _finishCustomizing() {
     _widgets.closeSettings();
@@ -1014,9 +892,8 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
           AppMenuItem(
             label: _partLabel(part),
             icon: _partIcon(part),
-            onSelected: () => _arrangements.update(
-              _arrangements.arrangement.add(part.name, part.homeColumn),
-            ),
+            onSelected: () =>
+                _arrangements.update(_arrangements.arrangement.add(part.name)),
           ),
         const AppMenuSeparator(),
         AppMenuItem(
@@ -1032,41 +909,10 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
       palette: DashboardPalette.of(context),
     );
     if (definition == null || !mounted) return;
-    // A wide widget — a table, a chart — reads best in the main column.
-    final column =
-        definition.defaultColumnSpan >= 6 ? HomeColumn.main : HomeColumn.side;
     _arrangements.update(
-      _arrangements.arrangement.addWidget(definition.create(), column),
+      _arrangements.arrangement.addWidget(definition.create()),
     );
     if (!_customizing) setState(() => _customizing = true);
-  }
-
-  /// Follows a widget's grip: its height snaps to whole height units, the
-  /// same units its settings and a dashboard use.
-  void _resizeWidget(String specId, double? distance) {
-    final spec = _widgets.document.widgetById(specId);
-    if (spec == null || distance == null) {
-      _resizeFrom = null;
-      return;
-    }
-    final density = _widgets.document.settings.density;
-    final from = _resizeFrom ??= spec.placement.rowSpan;
-    final start = from * density.rowHeight + (from - 1) * density.gap;
-    final minimum = math.max(
-      1,
-      DashboardWidgetRegistry.definitionFor(spec.type)?.minimumRowSpan ?? 1,
-    );
-    final rows =
-        ((start + distance + density.gap) / (density.rowHeight + density.gap))
-            .round()
-            .clamp(minimum, 40);
-    if (rows == spec.placement.rowSpan) return;
-    _widgets.edit(
-      (document) => document.withWidget(
-        spec.copyWith(placement: spec.placement.copyWith(rowSpan: rows)),
-      ),
-      transient: true,
-    );
   }
 
   String _partLabel(HomeBlock part) => switch (part) {
@@ -1195,115 +1041,161 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
       style: WorkspaceTypography.style(context, WorkspaceTextRole.section),
     );
 
-    return Column(
-      key: const ValueKey('home-jump-back-in'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) =>
-              constraints.maxWidth < MediaQuery.textScalerOf(context).scale(560)
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        title,
-                        const SizedBox(height: WorkspaceTokens.space2),
-                        Wrap(
-                          spacing: WorkspaceTokens.space2,
-                          runSpacing: WorkspaceTokens.space2,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [tabs, tools],
-                        ),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        Flexible(child: title),
-                        const SizedBox(width: WorkspaceTokens.space4),
-                        tabs,
-                        const Spacer(),
-                        tools,
-                      ],
+    final header = LayoutBuilder(
+      builder: (context, constraints) =>
+          constraints.maxWidth < MediaQuery.textScalerOf(context).scale(560)
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    title,
+                    const SizedBox(height: WorkspaceTokens.space2),
+                    Wrap(
+                      spacing: WorkspaceTokens.space2,
+                      runSpacing: WorkspaceTokens.space2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [tabs, tools],
                     ),
-        ),
-        const SizedBox(height: WorkspaceTokens.space4),
-        if (entries.isEmpty)
-          Padding(
-            key: const ValueKey('home-jump-empty'),
-            padding:
-                const EdgeInsets.symmetric(vertical: WorkspaceTokens.space4),
-            child: Text(
-              source.isLoading
-                  ? LocaleKeys.viewLibrary_loading.tr()
-                  : recentsTab
-                      ? LocaleKeys.landing_noRecent.tr()
-                      : LocaleKeys.landing_noFavorites.tr(),
-              style: WorkspaceTypography.style(
-                context,
-                WorkspaceTextRole.body,
-                color: palette.mutedText,
-              ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Flexible(child: title),
+                    const SizedBox(width: WorkspaceTokens.space4),
+                    tabs,
+                    const Spacer(),
+                    tools,
+                  ],
+                ),
+    );
+
+    /// The pages themselves. Given the height they have, as many as fill it
+    /// are shown; otherwise as many as keep the wall level with the sections
+    /// beside it.
+    Widget body(double? available) {
+      if (entries.isEmpty) {
+        return Padding(
+          key: const ValueKey('home-jump-empty'),
+          padding: const EdgeInsets.symmetric(vertical: WorkspaceTokens.space4),
+          child: Text(
+            source.isLoading
+                ? LocaleKeys.viewLibrary_loading.tr()
+                : recentsTab
+                    ? LocaleKeys.landing_noRecent.tr()
+                    : LocaleKeys.landing_noFavorites.tr(),
+            style: WorkspaceTypography.style(
+              context,
+              WorkspaceTextRole.body,
+              color: palette.mutedText,
             ),
-          )
-        else if (!gallery)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          ),
+        );
+      }
+      if (!gallery) {
+        final count =
+            available == null ? 8 : math.max(8, (available / 40).ceil());
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final entry in entries.take(count))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: ViewGalleryListRow(
+                  key: ValueKey('home-jump-row-${entry.id}'),
+                  entry: entry,
+                  caption: facts.captionOf(entry),
+                  details: facts.detailsOf(entry),
+                  onOpen: () => _open(entry.view),
+                  onMenu: (position) => _showEntryMenu(entry, source, position),
+                ),
+              ),
+          ],
+        );
+      }
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 18.0;
+          final layout = galleryLayoutFor(
+            available: constraints.maxWidth,
+            target: GalleryCardScale.small.target,
+          );
+          final growth = (MediaQuery.textScalerOf(context).scale(14) / 14 - 1)
+                  .clamp(0.0, double.infinity) *
+              24;
+          final height = (layout.cardWidth * 1.02).clamp(190.0, 300.0) + growth;
+          // Three rows keep the wall level with the sections beside it.
+          final rows = available == null
+              ? 3
+              : math.max(
+                  3,
+                  ((available + spacing) / (height + spacing)).ceil(),
+                );
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
             children: [
-              for (final entry in entries.take(8))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: ViewGalleryListRow(
-                    key: ValueKey('home-jump-row-${entry.id}'),
+              for (final entry in entries.take(layout.columns * rows))
+                SizedBox(
+                  width: layout.cardWidth,
+                  height: height,
+                  child: ViewGalleryCard(
+                    key: ValueKey('home-jump-card-${entry.id}'),
                     entry: entry,
+                    face: GalleryCardFace.page,
+                    loadPreview: () => _previewOf(entry.view),
                     caption: facts.captionOf(entry),
                     details: facts.detailsOf(entry),
+                    userProfile: userProfile,
                     onOpen: () => _open(entry.view),
                     onMenu: (position) =>
                         _showEntryMenu(entry, source, position),
                   ),
                 ),
             ],
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const spacing = 18.0;
-              final layout = galleryLayoutFor(
-                available: constraints.maxWidth,
-                target: GalleryCardScale.small.target,
-              );
-              final growth =
-                  (MediaQuery.textScalerOf(context).scale(14) / 14 - 1)
-                          .clamp(0.0, double.infinity) *
-                      24;
-              final height =
-                  (layout.cardWidth * 1.02).clamp(190.0, 300.0) + growth;
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: [
-                  // Three rows keep the wall level with the side rail.
-                  for (final entry in entries.take(layout.columns * 3))
-                    SizedBox(
-                      width: layout.cardWidth,
-                      height: height,
-                      child: ViewGalleryCard(
-                        key: ValueKey('home-jump-card-${entry.id}'),
-                        entry: entry,
-                        face: GalleryCardFace.page,
-                        loadPreview: () => _previewOf(entry.view),
-                        caption: facts.captionOf(entry),
-                        details: facts.detailsOf(entry),
-                        userProfile: userProfile,
-                        onOpen: () => _open(entry.view),
-                        onMenu: (position) =>
-                            _showEntryMenu(entry, source, position),
-                      ),
+          );
+        },
+      );
+    }
+
+    return Builder(
+      key: const ValueKey('home-jump-back-in'),
+      builder: (context) {
+        if (!HomeTileExtent.fixedOf(context)) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: WorkspaceTokens.space4),
+              body(null),
+            ],
+          );
+        }
+        // A pinned height is filled, and the pages that don't fit scroll
+        // once clicked. However large the text, the heading leaves room.
+        return LayoutBuilder(
+          builder: (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: math.max(0.0, constraints.maxHeight - 64),
+                ),
+                child: SingleChildScrollView(primary: false, child: header),
+              ),
+              const SizedBox(height: WorkspaceTokens.space4),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => ScrollActivationRegion(
+                    child: SingleChildScrollView(
+                      primary: false,
+                      child: body(constraints.maxHeight),
                     ),
-                ],
-              );
-            },
+                  ),
+                ),
+              ),
+            ],
           ),
-      ],
+        );
+      },
     );
   }
 }

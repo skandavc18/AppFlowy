@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:appflowy/core/config/kv.dart';
@@ -6,6 +7,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/plugins/blank/home/home_agenda.dart';
 import 'package:appflowy/plugins/blank/home/home_arrangement.dart';
+import 'package:appflowy/plugins/blank/home/home_grid.dart';
 import 'package:appflowy/plugins/blank/home/home_weather.dart';
 import 'package:appflowy/plugins/blank/workspace_home_page.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
@@ -189,14 +191,20 @@ void main() {
             find.byKey(const ValueKey('home-events-empty')),
             findsOneWidget,
           );
-          // The rail is on the right of the pages worked on lately.
+          // The rail is on the right of the pages worked on lately, the
+          // glance card level with them.
+          final pages = tester.getRect(
+            find.byKey(const ValueKey('home-jump-back-in')),
+          );
+          for (final part in ['home-glance', 'home-calendar']) {
+            expect(
+              tester.getTopLeft(find.byKey(ValueKey(part))).dx,
+              greaterThan(pages.right),
+            );
+          }
           expect(
-            tester.getTopLeft(find.byKey(const ValueKey('home-rail'))).dx,
-            greaterThan(
-              tester
-                  .getTopRight(find.byKey(const ValueKey('home-jump-back-in')))
-                  .dx,
-            ),
+            tester.getTopLeft(find.byKey(const ValueKey('home-glance'))).dy,
+            pages.top,
           );
 
           // Thumbnails of the other recent pages; the resumed one leads.
@@ -761,7 +769,7 @@ void main() {
 
   group('customizing Home', () {
     testWidgets(
-      'parts move up, down and across, and come back from the add menu',
+      'sections move up and down, and come back from the add menu',
       (tester) async {
         final fixture = _Fixture();
         try {
@@ -772,6 +780,7 @@ void main() {
             find.byKey(const ValueKey('home-customize-bar')),
             findsNothing,
           );
+          expect(_frame('glance'), findsNothing);
 
           await _tapVisible(tester, _customize);
           expect(
@@ -779,29 +788,37 @@ void main() {
             findsOneWidget,
           );
           for (final part in HomeBlock.values) {
-            expect(
-              find.byKey(ValueKey('home-frame-${part.name}')),
-              findsOneWidget,
-            );
+            expect(_frame(part.name), findsOneWidget);
           }
-          // The ends of a column cannot move past them.
+          // Up and down trade places with the nearest section sharing its
+          // columns: none is above the glance card or below the reminders,
+          // and none shares the columns of the pages worked on lately.
           expect(_frameButton(tester, 'up', 'glance').onPressed, isNull);
           expect(_frameButton(tester, 'down', 'reminders').onPressed, isNull);
+          expect(_frameButton(tester, 'up', 'jumpBackIn').onPressed, isNull);
+          expect(_frameButton(tester, 'down', 'jumpBackIn').onPressed, isNull);
 
           await _tapVisible(tester, _frameButtonFinder('down', 'glance'));
           expect(
-            store.arrangement.side,
-            ['calendar', 'glance', 'events', 'reminders'],
+            store.arrangement.blocks,
+            ['jumpBackIn', 'calendar', 'glance', 'events', 'reminders'],
+          );
+          expect(
+            tester.getRect(_frame('glance')).top,
+            greaterThan(tester.getRect(_frame('calendar')).bottom),
           );
           await _tapVisible(tester, _frameButtonFinder('up', 'glance'));
-          expect(store.arrangement.side, HomeArrangement.defaults().side);
-
-          await _tapVisible(tester, _frameButtonFinder('across', 'calendar'));
-          expect(store.arrangement.main, ['jumpBackIn', 'calendar']);
-          expect(store.arrangement.side, ['glance', 'events', 'reminders']);
+          expect(
+            store.arrangement.blocks,
+            ['jumpBackIn', 'glance', 'calendar', 'events', 'reminders'],
+          );
+          expect(
+            tester.getRect(_frame('glance')).bottom,
+            lessThan(tester.getRect(_frame('calendar')).top),
+          );
 
           await _tapVisible(tester, _frameButtonFinder('remove', 'reminders'));
-          expect(store.arrangement.side, ['glance', 'events']);
+          expect(store.arrangement.contains('reminders'), isFalse);
           expect(store.arrangement.missingBlocks, [HomeBlock.reminders]);
           expect(find.byKey(const ValueKey('home-reminders')), findsNothing);
 
@@ -811,7 +828,12 @@ void main() {
           );
           await tester.tap(find.text('Reminders').last);
           await _pumpInteraction(tester);
-          expect(store.arrangement.side, ['glance', 'events', 'reminders']);
+          // Back where it first was, after everything else.
+          expect(store.arrangement.blocks.last, 'reminders');
+          expect(
+            store.arrangement.placementOf('reminders'),
+            HomeBlock.reminders.defaultPlacement,
+          );
 
           await _tapVisible(
             tester,
@@ -821,24 +843,17 @@ void main() {
             find.byKey(const ValueKey('home-customize-bar')),
             findsNothing,
           );
-          expect(find.byKey(const ValueKey('home-frame-glance')), findsNothing);
-          final rail = find.byKey(const ValueKey('home-rail'));
-          final calendar = find.byKey(const ValueKey('home-calendar'));
-          expect(
-            find.descendant(of: rail, matching: calendar),
-            findsNothing,
+          expect(_frame('glance'), findsNothing);
+          // Still a rail beside the pages worked on lately.
+          final pages = tester.getRect(
+            find.byKey(const ValueKey('home-jump-back-in')),
           );
-          expect(
-            find.descendant(
-              of: rail,
-              matching: find.byKey(const ValueKey('home-reminders')),
-            ),
-            findsOneWidget,
-          );
-          expect(
-            tester.getTopRight(calendar).dx,
-            lessThan(tester.getTopLeft(rail).dx),
-          );
+          for (final part in ['glance', 'calendar', 'events', 'reminders']) {
+            expect(
+              tester.getTopLeft(find.byKey(ValueKey('home-$part'))).dx,
+              greaterThan(pages.right),
+            );
+          }
           expect(fixture.storage.accesses, isEmpty);
           expect(tester.takeException(), isNull);
         } finally {
@@ -849,7 +864,7 @@ void main() {
     );
 
     testWidgets(
-      'a part is dragged onto another part, or to the end of a column',
+      'a section is dragged anywhere, and the others make way',
       (tester) async {
         final fixture = _Fixture();
         try {
@@ -857,35 +872,474 @@ void main() {
           await _tapVisible(tester, _customize);
           final store = fixture.arrangement!;
 
-          // Onto the upper half of Jump back in: above it, in the main column.
+          // Above the pages worked on lately, at the start edge.
           await _dragBetween(
             tester,
-            from: tester.getCenter(
-              find.byKey(const ValueKey('home-frame-events')),
-            ),
-            to: tester.getTopLeft(
-                  find.byKey(const ValueKey('home-frame-jumpBackIn')),
-                ) +
-                const Offset(160, 20),
+            from: tester.getCenter(_frame('events')),
+            to: tester.getTopLeft(_frame('jumpBackIn')) + const Offset(160, 20),
           );
-          expect(store.arrangement.main, ['events', 'jumpBackIn']);
           expect(
-            store.arrangement.side,
-            ['glance', 'calendar', 'reminders'],
+            store.arrangement.placementOf('events'),
+            const HomeBlockPlacement(span: 4),
+          );
+          expect(
+            store.arrangement.blocks,
+            ['glance', 'events', 'jumpBackIn', 'calendar', 'reminders'],
+          );
+          // The pages made way below it; the rail stayed where it was.
+          var events = tester.getRect(_frame('events'));
+          expect(
+            tester.getRect(_frame('jumpBackIn')).top,
+            greaterThan(events.bottom),
+          );
+          expect(events.right, lessThan(tester.getRect(_frame('glance')).left));
+          expect(
+            tester.getRect(_frame('reminders')).top,
+            greaterThan(tester.getRect(_frame('calendar')).bottom),
           );
 
-          // Onto the end of the side column.
+          // Below the reminders, back in the rail.
           await _dragBetween(
             tester,
-            from: tester.getCenter(
-              find.byKey(const ValueKey('home-frame-events')),
-            ),
-            to: tester.getCenter(find.byKey(const ValueKey('home-drop-side'))),
+            from: tester.getCenter(_frame('events')),
+            to: tester.getRect(_frame('reminders')).bottomCenter +
+                const Offset(0, 60),
           );
-          expect(store.arrangement.main, ['jumpBackIn']);
           expect(
-            store.arrangement.side,
-            ['glance', 'calendar', 'reminders', 'events'],
+            store.arrangement.placementOf('events'),
+            const HomeBlockPlacement(column: 8, span: 4),
+          );
+          expect(store.arrangement.blocks.last, 'events');
+          events = tester.getRect(_frame('events'));
+          expect(
+            events.top,
+            greaterThan(tester.getRect(_frame('reminders')).bottom),
+          );
+          // With nothing above it at the start edge, the pages rose again.
+          expect(
+            tester.getRect(_frame('jumpBackIn')).top,
+            tester.getRect(_frame('glance')).top,
+          );
+
+          // A drag let go where it began changes nothing.
+          final before = store.arrangement;
+          await _dragBetween(
+            tester,
+            from: tester.getCenter(_frame('glance')),
+            to: tester.getCenter(_frame('glance')) - const Offset(0, 24),
+          );
+          expect(store.arrangement, same(before));
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: _timeout,
+    );
+
+    testWidgets(
+      'sections are resized from their edges, and fit their content again',
+      (tester) async {
+        final fixture = _Fixture();
+        try {
+          await _pumpHome(tester, fixture, size: const Size(1440, 4200));
+          await _tapVisible(tester, _customize);
+          final store = fixture.arrangement!;
+          final step =
+              (tester.getSize(find.byKey(const ValueKey('home-grid'))).width +
+                      24) /
+                  12;
+
+          // Narrower from its end edge, by whole columns.
+          await tester.drag(_grip('end', 'jumpBackIn'), Offset(-2 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('jumpBackIn'),
+            const HomeBlockPlacement(span: 6),
+          );
+          expect(
+            tester.getRect(_frame('jumpBackIn')).width,
+            moreOrLessEquals(6 * step - 24, epsilon: 0.01),
+          );
+
+          // While it is resized, the sections below make way; nothing is kept
+          // until it is let go, and let go where it began, nothing changes.
+          final grip = tester.getCenter(_grip('bottom', 'calendar'));
+          final eventsTop = tester.getRect(_frame('events')).top;
+          final resize = await tester.startGesture(
+            grip,
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pump();
+          for (var i = 1; i <= 6; i++) {
+            await resize.moveTo(grip + Offset(0, 30.0 * i));
+            await tester.pump();
+          }
+          await _pumpInteraction(tester);
+          expect(
+            tester.getRect(_frame('events')).top,
+            greaterThan(eventsTop + 120),
+          );
+          expect(store.arrangement.placementOf('calendar').rows, isNull);
+          await resize.moveTo(grip);
+          await tester.pump();
+          await resize.up();
+          await _pumpInteraction(tester);
+          await resize.removePointer();
+          expect(
+            store.arrangement.placementOf('calendar'),
+            HomeBlock.calendar.defaultPlacement,
+          );
+          expect(tester.getRect(_frame('events')).top, eventsTop);
+
+          // Taller from its bottom edge, by whole height units. Its height
+          // is kept from then on, until it fits its content again.
+          final calendar = find.byKey(const ValueKey('home-calendar'));
+          final fitted = tester.getSize(calendar).height;
+          expect(_frameButtonFinder('fit', 'calendar'), findsNothing);
+          await tester.drag(_grip('bottom', 'calendar'), const Offset(0, 100));
+          await _pumpInteraction(tester);
+          final rows = homeGridRowsFor(fitted + 100, 46, 14, minimum: 3);
+          expect(store.arrangement.placementOf('calendar').rows, rows);
+          expect(
+            tester.getSize(calendar).height,
+            homeGridRowsHeight(rows, 46, 14),
+          );
+          await _tapVisible(tester, _frameButtonFinder('fit', 'calendar'));
+          expect(store.arrangement.placementOf('calendar').rows, isNull);
+          expect(tester.getSize(calendar).height, fitted);
+          expect(_frameButtonFinder('fit', 'calendar'), findsNothing);
+
+          // Both at once from the corner.
+          final events =
+              tester.getSize(find.byKey(const ValueKey('home-events')));
+          await tester.drag(_grip('bottomEnd', 'events'), Offset(-step, 80));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('events'),
+            HomeBlockPlacement(
+              column: 8,
+              span: 3,
+              rows: homeGridRowsFor(events.height + 80, 46, 14, minimum: 3),
+            ),
+          );
+
+          // Never narrower than a section reads well in.
+          await tester.drag(_grip('end', 'glance'), Offset(-6 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('glance'),
+            HomeBlockPlacement(
+              column: 8,
+              span: HomeBlock.glance.minimumSpan,
+            ),
+          );
+
+          // From the start edge too: a section by the grid's end edge grows
+          // towards the start, its end edge staying put. It still shares no
+          // columns with the pages, so it stays beside them, under the glance.
+          final grid = tester.getRect(find.byKey(const ValueKey('home-grid')));
+          await tester.drag(_grip('start', 'calendar'), Offset(-2 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('calendar'),
+            const HomeBlockPlacement(column: 6, span: 6),
+          );
+          final widened = tester.getRect(_frame('calendar'));
+          expect(widened.right, moreOrLessEquals(grid.right, epsilon: 0.01));
+          expect(widened.width, moreOrLessEquals(6 * step - 24, epsilon: 0.01));
+          expect(
+            widened.left,
+            greaterThan(tester.getRect(_frame('jumpBackIn')).right),
+          );
+          expect(
+            widened.top,
+            moreOrLessEquals(
+              tester.getRect(_frame('glance')).bottom + 14,
+              epsilon: 0.01,
+            ),
+          );
+          // Pushed in as far as it goes, it keeps its fewest columns.
+          await tester.drag(_grip('start', 'calendar'), Offset(8 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('calendar'),
+            HomeBlockPlacement(
+              column: homeGridColumns - HomeBlock.calendar.minimumSpan,
+              span: HomeBlock.calendar.minimumSpan,
+            ),
+          );
+
+          // And both at once from the other bottom corner.
+          final pinned =
+              tester.getSize(find.byKey(const ValueKey('home-events')));
+          await tester.drag(_grip('bottomStart', 'events'), Offset(-step, 80));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('events'),
+            HomeBlockPlacement(
+              column: 7,
+              span: 4,
+              rows: homeGridRowsFor(pinned.height + 80, 46, 14, minimum: 3),
+            ),
+          );
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: _timeout,
+    );
+
+    testWidgets(
+      'the layout menu moves and resizes a section without dragging',
+      (tester) async {
+        final fixture = _Fixture();
+        try {
+          await _pumpHome(tester, fixture, size: const Size(1440, 4200));
+          await _tapVisible(tester, _customize);
+          final store = fixture.arrangement!;
+          HomeBlockPlacement calendar() =>
+              store.arrangement.placementOf('calendar');
+
+          await _choose(tester, 'calendar', 'Move left');
+          expect(calendar(), const HomeBlockPlacement(column: 7, span: 4));
+          // It shares a column with the pages now, so it goes below them.
+          expect(
+            tester.getRect(_frame('calendar')).top,
+            greaterThan(tester.getRect(_frame('jumpBackIn')).bottom),
+          );
+          await _choose(tester, 'calendar', 'Wider');
+          expect(calendar(), const HomeBlockPlacement(column: 7, span: 5));
+          await _choose(tester, 'calendar', 'Narrower');
+          expect(calendar(), const HomeBlockPlacement(column: 7, span: 4));
+          await _choose(tester, 'calendar', 'Move right');
+          expect(calendar(), HomeBlock.calendar.defaultPlacement);
+
+          await _choose(tester, 'calendar', 'Taller');
+          final rows = calendar().rows;
+          expect(rows, isNotNull);
+          await _choose(tester, 'calendar', 'Shorter');
+          expect(calendar().rows, rows! - 1);
+          await _choose(tester, 'calendar', 'Fit to content');
+          expect(calendar().rows, isNull);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: _timeout,
+    );
+
+    testWidgets(
+      'in narrower windows sections pair up, then stack, in reading order',
+      (tester) async {
+        final fixture = _Fixture();
+        try {
+          await _pumpHome(tester, fixture, size: const Size(700, 4200));
+          final store = fixture.arrangement!;
+          Rect part(String name) =>
+              tester.getRect(find.byKey(ValueKey('home-$name')));
+          // Two narrow sections that follow each other share a row; the
+          // rest take the whole width.
+          expect(part('glance').bottom, lessThan(part('jump-back-in').top));
+          expect(part('calendar').top, part('events').top);
+          expect(part('calendar').right, lessThan(part('events').left));
+          expect(
+            part('reminders').top,
+            greaterThan(
+              math.max(part('calendar').bottom, part('events').bottom),
+            ),
+          );
+          expect(part('reminders').width, part('glance').width);
+
+          // Arranging follows the reading order; widths and columns are
+          // kept for wider windows, so there is nothing to drag sideways,
+          // and the hint says so.
+          await _tapVisible(tester, _customize);
+          expect(
+            find.text(
+              'Drag sections to reorder them and pull their bottom edges to '
+              'change their height. Widen the window to change their widths.',
+            ),
+            findsOneWidget,
+          );
+          for (final edge in ['start', 'end', 'bottomStart', 'bottomEnd']) {
+            expect(_grip(edge, 'glance'), findsNothing);
+          }
+          expect(_grip('bottom', 'glance'), findsOneWidget);
+          await _tapVisible(tester, _frameButtonFinder('up', 'jumpBackIn'));
+          expect(
+            store.arrangement.blocks,
+            ['jumpBackIn', 'glance', 'calendar', 'events', 'reminders'],
+          );
+          expect(
+            store.arrangement.placementOf('jumpBackIn'),
+            HomeBlock.jumpBackIn.defaultPlacement,
+          );
+          await _choose(tester, 'glance', 'Taller');
+          expect(store.arrangement.placementOf('glance').rows, isNotNull);
+
+          await _pumpHome(tester, fixture, size: const Size(500, 4200));
+          await _tapVisible(
+            tester,
+            find.byKey(const ValueKey('home-customize-done')),
+          );
+          final left = part('glance').left;
+          for (final name in ['jump-back-in', 'calendar', 'events']) {
+            expect(part(name).left, left);
+          }
+          expect(part('calendar').bottom, lessThan(part('events').top));
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: _timeout,
+    );
+
+    testWidgets(
+      'a medium window keeps the grid, resizable from every side, and '
+      'sections never get too narrow to read',
+      (tester) async {
+        final fixture = _Fixture()
+          ..seededArrangement = HomeArrangement.defaults().place(
+            'calendar',
+            const HomeBlockPlacement(column: 9, span: 3),
+          );
+        try {
+          // About as wide as Home is beside a half-screen window's edges.
+          await _pumpHome(tester, fixture, size: const Size(830, 4200));
+          await _tapVisible(tester, _customize);
+          final store = fixture.arrangement!;
+          final grid = tester.getRect(find.byKey(const ValueKey('home-grid')));
+          final step = (grid.width + 24) / 12;
+          expect(homeGridReadableSpan(grid.width), 4);
+          expect(
+            find.text(
+              'Drag sections anywhere and pull their edges to resize them, '
+              'or add widgets from dashboards.',
+            ),
+            findsOneWidget,
+          );
+          for (final edge in ['start', 'end', 'bottomStart', 'bottomEnd']) {
+            expect(_grip(edge, 'calendar'), findsOneWidget);
+          }
+
+          // Three columns would be too narrow here, so it is drawn across
+          // four, against the end edge; what is stored is left alone.
+          final shown = tester.getRect(_frame('calendar'));
+          expect(shown.width, moreOrLessEquals(4 * step - 24, epsilon: 0.01));
+          expect(shown.right, moreOrLessEquals(grid.right, epsilon: 0.01));
+          expect(
+            store.arrangement.placementOf('calendar'),
+            const HomeBlockPlacement(column: 9, span: 3),
+          );
+
+          // Wider from its start edge, then back in, never under four.
+          await tester.drag(_grip('start', 'calendar'), Offset(-step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('calendar'),
+            const HomeBlockPlacement(column: 7, span: 5),
+          );
+          await tester.drag(_grip('start', 'calendar'), Offset(4 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('calendar'),
+            const HomeBlockPlacement(column: 8, span: 4),
+          );
+
+          // Narrower from the other side, and both ways from a corner.
+          await tester.drag(_grip('end', 'jumpBackIn'), Offset(-2 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('jumpBackIn'),
+            const HomeBlockPlacement(span: 6),
+          );
+          final events =
+              tester.getSize(find.byKey(const ValueKey('home-events')));
+          await tester.drag(_grip('bottomStart', 'events'), Offset(-step, 80));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('events'),
+            HomeBlockPlacement(
+              column: 7,
+              span: 5,
+              rows: homeGridRowsFor(events.height + 80, 46, 14, minimum: 3),
+            ),
+          );
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: _timeout,
+    );
+
+    testWidgets(
+      'right to left, Home mirrors its columns',
+      (tester) async {
+        final fixture = _Fixture();
+        try {
+          await _pumpHome(
+            tester,
+            fixture,
+            size: const Size(1440, 4200),
+            direction: ui.TextDirection.rtl,
+          );
+          final store = fixture.arrangement!;
+          final pages = tester.getRect(
+            find.byKey(const ValueKey('home-jump-back-in')),
+          );
+          expect(
+            tester.getRect(find.byKey(const ValueKey('home-glance'))).right,
+            lessThan(pages.left),
+          );
+
+          await _tapVisible(tester, _customize);
+          final step =
+              (tester.getSize(find.byKey(const ValueKey('home-grid'))).width +
+                      24) /
+                  12;
+          // The end edge is on the left.
+          await tester.drag(_grip('end', 'jumpBackIn'), Offset(2 * step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('jumpBackIn'),
+            const HomeBlockPlacement(span: 6),
+          );
+          // Right is towards the start edge.
+          await _choose(tester, 'calendar', 'Move right');
+          expect(
+            store.arrangement.placementOf('calendar'),
+            const HomeBlockPlacement(column: 7, span: 4),
+          );
+          // Dragged to the left edge: the last columns.
+          await _dragBetween(
+            tester,
+            from: tester.getCenter(_frame('glance')),
+            to: tester.getCenter(_frame('glance')) - Offset(step, 0),
+          );
+          expect(
+            store.arrangement.placementOf('glance'),
+            HomeBlock.glance.defaultPlacement,
+          );
+          await _dragBetween(
+            tester,
+            from: tester.getCenter(_frame('glance')),
+            to: tester.getCenter(_frame('glance')) + Offset(2 * step, 0),
+          );
+          expect(
+            store.arrangement.placementOf('glance'),
+            const HomeBlockPlacement(column: 6, span: 4),
+          );
+          // The start edge is on the right, and pulled right it grows.
+          await tester.drag(_grip('start', 'calendar'), Offset(step, 0));
+          await _pumpInteraction(tester);
+          expect(
+            store.arrangement.placementOf('calendar'),
+            const HomeBlockPlacement(column: 6, span: 5),
           );
           expect(tester.takeException(), isNull);
         } finally {
@@ -907,18 +1361,19 @@ void main() {
         );
         const block = 'widget:w-note';
         final fixture = _Fixture()
-          ..seededArrangement =
-              HomeArrangement.defaults().addWidget(note, HomeColumn.side);
+          ..seededArrangement = HomeArrangement.defaults().addWidget(note);
         try {
           await _pumpHome(tester, fixture, size: const Size(1440, 4200));
           final store = fixture.arrangement!;
           final card = find.byKey(const ValueKey('home-widget-w-note'));
+          // A narrow widget joins the rail.
           expect(
-            find.descendant(
-              of: find.byKey(const ValueKey('home-rail')),
-              matching: card,
+            tester.getTopLeft(card).dx,
+            greaterThan(
+              tester
+                  .getTopRight(find.byKey(const ValueKey('home-jump-back-in')))
+                  .dx,
             ),
-            findsOneWidget,
           );
           expect(
             find.descendant(of: card, matching: find.text('Remember the milk')),
@@ -948,8 +1403,9 @@ void main() {
           await _pumpInteraction(tester);
           expect(settings, findsNothing);
 
-          // Its height follows the grip, in whole height units.
-          final grip = find.byKey(const ValueKey('home-block-resize-$block'));
+          // Its height follows the grip, in whole height units; a widget
+          // always keeps one, so there is nothing to fit.
+          final grip = _grip('bottom', block);
           await tester.ensureVisible(grip);
           await _pumpInteraction(tester);
           await tester.drag(grip, const Offset(0, 120));
@@ -958,12 +1414,14 @@ void main() {
             store.arrangement.widgets.widgetById('w-note')!.placement.rowSpan,
             5,
           );
+          expect(tester.getSize(card).height, 5 * 46 + 4 * 14);
+          expect(_frameButtonFinder('fit', block), findsNothing);
 
           // Taken off Home, a widget goes with its settings.
           await _tapVisible(tester, _frameButtonFinder('remove', block));
           expect(store.arrangement.widgets.widgetCount, 0);
-          expect(store.arrangement.side, HomeArrangement.defaults().side);
-          expect(find.byKey(const ValueKey('home-frame-$block')), findsNothing);
+          expect(store.arrangement.blocks, HomeArrangement.defaults().blocks);
+          expect(_frame(block), findsNothing);
           expect(tester.takeException(), isNull);
         } finally {
           await fixture.dispose(tester);
@@ -1001,11 +1459,18 @@ void main() {
           final spec = store.arrangement.widgets.allWidgets.single;
           expect(spec.type, 'sticky_note');
           final block = homeWidgetBlockId(spec.id);
-          final column = definition.defaultColumnSpan >= 6
-              ? store.arrangement.main
-              : store.arrangement.side;
-          expect(column.last, block);
-          expect(find.byKey(ValueKey('home-frame-$block')), findsOneWidget);
+          expect(store.arrangement.blocks.last, block);
+          // A wide widget starts at the start edge, a narrow one by the rail.
+          final span = definition.defaultColumnSpan;
+          expect(
+            store.arrangement.placementOf(block),
+            HomeBlockPlacement(
+              column: span >= 6 ? 0 : 12 - span,
+              span: span,
+              rows: spec.placement.rowSpan,
+            ),
+          );
+          expect(_frame(block), findsOneWidget);
 
           await _tapVisible(
             tester,
@@ -1027,10 +1492,30 @@ void main() {
       testWidgets(
         '$appearance: customizing stays usable wide, narrow, at 2x and RTL',
         (tester) async {
-          final fixture = _Fixture();
+          final fixture = _Fixture()
+            ..seededArrangement = HomeArrangement.defaults()
+                .addWidget(
+                  const DashboardWidgetSpec(
+                    id: 'w-note',
+                    type: 'text',
+                    title: 'A note with a rather long title to wrap',
+                    placement: DashboardPlacement(rowSpan: 3),
+                    settings: {'text': 'Remember the milk'},
+                  ),
+                )
+                .place(
+                  'calendar',
+                  const HomeBlockPlacement(column: 8, span: 4, rows: 3),
+                )
+                .place(
+                  'jumpBackIn',
+                  const HomeBlockPlacement(span: 8, rows: 4),
+                );
           try {
             for (final (size, scale, direction) in [
               (const Size(1440, 1000), 1.0, ui.TextDirection.ltr),
+              (const Size(1440, 1000), 1.0, ui.TextDirection.rtl),
+              (const Size(2400, 1400), 2.0, ui.TextDirection.ltr),
               (const Size(900, 700), 1.0, ui.TextDirection.rtl),
               (const Size(360, 640), 2.0, ui.TextDirection.ltr),
               (const Size(320, 600), 2.0, ui.TextDirection.rtl),
@@ -1053,17 +1538,38 @@ void main() {
                 find.byKey(const ValueKey('home-customize-bar')),
                 findsOneWidget,
               );
-              final narrow = size.width < 940 * scale;
-              expect(
-                find.text('Main column'),
-                narrow ? findsOneWidget : findsNothing,
+              // Home is at most 1280 wide, inside the page's margins.
+              final inset = size.width < 360
+                  ? 16
+                  : size.width < 600
+                      ? 24
+                      : 48;
+              final wide =
+                  math.min(1280, size.width) - 2 * inset >= 660 * scale;
+              expect(_frame('glance'), findsOneWidget);
+              for (final edge in ['start', 'end', 'bottomStart']) {
+                expect(
+                  _grip(edge, 'glance'),
+                  wide ? findsOneWidget : findsNothing,
+                );
+              }
+              // Every section can be reached from its layout menu, however
+              // little room its heading has.
+              expect(_frameButtonFinder('more', 'glance'), findsOneWidget);
+              expect(tester.takeException(), isNull);
+
+              // The sections whose height is pinned scroll what doesn't fit.
+              await tester.ensureVisible(
+                find.byKey(const ValueKey('home-jump-back-in')),
               );
-              expect(
-                find.byKey(const ValueKey('home-frame-glance')),
-                findsOneWidget,
-              );
+              await _pumpInteraction(tester);
               expect(tester.takeException(), isNull);
             }
+            await _tapVisible(
+              tester,
+              find.byKey(const ValueKey('home-customize-done')),
+            );
+            expect(tester.takeException(), isNull);
           } finally {
             await fixture.dispose(tester);
           }
@@ -1076,11 +1582,23 @@ void main() {
 
 final _customize = find.byKey(const ValueKey('home-customize'));
 
+Finder _frame(String block) => find.byKey(ValueKey('home-frame-$block'));
+
+Finder _grip(String edge, String block) =>
+    find.byKey(ValueKey('home-grip-$edge-$block'));
+
 Finder _frameButtonFinder(String action, String block) =>
     find.byKey(ValueKey('home-block-$action-$block'));
 
 IconButton _frameButton(WidgetTester tester, String action, String block) =>
     tester.widget<IconButton>(_frameButtonFinder(action, block));
+
+/// Picks [label] from the layout menu of [block].
+Future<void> _choose(WidgetTester tester, String block, String label) async {
+  await _tapVisible(tester, _frameButtonFinder('more', block));
+  await tester.tap(find.text(label).last);
+  await _pumpInteraction(tester);
+}
 
 /// A mouse drag that crosses the slop first, then travels in steps so each
 /// target along the way hears the pointer, as a real drag does.

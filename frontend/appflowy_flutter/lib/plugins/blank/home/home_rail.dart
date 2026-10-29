@@ -3,10 +3,12 @@ import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/blank/home/home_agenda.dart';
+import 'package:appflowy/plugins/blank/home/home_grid.dart';
 import 'package:appflowy/plugins/blank/home/home_sections.dart';
 import 'package:appflowy/plugins/blank/home/home_weather.dart';
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/shared/weather/weather_reading.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -33,11 +35,13 @@ class HomeRailCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = WorkspacePalette.of(context);
+    // A pinned height is filled, and what doesn't fit scrolls once clicked.
+    final fill = HomeTileExtent.fixedOf(context);
     return WorkspaceSurface(
       padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
         children: [
           Row(
             children: [
@@ -73,7 +77,14 @@ class HomeRailCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: WorkspaceTokens.space2),
-          child,
+          if (fill)
+            Expanded(
+              child: ScrollActivationRegion(
+                child: SingleChildScrollView(primary: false, child: child),
+              ),
+            )
+          else
+            child,
         ],
       ),
     );
@@ -103,42 +114,56 @@ class HomeGlanceCard extends StatelessWidget {
       formatTime: formatTime,
       alignment: CrossAxisAlignment.start,
     );
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth >=
+                  MediaQuery.textScalerOf(context).scale(270)
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: clock),
+                    const SizedBox(width: WorkspaceTokens.space2),
+                    weather,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    clock,
+                    const SizedBox(height: WorkspaceTokens.space2),
+                    weather,
+                  ],
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            vertical: WorkspaceTokens.space4,
+          ),
+          child: Divider(height: 1, thickness: 1, color: palette.border),
+        ),
+        resume,
+      ],
+    );
+    if (HomeTileExtent.fixedOf(context)) {
+      // A pinned height is filled, and what doesn't fit scrolls once clicked.
+      return WorkspaceSurface(
+        key: const ValueKey('home-glance'),
+        child: ScrollActivationRegion(
+          child: SingleChildScrollView(
+            primary: false,
+            padding: const EdgeInsets.all(18),
+            child: body,
+          ),
+        ),
+      );
+    }
     return WorkspaceSurface(
       key: const ValueKey('home-glance'),
       padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) => constraints.maxWidth >=
-                    MediaQuery.textScalerOf(context).scale(270)
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: clock),
-                      const SizedBox(width: WorkspaceTokens.space2),
-                      weather,
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      clock,
-                      const SizedBox(height: WorkspaceTokens.space2),
-                      weather,
-                    ],
-                  ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: WorkspaceTokens.space4,
-            ),
-            child: Divider(height: 1, thickness: 1, color: palette.border),
-          ),
-          resume,
-        ],
-      ),
+      child: body,
     );
   }
 }
@@ -729,7 +754,10 @@ class HomeRemindersCard extends StatelessWidget {
           : '${DateFormat.MMMEd().format(item.start)} · $time';
     }
 
-    final shown = reminders.take(limit).toList();
+    // With a pinned height, the card scrolls, so every reminder can be shown.
+    final shown = HomeTileExtent.fixedOf(context)
+        ? reminders
+        : reminders.take(limit).toList();
     return HomeRailCard(
       key: const ValueKey('home-reminders'),
       title: LocaleKeys.landing_reminders.tr(),
