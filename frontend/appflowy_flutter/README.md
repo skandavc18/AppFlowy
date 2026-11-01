@@ -43,6 +43,16 @@ We have detailed documentation on how to [get started](https://docs.appflowy.io/
 - [Making Your First PR](https://docs.appflowy.io/docs/documentation/software-contributions/submitting-code/submitting-your-first-pull-request)
 - [All AppFlowy Documentation](https://docs.appflowy.io/docs/documentation/appflowy) - Contribution guide, build and run, debugging, testing, localization, etc.
 
+### Native Markdown and HTML previews
+
+Linux renders Markdown and simplified HTML without a web view. Text blocks use
+measured heights at the current width and text scale, so scrolling and dragging
+the scrollbar do not change the document's length. Long documents and lists
+remain lazily mounted. Images and tables retain their natural layout; loading
+an image can still reflow the document.
+
+Regression coverage: `flutter test test/unit_test/file/native_markup_preview_test.dart`.
+
 ### Need Help?
 
 - New to GitHub? Follow [these](https://docs.appflowy.io/docs/documentation/software-contributions/submitting-code/setting-up-your-repositories) steps to get started

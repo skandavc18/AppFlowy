@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/native_markup_preview.dart';
+import 'package:appflowy/shared/document_viewer/document_scroll.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown/markdown.dart' as m;
 import 'package:path/path.dart' as p;
@@ -293,6 +296,40 @@ void main() {
           ),
           findsNothing,
         );
+        _expectNaturalBlockHeights(tester);
+      });
+
+      testWidgets('measures wrapping and scaled text accurately in $name mode',
+          (tester) async {
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        for (final width in [380.0, 800.0]) {
+          tester.view.physicalSize = Size(width, 4000);
+          for (final scale in [1.0, 1.8]) {
+            await tester.pumpWidget(
+              _app(
+                MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: const NativeMarkupPreview(
+                    source: '$_markdown\n\n'
+                        '101. A longer numbered item with **bold words** and '
+                        'enough words to wrap across several lines.\n'
+                        '     - Nested item with `inline code`.\n'
+                        '       > A nested quote with more words to wrap.\n\n'
+                        '> ## Heading inside a quote\n'
+                        '> A paragraph inside that quote.',
+                    format: NativeMarkupFormat.markdown,
+                    baseDirectory: '/tmp',
+                  ),
+                ),
+                brightness: brightness,
+                paper: paper,
+              ),
+            );
+            _expectNaturalBlockHeights(tester);
+            expect(tester.takeException(), isNull);
+          }
+        }
       });
     }
 
@@ -314,6 +351,7 @@ void main() {
         tester.widget<RichText>(_richText(code)).text.toPlainText(),
         code,
       );
+      _expectNaturalBlockHeights(tester);
     });
 
     testWidgets('says an HTML page is simplified and never shows its scripts',
@@ -384,6 +422,288 @@ void main() {
       );
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(_richText('Paragraph 0'), findsOneWidget);
+      expect(find.byType(RichText).evaluate().length, lessThan(100));
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position;
+      final extent = position.maxScrollExtent;
+      position.jumpTo(extent);
+      await tester.pump();
+      expect(_richText('Paragraph 29999'), findsOneWidget);
+      expect(find.byType(RichText).evaluate().length, lessThan(100));
+      expect(position.maxScrollExtent, closeTo(extent, 0.1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'keeps the extent of mixed-height markup stable while scrolling',
+        (tester) async {
+      final source = List.generate(
+        120,
+        (i) => i < 30
+            ? 'Short paragraph $i.'
+            : '# Section $i\n\n${'Wrapped paragraph $i. ' * 60}\n\n'
+                '> Quoted paragraph $i.\n\n'
+                '- First item $i\n- ${'Long item $i. ' * 12}\n\n'
+                '```\n${'code line\n' * 8}```',
+      ).join('\n\n');
+      await tester.pumpWidget(
+        _app(
+          NativeMarkupPreview(
+            source: source,
+            format: NativeMarkupFormat.markdown,
+            baseDirectory: '/tmp',
+          ),
+        ),
+      );
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+      final extent = position.maxScrollExtent;
+      expect(extent, greaterThan(10000));
+      for (final fraction in [0.25, 0.75, 0.5, 1.0, 0.0]) {
+        position.jumpTo(extent * fraction);
+        await tester.pumpAndSettle();
+        expect(position.maxScrollExtent, closeTo(extent, 0.1));
+        expect(position.pixels, closeTo(extent * fraction, 0.1));
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('virtualizes a long list and preserves its scroll range',
+        (tester) async {
+      await tester.pumpWidget(
+        _app(
+          NativeMarkupPreview(
+            source: List.generate(3000, (i) => '${i + 1}. List item $i.')
+                .join('\n'),
+            format: NativeMarkupFormat.markdown,
+            baseDirectory: '/tmp',
+          ),
+        ),
+      );
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position;
+      final extent = position.maxScrollExtent;
+      expect(find.byType(RichText).evaluate().length, lessThan(100));
+      position.jumpTo(extent);
+      await tester.pump();
+      expect(_richText('List item 2999.'), findsOneWidget);
+      expect(find.text('3000.'), findsOneWidget);
+      expect(find.byType(RichText).evaluate().length, lessThan(100));
+      expect(position.maxScrollExtent, closeTo(extent, 0.1));
+      _expectNaturalBlockHeights(tester);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('uses actual table and image sizes in a long HTML preview',
+        (tester) async {
+      final image = 'data:image/png;base64,${base64Encode(_png)}';
+      final source = [
+        for (var i = 0; i < 100; i++) ...[
+          '<p>Paragraph $i ${'with wrapping words ' * (i < 20 ? 1 : 20)}</p>',
+          if (i % 20 == 0) ...[
+            '<table><tr><th>Title $i</th><th>Value</th></tr>'
+                '<tr><td>Cell $i</td><td>Another cell</td></tr></table>',
+            '<p><img src="$image" width="32" alt="Image $i"></p>',
+          ],
+        ],
+      ].join('\n');
+      await tester.pumpWidget(
+        _app(
+          NativeMarkupPreview(
+            source: source,
+            format: NativeMarkupFormat.html,
+            baseDirectory: '/tmp',
+          ),
+        ),
+      );
+      await _settle(tester, () {
+        final images = tester.widgetList<RawImage>(find.byType(RawImage));
+        return images.length == 5 &&
+            images.every((image) => image.image != null);
+      });
+      final images = tester.widgetList<RawImage>(find.byType(RawImage));
+      expect(images, hasLength(5));
+      expect(images.every((image) => image.image != null), isTrue);
+      final controller = tester
+          .widget<CustomScrollView>(find.byType(CustomScrollView))
+          .controller!;
+      final extent = controller.position.maxScrollExtent;
+      for (final fraction in [0.5, 1.0, 0.25, 0.0]) {
+        controller.jumpTo(extent * fraction);
+        await tester.pumpAndSettle();
+        expect(controller.position.maxScrollExtent, closeTo(extent, 0.1));
+        expect(controller.offset, closeTo(extent * fraction, 0.1));
+        _expectNaturalBlockHeights(tester);
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('remeasures after resizing and replacing the source',
+        (tester) async {
+      tester.view
+        ..devicePixelRatio = 1
+        ..physicalSize = const Size(800, 600);
+      addTearDown(tester.view.reset);
+      final source = List.generate(
+        60,
+        (i) => 'Paragraph $i ${'with wrapping words ' * 20}',
+      ).join('\n\n');
+      Widget preview(String source) => _app(
+            NativeMarkupPreview(
+              source: source,
+              format: NativeMarkupFormat.markdown,
+              baseDirectory: '/tmp',
+            ),
+          );
+      await tester.pumpWidget(preview(source));
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position;
+      final wideExtent = position.maxScrollExtent;
+      tester.view.physicalSize = const Size(380, 600);
+      await tester.pump();
+      final narrowExtent = position.maxScrollExtent;
+      expect(narrowExtent, greaterThan(wideExtent));
+      position.jumpTo(narrowExtent * 0.5);
+      await tester.pump();
+      expect(position.maxScrollExtent, closeTo(narrowExtent, 0.1));
+      _expectNaturalBlockHeights(tester);
+
+      await tester.pumpWidget(preview('# Replacement\n\nShort text.'));
+      await tester.pumpAndSettle();
+      expect(_richText('Short text.'), findsOneWidget);
+      expect(position.maxScrollExtent, 0);
+      expect(position.pixels, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('dragging the scrollbar tracks the same document fraction',
+        (tester) async {
+      await tester.pumpWidget(
+        _app(
+          DocumentScrollScope(
+            child: NativeMarkupPreview(
+              source: List.generate(
+                300,
+                (i) => i < 50
+                    ? 'Short $i.'
+                    : 'Paragraph $i ${'with wrapping words ' * 30}',
+              ).join('\n\n'),
+              format: NativeMarkupFormat.markdown,
+              baseDirectory: '/tmp',
+            ),
+          ),
+        ),
+      );
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position;
+      final extent = position.maxScrollExtent;
+      position.jumpTo(extent * 0.25);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      final rect = tester.getRect(find.byType(NativeMarkupPreview));
+      final track = rect.height - 12;
+      expect(
+        track *
+            position.viewportDimension /
+            (extent + position.viewportDimension),
+        lessThan(42),
+      );
+      final travel = track - 42;
+      final start = Offset(rect.right - 7, rect.top + 6 + travel * 0.25 + 21);
+      final gesture = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveBy(Offset(0, travel * 0.5));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(position.maxScrollExtent, closeTo(extent, 0.1));
+      expect(position.pixels, closeTo(extent * 0.75, 0.5));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('smooths wheel input without a whole-file page adapter',
+        (tester) async {
+      await tester.pumpWidget(
+        _app(
+          DocumentScrollScope(
+            child: NativeMarkupPreview(
+              source: List.generate(200, (i) => 'Paragraph $i').join('\n\n'),
+              format: NativeMarkupFormat.markdown,
+              baseDirectory: '/tmp',
+            ),
+          ),
+        ),
+      );
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position;
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(find.byType(NativeMarkupPreview)),
+          scrollDelta: const Offset(0, 80),
+        ),
+      );
+      expect(position.pixels, 0);
+      await tester.pumpAndSettle(const Duration(milliseconds: 8));
+      expect(position.pixels, closeTo(80, 0.11));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('coordinates wheel scrolling with the whole-file header',
+        (tester) async {
+      await tester.pumpWidget(
+        _app(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: DocumentScrollScope(
+              child: StandaloneFilePage(
+                header: const SizedBox(height: 180, child: Text('File header')),
+                body: NativeMarkupPreview(
+                  source:
+                      List.generate(200, (i) => 'Paragraph $i').join('\n\n'),
+                  format: NativeMarkupFormat.markdown,
+                  baseDirectory: '/tmp',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final page =
+          tester.state<NestedScrollViewState>(find.byType(NestedScrollView));
+      final body = tester
+          .widget<CustomScrollView>(
+            find.descendant(
+              of: find.byType(NativeMarkupPreview),
+              matching: find.byType(CustomScrollView),
+            ),
+          )
+          .controller!;
+      Future<void> wheel(double delta) async {
+        final rect = tester
+            .getRect(find.byType(NativeMarkupPreview))
+            .intersect(tester.getRect(find.byType(StandaloneFilePage)));
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: rect.center,
+            scrollDelta: Offset(0, delta),
+          ),
+        );
+        await tester.pumpAndSettle(const Duration(milliseconds: 8));
+      }
+
+      await wheel(120);
+      expect(page.outerController.offset, closeTo(120, 0.2));
+      expect(body.offset, 0);
+      await wheel(120);
+      expect(page.outerController.offset, closeTo(180, 0.2));
+      expect(body.offset, closeTo(60, 0.3));
+      await wheel(-120);
+      expect(body.offset, 0);
+      expect(page.outerController.offset, closeTo(120, 0.4));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('loads local images only from inside the document folder',
@@ -492,6 +812,21 @@ Finder _richText(String text) => find.byWidgetPredicate(
       (widget) =>
           widget is RichText && widget.text.toPlainText().contains(text),
     );
+
+void _expectNaturalBlockHeights(WidgetTester tester) {
+  for (final sliver in tester.renderObjectList<RenderSliverVariedExtentList>(
+    find.byType(SliverVariedExtentList),
+  )) {
+    var child = sliver.firstChild;
+    while (child != null) {
+      final natural = child.getDryLayout(
+        BoxConstraints.tightFor(width: child.size.width),
+      );
+      expect(child.size.height, closeTo(natural.height, 0.1));
+      child = sliver.childAfter(child);
+    }
+  }
+}
 
 TextSpan _span(WidgetTester tester, String text) {
   for (final widget in tester.widgetList<RichText>(find.byType(RichText))) {

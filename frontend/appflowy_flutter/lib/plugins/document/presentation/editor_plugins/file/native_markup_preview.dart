@@ -51,6 +51,7 @@ const _checkboxSize = 15.0;
 const _maxColumnWidth = 360.0;
 const _maxColumnSpan = 32;
 const _maxNesting = 24;
+const _previewPadding = EdgeInsets.fromLTRB(36, 32, 36, 40);
 
 /// Sources at least this long are parsed off the UI thread.
 const _backgroundParseLength = 256 * 1024;
@@ -98,10 +99,13 @@ class _NativeMarkupPreviewState extends State<NativeMarkupPreview> {
   _Palette? _palette;
   bool _layoutDirty = true;
   int _parseRequest = 0;
+  double? _sliverWidth;
+  List<Widget>? _slivers;
 
   @override
   void initState() {
     super.initState();
+    PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
     _parse();
   }
 
@@ -126,6 +130,7 @@ class _NativeMarkupPreviewState extends State<NativeMarkupPreview> {
   @override
   void dispose() {
     _parseRequest++;
+    PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     _disposeRecognizers();
     _scrollController.dispose();
     super.dispose();
@@ -161,9 +166,14 @@ class _NativeMarkupPreviewState extends State<NativeMarkupPreview> {
     });
   }
 
+  void _fontsChanged() {
+    setState(() => _layoutDirty = true);
+  }
+
   /// Builds every block widget once, so scrolling never walks the tree again.
   void _layout() {
     _layoutDirty = false;
+    _slivers = null;
     _disposeRecognizers();
     final palette = _palette = _Palette.of(context);
     final nodes = _nodes;
@@ -175,6 +185,11 @@ class _NativeMarkupPreviewState extends State<NativeMarkupPreview> {
       palette: palette,
       baseDirectory: widget.baseDirectory,
       textScaler: MediaQuery.textScalerOf(context),
+      textDirection: Directionality.of(context),
+      locale: Localizations.maybeLocaleOf(context),
+      defaultStyle: DefaultTextStyle.of(context).style.merge(palette.body),
+      textHeightBehavior: DefaultTextStyle.of(context).textHeightBehavior ??
+          DefaultTextHeightBehavior.maybeOf(context),
       recognizers: _recognizers,
     );
     try {
@@ -191,6 +206,56 @@ class _NativeMarkupPreviewState extends State<NativeMarkupPreview> {
       recognizer.dispose();
     }
     _recognizers.clear();
+  }
+
+  List<Widget> _sliversFor(List<_Block> items, double width) {
+    if (_slivers != null && _sliverWidth == width) return _slivers!;
+    _sliverWidth = width;
+    final slivers = <Widget>[];
+    var measured = <({Widget child, double extent})>[];
+    var start = 0;
+    void flush() {
+      if (measured.isEmpty) return;
+      final run = measured;
+      slivers.add(
+        SliverVariedExtentList(
+          delegate: _MeasuredBlockDelegate(run, semanticIndexOffset: start),
+          itemExtentBuilder: (index, _) =>
+              index < run.length ? run[index].extent : null,
+        ),
+      );
+      measured = [];
+    }
+
+    for (var index = 0; index < items.length; index++) {
+      final item = items[index];
+      final gap = index == 0 ? 0.0 : _blockGap(items[index - 1], item);
+      final child = gap == 0
+          ? item.child
+          : Padding(
+              padding: EdgeInsets.only(top: gap),
+              child: item.child,
+            );
+      final height = item.heightForWidth?.call(width);
+      if (height == null) {
+        flush();
+        slivers.add(
+          SliverToBoxAdapter(
+            child: IndexedSemantics(index: index, child: child),
+          ),
+        );
+      } else {
+        if (measured.isEmpty) start = index;
+        measured.add((child: child, extent: height + gap));
+      }
+    }
+    flush();
+    return _slivers = [
+      SliverPadding(
+        padding: _previewPadding,
+        sliver: SliverMainAxisGroup(slivers: slivers),
+      ),
+    ];
   }
 
   @override
@@ -225,22 +290,18 @@ class _NativeMarkupPreviewState extends State<NativeMarkupPreview> {
         child: StandaloneFileScrollRegion(
           controller: _scrollController,
           child: SelectionArea(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(36, 32, 36, 40),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final gap = index == 0
-                    ? 0.0
-                    : math.max(items[index - 1].bottom, item.top);
-                return gap == 0
-                    ? item.child
-                    : Padding(
-                        padding: EdgeInsets.only(top: gap),
-                        child: item.child,
-                      );
-              },
+            child: LayoutBuilder(
+              builder: (context, constraints) => CustomScrollView(
+                controller: _scrollController,
+                semanticChildCount: items.length,
+                slivers: _sliversFor(
+                  items,
+                  math.max(
+                    0.0,
+                    constraints.maxWidth - _previewPadding.horizontal,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -864,11 +925,45 @@ class _Palette {
 /// A laid-out block and its CSS margins. Adjacent margins collapse to the
 /// larger one, and a transparent container passes its children's through.
 class _Block {
-  const _Block(this.child, {this.top = 0, this.bottom = 0});
+  const _Block(
+    this.child, {
+    this.top = 0,
+    this.bottom = 0,
+    this.heightForWidth,
+  });
 
   final Widget child;
   final double top;
   final double bottom;
+
+  /// Null when inline resources or tables require real box layout.
+  final double Function(double width)? heightForWidth;
+}
+
+double _blockGap(_Block before, _Block after) =>
+    math.max(before.bottom, after.top);
+
+/// Exact extents keep scrollbar travel independent of the visible blocks.
+class _MeasuredBlockDelegate extends SliverChildBuilderDelegate {
+  _MeasuredBlockDelegate(
+    List<({Widget child, double extent})> blocks, {
+    required super.semanticIndexOffset,
+  })  : _extent = blocks.fold(0.0, (total, block) => total + block.extent),
+        super(
+          (context, index) => blocks[index].child,
+          childCount: blocks.length,
+        );
+
+  final double _extent;
+
+  @override
+  double estimateMaxScrollOffset(
+    int firstIndex,
+    int lastIndex,
+    double leadingScrollOffset,
+    double trailingScrollOffset,
+  ) =>
+      _extent;
 }
 
 typedef _Flow = ({TextStyle style, TextAlign align, bool inListItem});
@@ -898,12 +993,20 @@ class _MarkupRenderer {
     required this.palette,
     required this.baseDirectory,
     required this.textScaler,
+    required this.textDirection,
+    required this.locale,
+    required this.defaultStyle,
+    required this.textHeightBehavior,
     required this.recognizers,
   });
 
   final _Palette palette;
   final String baseDirectory;
   final TextScaler textScaler;
+  final TextDirection textDirection;
+  final Locale? locale;
+  final TextStyle defaultStyle;
+  final TextHeightBehavior? textHeightBehavior;
 
   /// Owned and disposed by the preview's state.
   final List<GestureRecognizer> recognizers;
@@ -923,7 +1026,7 @@ class _MarkupRenderer {
       if (run.isEmpty) return;
       final paragraph = _paragraph(run, flow.style, flow.align);
       run.clear();
-      if (paragraph != null) blocks.add(_Block(paragraph));
+      if (paragraph != null) blocks.add(paragraph);
     }
 
     for (final node in nodes) {
@@ -955,7 +1058,12 @@ class _MarkupRenderer {
           align,
         );
         return [
-          if (paragraph != null) _Block(paragraph, bottom: title ? 6 : 14),
+          if (paragraph != null)
+            _Block(
+              paragraph.child,
+              bottom: title ? 6 : 14,
+              heightForWidth: paragraph.heightForWidth,
+            ),
         ];
       case 'h1' || 'h2' || 'h3' || 'h4' || 'h5' || 'h6':
         return _heading(
@@ -978,7 +1086,7 @@ class _MarkupRenderer {
       case 'div' when _hasClass(element, 'markdown-alert'):
         return _quote(children, flow.style, palette.link, align);
       case 'pre':
-        return [_Block(_codeBlock(element), bottom: 16)];
+        return [_codeBlock(element)];
       case 'table':
         final table = _table(element, flow.style);
         return [if (table != null) _Block(table, bottom: 16)];
@@ -988,6 +1096,7 @@ class _MarkupRenderer {
             SizedBox(height: 1, child: ColoredBox(color: palette.rule)),
             top: 24,
             bottom: 24,
+            heightForWidth: (_) => 1,
           ),
         ];
       default:
@@ -1017,22 +1126,26 @@ class _MarkupRenderer {
     );
     final text = _paragraph(children, style, align);
     if (text == null) return const [];
+    final measure = text.heightForWidth;
+    final padding = level > 2 ? 0.0 : size * 0.32;
     return [
       _Block(
         level > 2
-            ? text
+            ? text.child
             // A hairline under the two largest levels, as GitHub sets them.
             : DecoratedBox(
                 decoration: BoxDecoration(
                   border: Border(bottom: BorderSide(color: palette.rule)),
                 ),
                 child: Padding(
-                  padding: EdgeInsets.only(bottom: size * 0.32),
-                  child: text,
+                  padding: EdgeInsets.only(bottom: padding),
+                  child: text.child,
                 ),
               ),
         top: 28,
         bottom: 14,
+        heightForWidth:
+            measure == null ? null : (width) => measure(width) + padding,
       ),
     ];
   }
@@ -1065,11 +1178,15 @@ class _MarkupRenderer {
       // A list directly inside a list item is spaced like an item.
       final nested = flow.inListItem;
       return [
-        _Block(
-          _column(rows),
-          top: math.max(nested ? _listItemMargin : 0, rows.first.top),
-          bottom: math.max(nested ? _listItemMargin : 14, rows.last.bottom),
-        ),
+        for (var index = 0; index < rows.length; index++)
+          _Block(
+            rows[index].child,
+            top: rows[index].top,
+            bottom: index == rows.length - 1
+                ? math.max(nested ? _listItemMargin : 14, rows[index].bottom)
+                : rows[index].bottom,
+            heightForWidth: rows[index].heightForWidth,
+          ),
       ];
     } finally {
       _listDepth--;
@@ -1091,13 +1208,29 @@ class _MarkupRenderer {
     final blocks =
         _flow(content, (style: style, align: align, inListItem: true));
     final Widget marker;
+    final double markerHeight;
     if (checked != null) {
       marker = _alignedMarker(_checkbox(checked), _checkboxSize, style, 7);
+      markerHeight = math.max(0.0, (_lineHeight(style) - _checkboxSize) / 2) +
+          _checkboxSize;
     } else if (number != null) {
       marker = _orderedMarker(number, style);
+      markerHeight = _textHeight(
+        TextSpan(text: '$number.', style: style),
+        double.infinity,
+      );
     } else {
       marker = _alignedMarker(_bullet(style), _bulletSize, style, 8);
+      markerHeight =
+          math.max(0.0, (_lineHeight(style) - _bulletSize) / 2) + _bulletSize;
     }
+    final column = blocks.isEmpty
+        ? _Block(
+            SizedBox(height: _lineHeight(style)),
+            heightForWidth: (_) => _lineHeight(style),
+          )
+        : _column(blocks);
+    final measure = column.heightForWidth;
     return _Block(
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1107,15 +1240,19 @@ class _MarkupRenderer {
             child: SelectionContainer.disabled(child: marker),
           ),
           Expanded(
-            child: blocks.isEmpty
-                ? SizedBox(height: _lineHeight(style))
-                : _column(blocks),
+            child: column.child,
           ),
         ],
       ),
       top: math.max(_listItemMargin, blocks.isEmpty ? 0 : blocks.first.top),
       bottom:
           math.max(_listItemMargin, blocks.isEmpty ? 0 : blocks.last.bottom),
+      heightForWidth: measure == null
+          ? null
+          : (width) => math.max(
+                markerHeight,
+                measure(math.max(0.0, width - _listIndent)),
+              ),
     );
   }
 
@@ -1223,6 +1360,8 @@ class _MarkupRenderer {
       _nesting--;
     }
     if (blocks.isEmpty) return const [];
+    final column = _column(blocks);
+    final measure = column.heightForWidth;
     return [
       _Block(
         DecoratedBox(
@@ -1233,15 +1372,18 @@ class _MarkupRenderer {
           ),
           child: Padding(
             padding: const EdgeInsetsDirectional.fromSTEB(14, 2, 0, 2),
-            child: _column(blocks),
+            child: column.child,
           ),
         ),
         bottom: 14,
+        heightForWidth: measure == null
+            ? null
+            : (width) => measure(math.max(0.0, width - 14)) + 4,
       ),
     ];
   }
 
-  Widget _codeBlock(m.Element pre) {
+  _Block _codeBlock(m.Element pre) {
     m.Element? code;
     for (final child in pre.children ?? const <m.Node>[]) {
       if (child is m.Element && child.tag == 'code') {
@@ -1250,13 +1392,24 @@ class _MarkupRenderer {
       }
     }
     final className = code?.attributes['class'] ?? '';
-    return _NativeCodeBlock(
-      code: (code ?? pre).textContent.replaceFirst(_trailingNewlines, ''),
-      language: _languageClassPattern.firstMatch(className)?.group(1) ?? '',
-      style: palette.code,
-      background: palette.codeBackground,
-      brightness: palette.brightness,
-      isPaper: palette.isPaper,
+    final source =
+        (code ?? pre).textContent.replaceFirst(_trailingNewlines, '');
+    return _Block(
+      _NativeCodeBlock(
+        code: source,
+        language: _languageClassPattern.firstMatch(className)?.group(1) ?? '',
+        style: palette.code,
+        background: palette.codeBackground,
+        brightness: palette.brightness,
+        isPaper: palette.isPaper,
+      ),
+      bottom: 16,
+      heightForWidth: (_) =>
+          _textHeight(
+            TextSpan(text: source, style: palette.code),
+            double.infinity,
+          ) +
+          28,
     );
   }
 
@@ -1347,9 +1500,32 @@ class _MarkupRenderer {
     );
   }
 
-  Widget? _paragraph(List<m.Node> nodes, TextStyle style, TextAlign align) {
+  _Block? _paragraph(List<m.Node> nodes, TextStyle style, TextAlign align) {
     final span = _inlineSpan(nodes, style);
-    return span == null ? null : Text.rich(span, textAlign: align);
+    if (span == null) return null;
+    // Images and other inline widgets keep their natural, asynchronously
+    // resolved size. Their slivers use real layout, never an average estimate.
+    final textOnly = span.visitChildren((child) => child is! WidgetSpan);
+    return _Block(
+      Text.rich(span, textAlign: align),
+      heightForWidth: textOnly ? (width) => _textHeight(span, width) : null,
+    );
+  }
+
+  double _textHeight(InlineSpan span, double width) {
+    final painter = TextPainter(
+      text: TextSpan(style: defaultStyle, children: [span]),
+      textDirection: textDirection,
+      textScaler: textScaler,
+      locale: locale,
+      textHeightBehavior: textHeightBehavior,
+    );
+    try {
+      painter.layout(maxWidth: width);
+      return painter.height;
+    } finally {
+      painter.dispose();
+    }
   }
 
   InlineSpan? _inlineSpan(List<m.Node> nodes, TextStyle style) {
@@ -1497,23 +1673,37 @@ class _MarkupRenderer {
       );
 }
 
-Widget _column(List<_Block> blocks) {
-  if (blocks.length == 1) return blocks.single.child;
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      for (var index = 0; index < blocks.length; index++)
-        if (index == 0)
-          blocks[index].child
-        else
-          Padding(
-            padding: EdgeInsets.only(
-              top: math.max(blocks[index - 1].bottom, blocks[index].top),
+_Block _column(List<_Block> blocks) {
+  if (blocks.length == 1) return blocks.single;
+  return _Block(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < blocks.length; index++)
+          if (index == 0)
+            blocks[index].child
+          else
+            Padding(
+              padding: EdgeInsets.only(
+                top: _blockGap(blocks[index - 1], blocks[index]),
+              ),
+              child: blocks[index].child,
             ),
-            child: blocks[index].child,
-          ),
-    ],
+      ],
+    ),
+    heightForWidth: blocks.any((block) => block.heightForWidth == null)
+        ? null
+        : (width) {
+            var height = 0.0;
+            for (var index = 0; index < blocks.length; index++) {
+              height += blocks[index].heightForWidth!(width);
+              if (index > 0) {
+                height += _blockGap(blocks[index - 1], blocks[index]);
+              }
+            }
+            return height;
+          },
   );
 }
 
