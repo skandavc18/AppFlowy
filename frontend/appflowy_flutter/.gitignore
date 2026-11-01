@@ -78,4 +78,8 @@ coverage/
 **/failures/*.png
 
 assets/translations/
+
+# The built-in office editor, fetched by tool/office_editor/fetch_office_editor.dart.
+/office_editor/
+/office_editor.partial/
 assets/flowy_icons/*

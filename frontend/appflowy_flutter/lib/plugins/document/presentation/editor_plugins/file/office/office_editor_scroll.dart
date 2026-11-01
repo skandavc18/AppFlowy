@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy_linux_webview/appflowy_linux_webview.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -16,8 +17,9 @@ import 'package:flutter_inappwebview_windows/flutter_inappwebview_windows.dart';
 const officeScrollHandlerName = 'appflowyOfficeScroll';
 const _commandFunction = '__appflowyOfficeScrollCommand';
 
-/// Whether ONLYOFFICE scrolling is driven by [OfficeEditorScroll]. Only the
-/// Windows WebView can deliver wheel input at an exact pixel scale.
+/// Whether ONLYOFFICE scrolling in an InAppWebView is driven by
+/// [OfficeEditorScroll]. Only the Windows WebView can deliver wheel input at
+/// an exact pixel scale; on Linux, the inline editor's [LinuxWebView] does.
 bool get officeEditorScrollSupported =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
@@ -37,23 +39,35 @@ bool get officeEditorScrollSupported =>
 }
 
 /// Bootstrap-page relay between the editor frame and Flutter. Only messages
-/// from [documentServerOrigin] are forwarded, and only their scroll fields.
+/// from [documentServerOrigin] are forwarded, and only their scroll fields,
+/// through InAppWebView's handler or the [LinuxWebViewController] message
+/// handler, whichever the page has.
 String buildOfficeScrollRelayScript(String documentServerOrigin) {
   final origin = Uri.parse(documentServerOrigin).origin;
   return '''
 (function () {
   var serverOrigin = ${jsonEncode(origin)};
   var editorWindow = null;
+  function deliver(message) {
+    var bridge = window.flutter_inappwebview;
+    if (bridge && typeof bridge.callHandler === 'function') {
+      bridge.callHandler('$officeScrollHandlerName', message);
+      return;
+    }
+    var handlers = window.webkit && window.webkit.messageHandlers;
+    var linux = handlers && handlers.${LinuxWebViewController.messageHandler};
+    if (linux && typeof linux.postMessage === 'function') {
+      linux.postMessage(JSON.stringify({ handler: '$officeScrollHandlerName', message: message }));
+    }
+  }
   window.addEventListener('message', function (event) {
     var data = event.data;
     if (event.origin !== serverOrigin || !data || data.appflowyOfficeScroll !== 1) return;
     editorWindow = event.source;
-    var bridge = window.flutter_inappwebview;
-    if (!bridge || typeof bridge.callHandler !== 'function') return;
     if (data.t === 'state' && typeof data.atTop === 'boolean') {
-      bridge.callHandler('$officeScrollHandlerName', { t: 'state', atTop: data.atTop });
+      deliver({ t: 'state', atTop: data.atTop });
     } else if (data.t === 'over' && typeof data.dy === 'number' && isFinite(data.dy)) {
-      bridge.callHandler('$officeScrollHandlerName', { t: 'over', dy: data.dy });
+      deliver({ t: 'over', dy: data.dy });
     }
   });
   window.$_commandFunction = function (command) {
@@ -68,18 +82,21 @@ String buildOfficeScrollRelayScript(String documentServerOrigin) {
 /// Smooth, pixel-exact scrolling inside the ONLYOFFICE editor frame.
 ///
 /// Wheel input over the document reaches the frame at 1.2 wheel units per
-/// logical pixel (see [WindowsWebViewWheelScope.pixelWheel]). Instead of
-/// ONLYOFFICE's fixed 45px notch jumps, the frame eases each notch with the
-/// app's exact-distance wheel curve and applies trackpad pans one-to-one,
-/// through the editor's own scroll bars so they track every frame. Menus,
-/// lists and panels keep their native wheel handling. The frame reports when
-/// the document reaches its top so the page header can be scrolled back.
-@visibleForTesting
+/// logical pixel (see [WindowsWebViewWheelScope.pixelWheel]), or, with
+/// [pixelDeltas], as exact pixels in `deltaX/Y` (see
+/// [LinuxWebViewScrollScope.pixelWheel]). Instead of ONLYOFFICE's fixed 45px
+/// notch jumps, the frame eases each notch with the app's exact-distance
+/// wheel curve and applies trackpad pans one-to-one, through the editor's own
+/// scroll bars so they track every frame. Menus, lists and panels keep their
+/// native wheel handling. The frame reports to the top page, which may hold
+/// it in a frame of its own, when the document reaches its top so the page
+/// header can be scrolled back.
 String buildOfficeScrollRuntimeScript({
   required String documentServerOrigin,
   required String hostOrigin,
   required PremiumScrollPhysicsConfig config,
   required bool smooth,
+  bool pixelDeltas = false,
 }) =>
     '''
 (() => {
@@ -95,6 +112,7 @@ String buildOfficeScrollRuntimeScript({
   window.__appflowyOfficeScrollInstalled = true;
 
   const UNITS_PER_PIXEL = 1.2;
+  const PIXEL_DELTAS = $pixelDeltas;
   const SMOOTH = $smooth;
   const C = Object.freeze({
     rate: ${config.wheelSmoothingRate},
@@ -114,12 +132,13 @@ String buildOfficeScrollRuntimeScript({
   const state = {
     qx: 0, qy: 0, vx: 0, vy: 0, rx: 0, ry: 0,
     fling: false, flingAt: 0, frame: 0, last: 0, precise: 0, atTop: null, bound: null,
+    px: 0, py: 0, pending: 0,
   };
   const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
   const finite = (value) => (Number.isFinite(value) ? value : 0);
   const post = (message) => {
     try {
-      window.parent.postMessage(Object.assign({ appflowyOfficeScroll: 1 }, message), HOST);
+      window.top.postMessage(Object.assign({ appflowyOfficeScroll: 1 }, message), HOST);
     } catch (_) {}
   };
   const edges = (vertical, horizontal) => {
@@ -296,6 +315,24 @@ String buildOfficeScrollRuntimeScript({
     state.rx = state.ry = 0;
   };
 
+  // Pans can arrive faster than the editor redraws; each frame applies what
+  // arrived since the last one, in one move.
+  const flushPrecise = () => {
+    state.pending = 0;
+    const dx = state.px;
+    const dy = state.py;
+    state.px = state.py = 0;
+    const current = adapter();
+    if (!current || (!dx && !dy)) return;
+    const result = apply(current, dx, dy);
+    if (result.blockedY && dy < 0) overscroll(result.restY);
+  };
+  const applyPrecise = (dx, dy) => {
+    state.px += dx;
+    state.py += dy;
+    if (!state.pending) state.pending = requestAnimationFrame(flushPrecise);
+  };
+
   const frameStep = (remaining, seconds) => {
     if (!remaining || seconds <= 0) return 0;
     const step = remaining * (1 - Math.exp(-C.rate * seconds));
@@ -386,8 +423,16 @@ String buildOfficeScrollRuntimeScript({
     const current = target && target.closest ? adapter() : null;
     const root = current && current.root(target);
     if (!root || scrollsNatively(target, root)) return;
-    let dx = -finite(event.wheelDeltaX) / UNITS_PER_PIXEL;
-    let dy = -finite(event.wheelDeltaY) / UNITS_PER_PIXEL;
+    let dx;
+    let dy;
+    if (PIXEL_DELTAS) {
+      if (event.deltaMode !== 0) return;
+      dx = finite(event.deltaX);
+      dy = finite(event.deltaY);
+    } else {
+      dx = -finite(event.wheelDeltaX) / UNITS_PER_PIXEL;
+      dy = -finite(event.wheelDeltaY) / UNITS_PER_PIXEL;
+    }
     if (event.shiftKey && Math.abs(dx) < Math.abs(dy)) {
       dx = dy;
       dy = 0;
@@ -406,10 +451,14 @@ String buildOfficeScrollRuntimeScript({
       Math.max(Math.abs(dx), Math.abs(dy)) < C.precision;
     if (now < state.precise) state.precise = now + 400;
     if (!SMOOTH || precise || kind === 'slide') {
-      // Slides page with the editor's own rate limit; ease only documents.
       stopMotion();
-      const result = apply(current, clamp(dx, C.notch), clamp(dy, C.notch));
-      if (result.blockedY && dy < 0) overscroll(result.restY);
+      if (kind === 'slide') {
+        // Slides page with the editor's own rate limit; ease only documents.
+        const result = apply(current, clamp(dx, C.notch), clamp(dy, C.notch));
+        if (result.blockedY && dy < 0) overscroll(result.restY);
+      } else {
+        applyPrecise(clamp(dx, C.notch), clamp(dy, C.notch));
+      }
       return;
     }
     queue(clamp(dx, C.notch), clamp(dy, C.notch));
@@ -417,7 +466,7 @@ String buildOfficeScrollRuntimeScript({
 
   window.addEventListener('message', (event) => {
     const data = event.data;
-    if (event.source !== window.parent || event.origin !== HOST || !data ||
+    if (event.source !== window.top || event.origin !== HOST || !data ||
         data.appflowyOfficeScroll !== 1 || !data.command) {
       return;
     }
@@ -473,6 +522,8 @@ UserScript buildOfficeScrollUserScript({
 /// Carries the editor frame's scroll state to Flutter and commands back.
 class OfficeEditorScrollController {
   InAppWebViewController? _webView;
+  LinuxWebViewController? _textureView;
+  StreamSubscription<String>? _textureMessages;
   bool? _editorAtTop;
   ValueChanged<double>? _onOverscroll;
 
@@ -492,10 +543,33 @@ class OfficeEditorScrollController {
     );
   }
 
+  /// Follows a Linux view, whose relay posts through
+  /// [LinuxWebViewController.messages].
+  void attachTexture(LinuxWebViewController view) {
+    detach();
+    _textureView = view;
+    _textureMessages = view.messages.listen(_handleTextureMessage);
+  }
+
   void detach() {
     _webView?.removeJavaScriptHandler(handlerName: officeScrollHandlerName);
     _webView = null;
+    unawaited(_textureMessages?.cancel());
+    _textureMessages = null;
+    _textureView = null;
     _editorAtTop = null;
+  }
+
+  void _handleTextureMessage(String text) {
+    final Object? envelope;
+    try {
+      envelope = jsonDecode(text);
+    } on FormatException {
+      return;
+    }
+    if (envelope is Map && envelope['handler'] == officeScrollHandlerName) {
+      handleMessage([envelope['message']]);
+    }
   }
 
   @visibleForTesting
@@ -519,14 +593,18 @@ class OfficeEditorScrollController {
 
   void _send(Map<String, Object> command) {
     debugOnCommand?.call(command);
+    final source =
+        'window.$_commandFunction && window.$_commandFunction(${jsonEncode(command)});';
+    final textureView = _textureView;
+    if (textureView != null) {
+      unawaited(textureView.evaluateJavascript(source));
+      return;
+    }
     final webView = _webView;
     if (webView == null) return;
     unawaited(
       webView
-          .evaluateJavascript(
-            source:
-                'window.$_commandFunction && window.$_commandFunction(${jsonEncode(command)});',
-          )
+          .evaluateJavascript(source: source)
           .then<void>((_) {}, onError: (_) {}),
     );
   }
@@ -561,6 +639,11 @@ class _OfficeEditorScrollState extends State<OfficeEditorScroll>
     onUpdate: _pan,
     onEnd: _panEnd,
     onInertiaCancel: _inertiaCancelled,
+  );
+  late final LinuxWebViewTrackpad _linuxTrackpad = LinuxWebViewTrackpad(
+    onStart: _panStart,
+    onUpdate: _pan,
+    onEnd: _panEnd,
   );
   StandaloneFilePageScroll? _page;
   PremiumScrollPhysicsConfig _config = const PremiumScrollPhysicsConfig();
@@ -826,10 +909,15 @@ class _OfficeEditorScrollState extends State<OfficeEditorScroll>
   }
 
   @override
-  Widget build(BuildContext context) => WindowsWebViewWheelScope(
+  Widget build(BuildContext context) => LinuxWebViewScrollScope(
         transform: _wheel,
         pixelWheel: true,
-        trackpad: _trackpad,
-        child: widget.child,
+        trackpad: _linuxTrackpad,
+        child: WindowsWebViewWheelScope(
+          transform: _wheel,
+          pixelWheel: true,
+          trackpad: _trackpad,
+          child: widget.child,
+        ),
       );
 }

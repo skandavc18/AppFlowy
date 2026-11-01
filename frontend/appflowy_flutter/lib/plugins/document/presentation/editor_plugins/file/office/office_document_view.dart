@@ -5,8 +5,6 @@ import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
-import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -27,19 +25,26 @@ import 'office_cloud_session.dart';
 import 'office_editor_chrome.dart';
 import 'office_editor_scroll.dart';
 import 'office_editor_skin.dart';
+import 'office_embedded_host.dart';
+import 'office_embedded_view.dart';
+import 'office_panel.dart';
 import 'office_server_settings.dart';
 import 'office_server_settings_form.dart';
 
-@visibleForTesting
-const kOfficePanelSurfaceKey = ValueKey('office_panel_surface');
+export 'office_panel.dart' show kOfficePanelSurfaceKey;
+
 @visibleForTesting
 const kOfficeEditorScrollExclusionKey =
     ValueKey('office_editor_scroll_exclusion');
 
 /// Opens a Word, Excel or PowerPoint document.
 ///
-/// Cloud accounts receive a managed editor session from AppFlowy Cloud. Local
-/// accounts can connect a self-hosted ONLYOFFICE Docs instance instead.
+/// On Windows, macOS and Linux the document opens in the editor bundled with
+/// AppFlowy, so no document server is needed. Files kept in AppFlowy Cloud
+/// still use the Cloud's managed editor, which saves back to cloud storage.
+/// Elsewhere, or when the bundle is missing, cloud accounts receive a managed
+/// editor session and local accounts can connect a self-hosted ONLYOFFICE
+/// Docs instance instead.
 class OfficeDocumentView extends StatefulWidget {
   const OfficeDocumentView({
     super.key,
@@ -50,7 +55,9 @@ class OfficeDocumentView extends StatefulWidget {
     this.store = const OfficeServerStore(),
     this.cloudService = const AppFlowyCloudOfficeSessionService(),
     this.probe = probeOfficeServer,
+    this.embeddedEditor,
     this.editorBuilder,
+    this.embeddedEditorBuilder,
     this.fallbackBuilder,
   });
 
@@ -62,6 +69,9 @@ class OfficeDocumentView extends StatefulWidget {
   final OfficeCloudSessionService cloudService;
   final OfficeServerProbe probe;
 
+  /// The bundled editor; desktop builds default to the shared instance.
+  final EmbeddedOfficeEditor? embeddedEditor;
+
   /// What to show instead of the "no server" panel.
   ///
   /// Formats AppFlowy can already read on its own — a CSV, say — pass their
@@ -72,6 +82,10 @@ class OfficeDocumentView extends StatefulWidget {
   @visibleForTesting
   final Widget Function(BuildContext, HostedOfficeEditor)? editorBuilder;
 
+  @visibleForTesting
+  final Widget Function(BuildContext, EmbeddedOfficeRequest)?
+      embeddedEditorBuilder;
+
   @override
   State<OfficeDocumentView> createState() => _OfficeDocumentViewState();
 }
@@ -80,6 +94,49 @@ enum _OfficeConnectionMode {
   unknown,
   local,
   cloud,
+  embedded,
+}
+
+/// How a document is opened.
+@visibleForTesting
+enum OfficeEditorRoute {
+  /// The bundled editor, saving to the local file.
+  embedded,
+
+  /// The bundled editor showing a copy that cannot be saved back.
+  embeddedReadOnly,
+
+  /// AppFlowy Cloud's document server.
+  managed,
+
+  /// A self-hosted document server configured on this device.
+  local,
+}
+
+/// Desktop builds open files on this machine in the bundled editor. A file in
+/// cloud storage keeps the managed editor, which writes back to the cloud,
+/// and without an account it is shown read only, because saving would only
+/// change a downloaded copy.
+@visibleForTesting
+OfficeEditorRoute chooseOfficeEditorRoute({
+  required bool embeddedAvailable,
+  required bool hasCloudProfile,
+  required bool remoteSource,
+}) {
+  if (embeddedAvailable) {
+    if (!remoteSource) {
+      return OfficeEditorRoute.embedded;
+    }
+    return hasCloudProfile
+        ? OfficeEditorRoute.managed
+        : OfficeEditorRoute.embeddedReadOnly;
+  }
+  return hasCloudProfile ? OfficeEditorRoute.managed : OfficeEditorRoute.local;
+}
+
+bool _isRemoteSource(String source) {
+  final scheme = Uri.tryParse(source)?.scheme.toLowerCase();
+  return scheme == 'http' || scheme == 'https';
 }
 
 @visibleForTesting
@@ -120,8 +177,13 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
   bool _showInitialSetup = false;
   bool _didLoad = false;
   bool _refreshingEditorPage = false;
+  bool _embeddedAvailable = false;
+  EmbeddedOfficeRequest? _embeddedRequest;
   final _scroll = OfficeEditorScrollController();
   OfficeEditorTypography? _typography;
+
+  EmbeddedOfficeEditor? get _embeddedEditor =>
+      widget.embeddedEditor ?? EmbeddedOfficeEditor.forCurrentPlatform();
 
   @override
   void didChangeDependencies() {
@@ -129,7 +191,8 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     if (!_didLoad) {
       _didLoad = true;
       unawaited(_load());
-    } else if (_status == OfficeServerStatus.connected) {
+    } else if (_status == OfficeServerStatus.connected &&
+        _mode != _OfficeConnectionMode.embedded) {
       final action = officeEditorRefreshAction(
         managed: _mode == _OfficeConnectionMode.cloud,
         editorSkin: _editorSkin,
@@ -159,6 +222,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     _managedSession = null;
     _editorSkin = null;
     _documentKey = null;
+    _embeddedRequest = null;
   }
 
   Future<void> _load() async {
@@ -177,22 +241,39 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       if (!mounted) {
         return;
       }
+      _embeddedAvailable = await _embeddedEditor?.canOpen(widget.name) ?? false;
+      if (!mounted) {
+        return;
+      }
       final profile = await widget.cloudService.connectedCloudProfile();
       if (!mounted) {
         return;
       }
-      if (profile != null) {
-        setState(() {
-          _mode = _OfficeConnectionMode.cloud;
-          _cloudProfile = profile;
-          _showInitialSetup = false;
-        });
-        await _connectManaged(profile);
-        return;
+      final route = chooseOfficeEditorRoute(
+        embeddedAvailable: _embeddedAvailable,
+        hasCloudProfile: profile != null,
+        remoteSource: _isRemoteSource(widget.source),
+      );
+      switch (route) {
+        case OfficeEditorRoute.embedded:
+          _openEmbedded(editable: widget.editable);
+          return;
+        case OfficeEditorRoute.embeddedReadOnly:
+          _openEmbedded(editable: false);
+          return;
+        case OfficeEditorRoute.managed:
+          setState(() {
+            _mode = _OfficeConnectionMode.cloud;
+            _cloudProfile = profile;
+            _showInitialSetup = false;
+          });
+          await _connectManaged(profile!);
+          return;
+        case OfficeEditorRoute.local:
+          setState(() => _mode = _OfficeConnectionMode.local);
+          await _loadLocalSettings();
+          return;
       }
-
-      setState(() => _mode = _OfficeConnectionMode.local);
-      await _loadLocalSettings();
     } catch (error) {
       Log.error('Unable to prepare office document editing: $error');
       if (mounted) {
@@ -359,16 +440,49 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       _refreshAppearanceIfStale(skin);
     } catch (error) {
       Log.error('AppFlowy Cloud could not start the office editor: $error');
-      if (mounted) {
-        setState(() {
-          _status = OfficeServerStatus.unreachable;
-          _errorMessage = error is OfficeCloudException
-              ? error.message
-              : 'AppFlowy Cloud could not start the document editor. '
-                  'Please try again.';
-        });
+      if (!mounted) {
+        return;
       }
+      if (_embeddedAvailable) {
+        // The downloaded copy can still be read without the Cloud's server.
+        _openEmbedded(
+          editable: false,
+          notice: 'AppFlowy Cloud could not start its document editor, so '
+              'this is a read-only copy.',
+        );
+        return;
+      }
+      setState(() {
+        _status = OfficeServerStatus.unreachable;
+        _errorMessage = error is OfficeCloudException
+            ? error.message
+            : 'AppFlowy Cloud could not start the document editor. '
+                'Please try again.';
+      });
     }
+  }
+
+  void _openEmbedded({required bool editable, String? notice}) {
+    final extension = p.extension(widget.name).replaceFirst('.', '');
+    final convertsOnSave =
+        editable && !canEmbedOfficeFileForEditing(widget.name);
+    setState(() {
+      _mode = _OfficeConnectionMode.embedded;
+      _status = OfficeServerStatus.connected;
+      _showInitialSetup = false;
+      _errorMessage = null;
+      _embeddedRequest = EmbeddedOfficeRequest(
+        file: widget.file,
+        name: widget.name,
+        editable: editable && !convertsOnSave,
+        notice: notice ??
+            (convertsOnSave
+                ? 'Older .$extension files open read-only here, because '
+                    'saving would convert them to a newer format. Open the '
+                    'file with your system app to edit it.'
+                : null),
+      );
+    });
   }
 
   Future<void> _saveLocalSettings(OfficeServerSettings settings) async {
@@ -406,6 +520,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       case _OfficeConnectionMode.local:
         unawaited(_connectLocal(_settings));
         return;
+      case _OfficeConnectionMode.embedded:
       case _OfficeConnectionMode.unknown:
         unawaited(_load());
         return;
@@ -590,6 +705,21 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_mode == _OfficeConnectionMode.embedded) {
+      final request = _embeddedRequest;
+      final editor = _embeddedEditor;
+      if (request == null || editor == null) {
+        return const SizedBox.shrink();
+      }
+      return widget.embeddedEditorBuilder?.call(context, request) ??
+          EmbeddedOfficeEditorView(
+            key: ValueKey((request.file.path, request.editable)),
+            editor: editor,
+            request: request,
+            fallbackBuilder: widget.fallbackBuilder,
+          );
+    }
+
     if (_status == OfficeServerStatus.connected &&
         officeEditorRefreshAction(
               managed: _mode == _OfficeConnectionMode.cloud,
@@ -857,7 +987,7 @@ class _OfficeServerSettingsPanel extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
-          child: _OfficePanelCard(
+          child: OfficePanelCard(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(30, 28, 30, 24),
               child: OfficeServerSettingsForm(
@@ -898,7 +1028,7 @@ class _OfficeUnavailable extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
-        child: _OfficePanelCard(
+        child: OfficePanelCard(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(28, 30, 28, 24),
             child: Column(
@@ -1016,35 +1146,4 @@ class _OfficeLoading extends StatelessWidget {
       ),
     );
   }
-}
-
-class _OfficePanelCard extends StatelessWidget {
-  const _OfficePanelCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: kOfficePanelSurfaceKey,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: _officePanelColor(context),
-        borderRadius: EditorSurfaceStyle.embedBorderRadius,
-        border: Border.all(
-          color: EditorSurfaceStyle.embedBorder(context),
-        ),
-      ),
-      child: child,
-    );
-  }
-}
-
-Color _officePanelColor(BuildContext context) {
-  final theme = AppFlowyTheme.of(context);
-  return EditorSurfaceStyle.previewBackgroundFor(
-    Theme.of(context).brightness,
-    theme.fillColorScheme.content,
-    isPaper: PaperTheme.isEnabled(context),
-  );
 }

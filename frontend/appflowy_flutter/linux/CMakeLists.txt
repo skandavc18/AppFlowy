@@ -119,3 +119,16 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# The built-in office editor, fetched by
+# `dart run tool/office_editor/fetch_office_editor.dart`. Without it, office
+# files need a document server.
+set(OFFICE_EDITOR_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../office_editor")
+set(OFFICE_EDITOR_INSTALL_DIR "${INSTALL_BUNDLE_DATA_DIR}/office_editor")
+if(EXISTS "${OFFICE_EDITOR_SOURCE_DIR}/APPFLOWY_BUNDLE.json")
+  install(DIRECTORY "${OFFICE_EDITOR_SOURCE_DIR}/"
+    DESTINATION "${OFFICE_EDITOR_INSTALL_DIR}" COMPONENT Runtime)
+else()
+  message(WARNING "The built-in office editor is missing from ${OFFICE_EDITOR_SOURCE_DIR}; "
+    "run `dart run tool/office_editor/fetch_office_editor.dart` to bundle it.")
+endif()

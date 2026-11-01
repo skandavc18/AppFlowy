@@ -112,6 +112,13 @@ packages:
       url: "https://github.com/AppFlowy-IO/AppFlowy-plugins.git"
     source: git
     version: "0.0.6"
+  appflowy_linux_webview:
+    dependency: "direct main"
+    description:
+      path: "packages/appflowy_linux_webview"
+      relative: true
+    source: path
+    version: "0.0.1"
   appflowy_popover:
     dependency: "direct main"
     description:

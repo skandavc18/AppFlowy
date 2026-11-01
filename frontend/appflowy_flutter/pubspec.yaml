@@ -21,6 +21,9 @@ dependencies:
       ref: e8317c0d1af8d23dc5707b02ea43864536b6de91
   appflowy_editor:
   appflowy_editor_plugins:
+  # Linux only: the WebKitGTK view the built-in office editor runs in.
+  appflowy_linux_webview:
+    path: packages/appflowy_linux_webview
   appflowy_popover:
     path: packages/appflowy_popover
   appflowy_result:

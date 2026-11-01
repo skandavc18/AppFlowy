@@ -32,6 +32,7 @@ function Get-AppBuildInputSnapshot {
   $paths += 'frontend/rust-lib/Cargo.lock'
   $paths += 'frontend/rust-lib/.cargo/config.toml'
   $paths += 'frontend/appflowy_flutter/windows/flutter/dart_ffi/dart_ffi.dll'
+  $paths += 'frontend/appflowy_flutter/office_editor/APPFLOWY_BUNDLE.json'
   $paths | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -Unique |
     ForEach-Object {
       $file = Join-Path $repoRoot $_
@@ -48,6 +49,11 @@ try {
     throw 'Close AppFlowy before replacing its runtime bundle.'
   }
   $nativeBackend = & (Join-Path $PSScriptRoot 'build_windows_backend.ps1')
+  # Both bundles ship the built-in office editor. Fetching verifies the
+  # pinned build and does nothing when it is already unpacked.
+  $dart = Join-Path (Split-Path -Parent $flutter) 'dart.bat'
+  & $dart tool/office_editor/fetch_office_editor.dart
+  if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch the built-in office editor.' }
   $changed = @(git -C $repoRoot diff HEAD --name-only -- '*.dart')
   if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect changed Dart sources.' }
   $changed += @(git -C $repoRoot ls-files --others --exclude-standard -- '*.dart')

@@ -193,6 +193,7 @@
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
+				9E3A1C5B2D4F6A8B0C1D2E3F /* Bundle Office Editor */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				4372B34726148A3BC297850A /* [CP] Embed Pods Frameworks */,
@@ -265,6 +266,26 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		9E3A1C5B2D4F6A8B0C1D2E3F /* Bundle Office Editor */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle Office Editor";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The built-in office editor, fetched by tool/office_editor/fetch_office_editor.dart.\nSOURCE=\"${PROJECT_DIR}/../office_editor\"\nDESTINATION=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/office_editor\"\nif [ -f \"${SOURCE}/APPFLOWY_BUNDLE.json\" ]; then\n  mkdir -p \"${DESTINATION}\"\n  rsync -a --delete \"${SOURCE}/\" \"${DESTINATION}/\"\nelse\n  echo \"warning: The built-in office editor is missing; run dart run tool/office_editor/fetch_office_editor.dart to bundle it.\"\n  rm -rf \"${DESTINATION}\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

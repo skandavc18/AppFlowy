@@ -99,3 +99,30 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# The built-in office editor, fetched by
+# `dart run tool/office_editor/fetch_office_editor.dart`, goes into Debug and
+# Release alike. A different build replaces the installed copy entirely, so
+# no file of an older editor lingers; without it, office files need a
+# document server.
+set(OFFICE_EDITOR_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../office_editor")
+set(OFFICE_EDITOR_INSTALL_DIR "${INSTALL_BUNDLE_DATA_DIR}/office_editor")
+if(EXISTS "${OFFICE_EDITOR_SOURCE_DIR}/APPFLOWY_BUNDLE.json")
+  install(CODE "
+    set(_installed \"${OFFICE_EDITOR_INSTALL_DIR}/APPFLOWY_BUNDLE.json\")
+    if(EXISTS \"\${_installed}\")
+      file(READ \"\${_installed}\" _installed_manifest)
+      file(READ \"${OFFICE_EDITOR_SOURCE_DIR}/APPFLOWY_BUNDLE.json\" _source_manifest)
+      if(NOT _installed_manifest STREQUAL _source_manifest)
+        file(REMOVE_RECURSE \"${OFFICE_EDITOR_INSTALL_DIR}\")
+      endif()
+    endif()
+    " COMPONENT Runtime)
+  install(DIRECTORY "${OFFICE_EDITOR_SOURCE_DIR}/"
+    DESTINATION "${OFFICE_EDITOR_INSTALL_DIR}" COMPONENT Runtime)
+else()
+  message(WARNING "The built-in office editor is missing from ${OFFICE_EDITOR_SOURCE_DIR}; "
+    "run `dart run tool/office_editor/fetch_office_editor.dart` to bundle it.")
+  install(CODE "file(REMOVE_RECURSE \"${OFFICE_EDITOR_INSTALL_DIR}\")"
+    COMPONENT Runtime)
+endif()

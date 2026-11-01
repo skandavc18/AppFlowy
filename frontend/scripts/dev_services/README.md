@@ -67,14 +67,18 @@ patched backend gets picked up.
 
 #### ONLYOFFICE Docs
 
-The document server behind `.docx`, `.xlsx` and `.pptx` editing is a service in
-that same compose file, so compose owns its lifecycle, health check and volumes.
+On Windows, macOS and Linux, office files no longer need this server: they
+open in the editor bundled with AppFlowy (see *Built-in office editor* below).
+The document server remains behind `.docx`, `.xlsx` and `.pptx` editing for
+files stored in AppFlowy Cloud and on mobile. It is a service in that same
+compose file, so compose owns its lifecycle, health check and volumes.
 It listens on `127.0.0.1:8080` and the API server reaches it as
 `http://onlyoffice` over the compose network.
 
 When AppFlowy is signed in to the local AppFlowy Cloud service, office files
-connect through Cloud automatically and saves flow back through it. Local-only
-AppFlowy users can still enter these values by hand:
+in cloud storage connect through Cloud automatically and saves flow back
+through it. Builds without the bundled editor can still enter these values by
+hand:
 
 | Field | Value |
 | --- | --- |
@@ -85,6 +89,38 @@ AppFlowy users can still enter these values by hand:
 Local-only mode serves the file from a short-lived HTTP bridge, so if that mode
 loads the editor but not the document, allow AppFlowy through Windows Firewall.
 Cloud mode keeps the JWT secret and save callback inside the Docker network.
+
+#### Built-in office editor
+
+Desktop builds ship ONLYOFFICE's editors with the x2t converter compiled to
+WebAssembly (the static build of
+[ranuts/document](https://github.com/ranuts/document), AGPL-3.0), so Word,
+Excel and PowerPoint files open, edit and save without any server. Fetch the
+pinned, digest-verified build once per checkout:
+
+```powershell
+cd frontend\appflowy_flutter
+dart run tool\office_editor\fetch_office_editor.dart
+```
+
+It unpacks into `frontend/appflowy_flutter/office_editor/` (gitignored, about
+420 MB, most of it fonts). The Linux and Windows CMake files install it into
+the bundle's `data/office_editor`, and the macOS Xcode project into
+`AppFlowy.app/Contents/Resources/office_editor`; `tool/build_windows_bundles.ps1`
+fetches it automatically. Set `APPFLOWY_OFFICE_EDITOR_DIR` to use another copy.
+
+AppFlowy serves the editor from a loopback HTTP server and shows it inside the
+document page: in a WebView on Windows and macOS, and on Linux, where Flutter
+has no WebView, in an offscreen WebKitGTK view drawn into a Flutter texture
+(`packages/appflowy_linux_webview`). That needs the `libwebkit2gtk-4.1-0`
+package at runtime (nothing extra to build). With WebKitGTK 2.44 or newer the
+view renders on the GPU and hands its frames over in shared memory
+(`WEBKIT_DMABUF_RENDERER_FORCE_SHM`, which AppFlowy sets unless it is already
+set; `0` keeps rendering on the CPU). On Windows and Linux, wheel and trackpad
+scrolling over a document follow the app's own smooth scrolling and inertia
+rather than ONLYOFFICE's row-by-row steps. Edits save straight back to the
+file. Builds without the editor fall back to the document server settings
+above.
 
 ## Machine specific settings
 

@@ -1,6 +1,7 @@
 Package: AppFlowy
 Version: [CHANGE_THIS]
 Depends: libkeybinder-3.0-0
+Recommends: libwebkit2gtk-4.1-0
 Architecture: amd64
 Essential: no
 Priority: optional

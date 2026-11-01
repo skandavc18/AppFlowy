@@ -172,7 +172,6 @@ body {
 /// Runs in the editor frame before ONLYOFFICE: installs [officeEditorChromeCss],
 /// defaults document text to ONLYOFFICE's smooth, unhinted rendering, and
 /// repaints its canvas scroll bars as thin rounded thumbs without arrows.
-@visibleForTesting
 String buildOfficeEditorChromeScript({
   required String documentServerOrigin,
   required OfficeEditorTypography typography,

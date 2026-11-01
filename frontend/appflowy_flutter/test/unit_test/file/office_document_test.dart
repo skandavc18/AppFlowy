@@ -13,8 +13,10 @@ import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_office_view.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
+import 'package:appflowy_linux_webview/appflowy_linux_webview.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra/theme.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -490,6 +492,15 @@ void main() {
       expect(relay, contains('var serverOrigin = "https://docs.example.com"'));
       expect(relay, contains('event.origin !== serverOrigin'));
       expect(relay, contains("callHandler('$officeScrollHandlerName'"));
+      // The Linux web view has no InAppWebView bridge; its relay posts JSON
+      // to the view's message handler instead.
+      expect(
+        relay,
+        allOf(
+          contains('handlers.${LinuxWebViewController.messageHandler}'),
+          contains("handler: '$officeScrollHandlerName', message: message"),
+        ),
+      );
       expect(relay, contains('window.__appflowyOfficeScrollCommand'));
       expect(
         buildOfficeEditorHtml(
@@ -528,6 +539,7 @@ void main() {
           contains('const HOST = "http://localhost:51234"'),
           contains('window.parent === window'),
           contains('const UNITS_PER_PIXEL = 1.2;'),
+          contains('const PIXEL_DELTAS = false;'),
           contains('const SMOOTH = true;'),
         ),
       );
@@ -538,7 +550,10 @@ void main() {
           contains('speed: ${config.maxWheelScrollVelocity}'),
           contains('friction: ${config.desktopCoastFriction}'),
           contains("{ capture: true, passive: false }"),
-          contains('event.source !== window.parent || event.origin !== HOST'),
+          // The embedded editor sits a frame below the page that relays its
+          // messages, so it talks to the top page rather than its parent.
+          contains('window.top.postMessage('),
+          contains('event.source !== window.top || event.origin !== HOST'),
         ),
       );
       // A release command can overtake its gesture's last input; that input
@@ -560,6 +575,31 @@ void main() {
           smooth: false,
         ),
         contains('const SMOOTH = false;'),
+      );
+      // WebKitGTK views deliver exact pixels in deltaX/Y.
+      expect(
+        buildOfficeScrollRuntimeScript(
+          documentServerOrigin: 'http://localhost:8080',
+          hostOrigin: 'http://localhost:8080',
+          config: config,
+          smooth: true,
+          pixelDeltas: true,
+        ),
+        allOf(
+          contains('const PIXEL_DELTAS = true;'),
+          contains('dy = finite(event.deltaY);'),
+          contains('if (event.deltaMode !== 0) return;'),
+        ),
+      );
+      // Pans can outpace the editor's redraws; each frame applies their sum
+      // once, while slides keep paging with the editor's own rate limit.
+      expect(
+        script.source,
+        allOf(
+          contains('state.pending = requestAnimationFrame(flushPrecise)'),
+          contains("if (kind === 'slide') {"),
+          contains('applyPrecise(clamp(dx, C.notch), clamp(dy, C.notch));'),
+        ),
       );
     });
 
@@ -589,6 +629,132 @@ void main() {
       controller.detach();
       expect(controller.editorAtTop, isNull);
     });
+
+    testWidgets(
+      'drives the Linux editor view like the Windows one',
+      (tester) async {
+        const channel = MethodChannel('appflowy_linux_webview');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        final calls = <MethodCall>[];
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return call.method == 'create' ? 3 : null;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+        List<Map<Object?, Object?>> sent(String method, [String? kind]) => [
+              for (final call in calls)
+                if (call.method == method &&
+                    (kind == null ||
+                        (call.arguments as Map<Object?, Object?>)['kind'] ==
+                            kind))
+                  call.arguments as Map<Object?, Object?>,
+            ];
+
+        final view = await LinuxWebViewController.create(
+          url: Uri.parse('http://127.0.0.1:9/__appflowy__/office/token/'),
+        );
+        final controller = OfficeEditorScrollController()..attachTexture(view);
+        final commands = <Map<String, Object>>[];
+        controller.debugOnCommand = commands.add;
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: OfficeEditorScroll(
+              controller: controller,
+              child: LinuxWebView(controller: view),
+            ),
+          ),
+        );
+        await tester.pump();
+        final center = tester.getCenter(find.byType(LinuxWebView));
+        const config = PremiumScrollPhysicsConfig();
+
+        // A notch reaches the editor frame as exact pixels for it to ease.
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: center,
+            scrollDelta: const Offset(0, 53),
+          ),
+        );
+        expect(sent('pointer', 'scroll').last['dy'], 53 / 40);
+
+        // Pans follow the fingers at the app's desktop scale, then coast.
+        await tester.sendEventToBinding(
+          PointerPanZoomStartEvent(position: center),
+        );
+        expect(commands.last, {'c': 'precise', 'on': true});
+        for (var i = 1; i <= 4; i++) {
+          await tester.sendEventToBinding(
+            PointerPanZoomUpdateEvent(
+              position: center,
+              timeStamp: Duration(milliseconds: 10 * i),
+              pan: Offset(0, -20.0 * i),
+              panDelta: const Offset(0, -20),
+            ),
+          );
+        }
+        expect(
+          sent('pointer', 'scroll').last['dy'] as double,
+          closeTo(20 * config.desktopDirectManipulationScale / 40, 1e-9),
+        );
+        await tester.sendEventToBinding(
+          PointerPanZoomEndEvent(
+            position: center,
+            timeStamp: const Duration(milliseconds: 45),
+          ),
+        );
+        expect(commands[commands.length - 2], {'c': 'precise', 'on': false});
+        expect(commands.last['c'], 'fling');
+        expect(
+          commands.last['vy'] as double,
+          closeTo(2000 * config.desktopDirectManipulationScale, 1e-6),
+        );
+        // Commands run in the page, whose relay passes them to the editor.
+        expect(
+          sent('evaluate').last['source'],
+          startsWith(
+            'window.__appflowyOfficeScrollCommand && '
+            'window.__appflowyOfficeScrollCommand({"c":"fling"',
+          ),
+        );
+
+        // The relay's reports arrive through the view's message handler.
+        Future<void> post(String message) => messenger.handlePlatformMessage(
+              channel.name,
+              const StandardMethodCodec().encodeMethodCall(
+                MethodCall('message', {
+                  'id': sent('create').single['id'],
+                  'message': message,
+                }),
+              ),
+              (_) {},
+            );
+        await post(
+          jsonEncode({
+            'handler': officeScrollHandlerName,
+            'message': {'t': 'state', 'atTop': false},
+          }),
+        );
+        await post('not json');
+        await post(jsonEncode({'handler': 'other', 'message': {}}));
+        await tester.pump();
+        expect(controller.editorAtTop, isFalse);
+
+        controller.detach();
+        await post(
+          jsonEncode({
+            'handler': officeScrollHandlerName,
+            'message': {'t': 'state', 'atTop': true},
+          }),
+        );
+        await tester.pump();
+        expect(controller.editorAtTop, isNull);
+        await tester.pumpWidget(const SizedBox());
+        await view.dispose();
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.linux),
+    );
   });
 
   group('office editor appearance refresh', () {

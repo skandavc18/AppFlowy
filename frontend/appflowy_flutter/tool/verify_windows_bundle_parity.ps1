@@ -48,6 +48,31 @@ $releaseCore = (Get-FileHash -LiteralPath (Join-Path $RunnerRoot 'Release/dart_f
 $debugCore = (Get-FileHash -LiteralPath (Join-Path $RunnerRoot 'Debug/dart_ffi.dll') -Algorithm SHA256).Hash
 if ($releaseCore -ne $debugCore) { throw 'Rust backend binaries differ between bundles.' }
 
+# Both bundles carry the same complete built-in office editor: the manifest
+# written last by the fetch tool, plus every file it lists.
+$officeEditors = @{}
+foreach ($config in @('Release', 'Debug')) {
+  $editor = Join-Path $RunnerRoot "$config/data/office_editor"
+  $manifestPath = Join-Path $editor 'APPFLOWY_BUNDLE.json'
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    throw "$config has no built-in office editor."
+  }
+  $manifestText = Get-Content -LiteralPath $manifestPath -Raw
+  $manifest = $manifestText | ConvertFrom-Json
+  $files = @(Get-ChildItem -LiteralPath $editor -Recurse -File -Force).Count
+  if ($files -ne $manifest.files + 1) {
+    throw "$config has an incomplete built-in office editor ($files files, expected $($manifest.files + 1))."
+  }
+  $officeEditors[$config] = [pscustomobject]@{
+    Manifest = $manifestText
+    Revision = $manifest.revision
+    Files = $files
+  }
+}
+if ($officeEditors.Release.Manifest -ne $officeEditors.Debug.Manifest) {
+  throw 'The built-in office editor differs between bundles.'
+}
+
 $assetList = ($assets.Release.Keys | Sort-Object | ForEach-Object {
     "$_|$($assets.Release[$_])"
   }) -join "`n"
@@ -60,4 +85,6 @@ $digest = [Convert]::ToHexString(
   NativeComponentCount = $libraries.Release.Count
   NativeComponents = $libraries.Release
   RustBackendSha256 = $releaseCore
+  OfficeEditorRevision = $officeEditors.Release.Revision
+  OfficeEditorFiles = $officeEditors.Release.Files
 }
