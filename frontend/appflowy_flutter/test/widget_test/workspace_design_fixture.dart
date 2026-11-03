@@ -682,7 +682,7 @@ class _FixtureNavigation extends StatelessWidget {
                   style: WorkspaceTypography.style(
                     context,
                     WorkspaceTextRole.body,
-                    color: palette.textBody,
+                    color: palette.textSecondary,
                   ),
                 ),
                 onTap: _nothing,

@@ -7,6 +7,7 @@ import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/email/email_message.dart';
 import 'package:flutter/material.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 
 /// The fixed geometry and motion a mailbox is drawn to.
 abstract final class EmailMetrics {
@@ -137,14 +138,14 @@ class EmailTheme {
     required double fontSize,
     required Color color,
     double axis = EmailMetrics.bodyWeightAxis,
-    FontWeight weight = FontWeight.w500,
+    FontWeight? weight,
     double tracking = EmailMetrics.tracking,
     double height = 1.0,
   }) =>
       AppTextRendering.polish(
         baseTextStyle.copyWith(
           fontSize: fontSize,
-          fontWeight: weight,
+          fontWeight: weight ?? flowyFontWeightForAxis(axis),
           fontVariations: [FontVariation.weight(axis)],
           height: height,
           letterSpacing: fontSize * tracking,

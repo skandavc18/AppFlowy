@@ -99,6 +99,7 @@ class _GitConflictResolverState extends State<GitConflictResolver> {
                     style: TextStyle(
                       color: palette.textSecondary,
                       fontSize: 12,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(620)],
                     ),
                   ),
@@ -184,6 +185,7 @@ class _GitConflictResolverState extends State<GitConflictResolver> {
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(580)],
                     ),
                   ),
@@ -363,6 +365,7 @@ class _Side extends StatelessWidget {
                       style: TextStyle(
                         color: accent,
                         fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
                         fontVariations: const [FontVariation.weight(620)],
                       ),
                     ),

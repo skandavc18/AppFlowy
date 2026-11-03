@@ -117,6 +117,7 @@ class ProviderBadge extends StatelessWidget {
               fontSize: compact ? 10.5 : 11.5,
               height: 1.1,
               letterSpacing: 0.05,
+              fontWeight: FontWeight.w500,
               fontVariations: const [FontVariation.weight(560)],
             ),
           ),
@@ -205,6 +206,7 @@ class ProviderSyncStrip extends StatelessWidget {
                     style: TextStyle(
                       color: palette.accent,
                       fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(580)],
                     ),
                   ),
@@ -293,6 +295,7 @@ class ProviderStateView extends StatelessWidget {
               style: TextStyle(
                 color: palette.textPrimary,
                 fontSize: 15,
+                fontWeight: FontWeight.w600,
                 fontVariations: const [FontVariation.weight(620)],
               ),
             ),
@@ -560,6 +563,7 @@ class _ActionButtonState extends State<_ActionButton> {
             style: TextStyle(
               color: widget.primary ? palette.accent : palette.textSecondary,
               fontSize: widget.dense ? 11.5 : 12.5,
+              fontWeight: FontWeight.w600,
               fontVariations: const [FontVariation.weight(580)],
             ),
           ),

@@ -263,6 +263,77 @@ void main() {
   }
 
   testWidgets(
+    'sidebar avatar fills its rounded tile instead of a circle',
+    (tester) async {
+      final fixture = _ProfileFixture();
+      try {
+        await fixture.mount(tester, 'paper');
+        final sidebarAvatar = find.descendant(
+          of: find.byType(SidebarUser),
+          matching: find.byType(AFAvatar),
+        );
+        const corners = BorderRadius.all(Radius.circular(6));
+        expect(
+          tester
+              .widget<UserAvatar>(
+                find.descendant(
+                  of: find.byType(SidebarUser),
+                  matching: find.byType(UserAvatar),
+                ),
+              )
+              .borderRadius,
+          corners,
+        );
+        expect(
+          find.descendant(of: sidebarAvatar, matching: find.byType(ClipOval)),
+          findsNothing,
+        );
+        final clip = tester.widget<ClipRRect>(
+          find.descendant(of: sidebarAvatar, matching: find.byType(ClipRRect)),
+        );
+        expect(clip.borderRadius, corners);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await fixture.dispose(tester);
+      }
+    },
+    timeout: homeProfileTestTimeout,
+  );
+
+  testWidgets('initials fill a rounded tile and stay round by default',
+      (tester) async {
+    BoxDecoration initials(String name) => tester
+        .widget<Container>(
+          find.ancestor(of: find.text(name), matching: find.byType(Container)),
+        )
+        .decoration! as BoxDecoration;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFlowyTheme(
+          data: AppFlowyDefaultTheme().light(),
+          child: const Column(
+            children: [
+              UserAvatar(
+                iconUrl: '',
+                name: 'Me',
+                size: AFAvatarSize.s,
+                borderRadius: BorderRadius.all(Radius.circular(6)),
+              ),
+              UserAvatar(iconUrl: '', name: 'Ada', size: AFAvatarSize.s),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final tile = initials('M');
+    expect(tile.shape, BoxShape.rectangle);
+    expect(tile.borderRadius, const BorderRadius.all(Radius.circular(6)));
+    expect(initials('A').shape, BoxShape.circle);
+  });
+
+  testWidgets(
     'keep-open selections serialize writes and survive profile broadcasts',
     (tester) async {
       final fixture = _ProfileFixture();

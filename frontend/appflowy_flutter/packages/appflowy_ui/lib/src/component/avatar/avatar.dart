@@ -56,6 +56,7 @@ class AFAvatar extends StatelessWidget {
     this.backgroundColor,
     this.child,
     this.colorHash,
+    this.borderRadius,
   });
 
   /// The name of the avatar. Used for initials if [child] and [url] are not provided.
@@ -80,6 +81,10 @@ class AFAvatar extends StatelessWidget {
 
   /// The hash value used to pick the color. If it's not provided, the name hash will be used.
   final String? colorHash;
+
+  /// Rounds the avatar into this rectangle instead of a circle, so it can
+  /// fill a tile of the same shape.
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -114,16 +119,16 @@ class AFAvatar extends StatelessWidget {
     required TextStyle textStyle,
   }) {
     if (child != null) {
-      return ClipOval(
-        child: SizedBox(
+      return _clip(
+        SizedBox(
           width: avatarSize,
           height: avatarSize,
           child: child,
         ),
       );
     } else if (url != null && url!.isNotEmpty) {
-      return ClipOval(
-        child: CachedNetworkImage(
+      return _clip(
+        CachedNetworkImage(
           imageUrl: url!,
           width: avatarSize,
           height: avatarSize,
@@ -145,12 +150,17 @@ class AFAvatar extends StatelessWidget {
     }
   }
 
+  Widget _clip(Widget child) => borderRadius == null
+      ? ClipOval(child: child)
+      : ClipRRect(borderRadius: borderRadius!, child: child);
+
   Widget _buildInitialsCircle(double size, Color bgColor, TextStyle textStyle) {
     final initial = _getInitials(name);
     return Container(
       decoration: BoxDecoration(
         color: bgColor,
-        shape: BoxShape.circle,
+        shape: borderRadius == null ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: borderRadius,
       ),
       alignment: Alignment.center,
       child: Text(

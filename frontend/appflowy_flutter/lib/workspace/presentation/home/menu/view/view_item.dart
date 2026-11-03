@@ -669,7 +669,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     final palette = SidebarPalette.of(context);
     final nameStyle = SidebarTypography.textStyle(
       context,
-      color: isSelected ? palette.textPrimary : palette.textBody,
+      color: palette.textSecondary,
       role: SidebarTextRole.page,
     );
     final name = WorkspaceInlineEditableText(

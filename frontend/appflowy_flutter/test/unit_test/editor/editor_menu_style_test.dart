@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('menu text uses polished shared UI weight 550', (tester) async {
+  testWidgets('menu text uses the shared regular UI weight', (tester) async {
     late TextStyle style;
 
     await tester.pumpWidget(

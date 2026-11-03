@@ -292,10 +292,44 @@ flutter:
         - asset: assets/google_fonts/DM_Sans/DMSans-Variable.ttf
         - asset: assets/google_fonts/DM_Sans/DMSans-VariableItalic.ttf
           style: italic
+    # Static faces cut from the variable Inter at AppFlowy's weight ladder by
+    # tool/fonts/build_inter_static.py, so a FontWeight alone sets the weight.
     - family: Inter
       fonts:
-        - asset: assets/google_fonts/Inter/Inter-Variable.ttf
-        - asset: assets/google_fonts/Inter/Inter-VariableItalic.ttf
+        - asset: assets/google_fonts/Inter/static/Inter-350.ttf
+          weight: 300
+        - asset: assets/google_fonts/Inter/static/Inter-440.ttf
+          weight: 400
+        - asset: assets/google_fonts/Inter/static/Inter-480.ttf
+          weight: 500
+        - asset: assets/google_fonts/Inter/static/Inter-560.ttf
+          weight: 600
+        - asset: assets/google_fonts/Inter/static/Inter-640.ttf
+          weight: 700
+        - asset: assets/google_fonts/Inter/static/Inter-720.ttf
+          weight: 800
+        - asset: assets/google_fonts/Inter/static/Inter-800.ttf
+          weight: 900
+        - asset: assets/google_fonts/Inter/static/Inter-350-Italic.ttf
+          weight: 300
+          style: italic
+        - asset: assets/google_fonts/Inter/static/Inter-440-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: assets/google_fonts/Inter/static/Inter-480-Italic.ttf
+          weight: 500
+          style: italic
+        - asset: assets/google_fonts/Inter/static/Inter-560-Italic.ttf
+          weight: 600
+          style: italic
+        - asset: assets/google_fonts/Inter/static/Inter-640-Italic.ttf
+          weight: 700
+          style: italic
+        - asset: assets/google_fonts/Inter/static/Inter-720-Italic.ttf
+          weight: 800
+          style: italic
+        - asset: assets/google_fonts/Inter/static/Inter-800-Italic.ttf
+          weight: 900
           style: italic
     - family: Poppins
       fonts:
@@ -363,6 +397,10 @@ flutter:
     # The Excalidraw editor, shipped as one archive and unpacked on first use.
     - assets/excalidraw/excalidraw_host.zip
     - assets/fonts/
+    # The variable Inter the static faces are cut from, embedded whole where a
+    # WebView or PDF needs every weight (Office, previews, reports).
+    - assets/google_fonts/Inter/Inter-Variable.ttf
+    - assets/google_fonts/Inter/Inter-VariableItalic.ttf
     - assets/built_in_prompts.json
 
     # The following assets will be excluded in release.

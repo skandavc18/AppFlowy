@@ -461,26 +461,26 @@ void main() {
       final bundle = _FontBundle();
       final typography = await loadOfficeEditorTypography('', bundle: bundle);
 
-      expect(typography.family, 'DM Sans');
+      expect(typography.family, 'Inter');
       expect(typography.isBundled, isTrue);
       expect(
         bundle.loaded,
-        ['assets/google_fonts/DM_Sans/DMSans-Variable.ttf'],
+        ['assets/google_fonts/Inter/Inter-Variable.ttf'],
       );
       expect(
         typography.fontFace,
         allOf(
           contains('font-family:"AppFlowy UI"'),
-          contains('font-weight:550 1000'),
+          contains('font-weight:480 1000'),
           contains('base64,${base64Encode(const [1, 2, 3])}'),
         ),
       );
 
       final missing = await loadOfficeEditorTypography(
-        'Inter',
+        'DM Sans',
         bundle: _FontBundle(fail: true),
       );
-      expect(missing.family, 'Inter');
+      expect(missing.family, 'DM Sans');
       expect(missing.fontFace, isEmpty);
     });
   });

@@ -303,6 +303,7 @@ class GitBranchSelector extends StatelessWidget {
               style: TextStyle(
                 color: palette.textPrimary,
                 fontSize: 12,
+                fontWeight: FontWeight.w500,
                 fontVariations: const [FontVariation.weight(570)],
               ),
             ),
@@ -544,6 +545,7 @@ class _ChangesPane extends StatelessWidget {
                     style: TextStyle(
                       color: palette.textSecondary,
                       fontSize: 12,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(620)],
                     ),
                   ),
@@ -788,6 +790,7 @@ class _ChangeRowState extends State<_ChangeRow> {
                   style: TextStyle(
                     color: hue,
                     fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
                     fontVariations: const [FontVariation.weight(680)],
                   ),
                 ),
@@ -950,6 +953,7 @@ class _SectionLabel extends StatelessWidget {
             color: palette.textMuted,
             fontSize: 10,
             letterSpacing: 0.6,
+            fontWeight: FontWeight.w600,
             fontVariations: const [FontVariation.weight(640)],
           ),
         ),
@@ -1065,6 +1069,7 @@ class _ActionState extends State<_Action> {
                 style: TextStyle(
                   color: ink.withValues(alpha: enabled ? 1 : 0.4),
                   fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
                   fontVariations: const [FontVariation.weight(570)],
                 ),
               ),

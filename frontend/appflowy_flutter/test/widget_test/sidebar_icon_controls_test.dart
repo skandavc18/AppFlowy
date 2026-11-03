@@ -666,7 +666,7 @@ class _SidebarPreview extends StatelessWidget {
             label,
             style: SidebarTypography.textStyle(
               context,
-              color: palette.textBody,
+              color: palette.textSecondary,
               role: SidebarTextRole.page,
             ),
           ),
@@ -685,7 +685,7 @@ class _SidebarPreview extends StatelessWidget {
                   Expanded(
                     child: SidebarText.heading(
                       'Workspace',
-                      color: palette.textPrimary,
+                      color: palette.textSecondary,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

@@ -158,6 +158,7 @@ class _AgendaRow extends StatelessWidget {
                   fontSize: 11.5,
                   height: 1,
                   color: palette.textSecondary,
+                  fontWeight: FontWeight.w600,
                   fontVariations: const [FontVariation.weight(580)],
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),

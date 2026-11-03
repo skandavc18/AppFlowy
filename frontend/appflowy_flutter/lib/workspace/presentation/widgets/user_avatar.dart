@@ -36,6 +36,7 @@ class UserAvatar extends StatelessWidget {
     required this.size,
     this.isHovering = false,
     this.decoration,
+    this.borderRadius,
   });
 
   final String iconUrl;
@@ -43,6 +44,9 @@ class UserAvatar extends StatelessWidget {
 
   final AFAvatarSize size;
   final Decoration? decoration;
+
+  /// Draws the avatar as a rounded square with these corners, not a circle.
+  final BorderRadius? borderRadius;
 
   // If true, a border will be applied on top of the avatar
   final bool isHovering;
@@ -55,7 +59,9 @@ class UserAvatar extends StatelessWidget {
       child: DecoratedBox(
         decoration: decoration ??
             BoxDecoration(
-              shape: BoxShape.circle,
+              shape:
+                  borderRadius == null ? BoxShape.circle : BoxShape.rectangle,
+              borderRadius: borderRadius,
               border: isHovering
                   ? Border.all(
                       color: theme.iconColorScheme.primary,
@@ -67,6 +73,7 @@ class UserAvatar extends StatelessWidget {
           url: iconUrl,
           name: name,
           size: size,
+          borderRadius: borderRadius,
           child: _buildIcon(),
         ),
       ),

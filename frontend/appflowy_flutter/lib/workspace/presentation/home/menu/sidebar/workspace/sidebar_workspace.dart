@@ -479,7 +479,7 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                foregroundColor: palette.textPrimary,
+                foregroundColor: palette.textSecondary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
                 ),
@@ -495,7 +495,7 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
                     Flexible(
                       child: SidebarText.heading(
                         currentWorkspace.name,
-                        color: palette.textPrimary,
+                        color: palette.textSecondary,
                         overflow: TextOverflow.ellipsis,
                         withTooltip: true,
                       ),

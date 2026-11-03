@@ -16,6 +16,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flowy_infra/theme.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -91,7 +92,7 @@ void main() {
         expect(field.style!.fontWeight, FontWeight.w700);
         expect(
           field.style!.fontVariations,
-          contains(const FontVariation('wght', 700)),
+          flowyFontVariationsForWeight(FontWeight.w700),
         );
         expect(field.autofocus, isFalse);
         expect(fixture.focus.hasFocus, isFalse);

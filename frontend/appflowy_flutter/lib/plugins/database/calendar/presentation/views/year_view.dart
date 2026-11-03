@@ -138,6 +138,7 @@ class _MiniMonth extends StatelessWidget {
                       fontSize: 9,
                       height: 1,
                       color: palette.textMuted.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(620)],
                     ),
                   ),
@@ -224,6 +225,8 @@ class _MonthHeadingState extends State<_MonthHeading> {
                 letterSpacing: -0.15,
                 color:
                     widget.isThisMonth ? palette.accent : palette.textPrimary,
+                fontWeight:
+                    widget.isThisMonth ? FontWeight.w700 : FontWeight.w600,
                 fontVariations: [
                   FontVariation.weight(widget.isThisMonth ? 670 : 600),
                 ],
@@ -308,6 +311,8 @@ class _MiniDayState extends State<_MiniDay> {
                           : widget.inMonth
                               ? palette.textSecondary
                               : palette.outsideMonthText,
+                      fontWeight:
+                          widget.isToday ? FontWeight.w700 : FontWeight.w500,
                       fontVariations: [
                         FontVariation.weight(widget.isToday ? 660 : 550),
                       ],

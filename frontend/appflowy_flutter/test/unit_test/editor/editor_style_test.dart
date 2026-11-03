@@ -36,7 +36,7 @@ void main() {
       expect(result.fontWeight, defaultFontWeight);
     });
 
-    test('baseTextStyle should use DM Sans with Inter fallback', () {
+    test('baseTextStyle falls back to the default Inter face', () {
       const garbage = 'Garbage';
       final result = editorStyleCustomizer.baseTextStyle(garbage);
       expect(result, isA<TextStyle>());
@@ -70,15 +70,45 @@ void main() {
       expect(result.letterSpacing, closeTo(-0.16, 0.0001));
     });
 
-    test('editor chrome uses darker semibold ObjectType rendering', () {
+    test('desktop sets ObjectType text in Inter on the weight ladder', () {
+      for (final platform in [
+        TargetPlatform.linux,
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+      ]) {
+        debugDefaultTargetPlatformOverride = platform;
+        try {
+          final regular = editorStyleCustomizer.baseTextStyle(
+            defaultFontFamily,
+            fontSize: ObjectTypeTypography.editorFontSize,
+          );
+          final bold = editorStyleCustomizer.baseTextStyle(
+            defaultFontFamily,
+            fontWeight: FontWeight.w700,
+            fontSize: ObjectTypeTypography.editorFontSize,
+          );
+
+          expect(regular.fontFamily, bundledFontFamily, reason: '$platform');
+          expect(regular.fontWeight, FontWeight.w500);
+          expect(regular.fontVariations, defaultFontVariations);
+          expect(bold.fontWeight, FontWeight.w700);
+          expect(bold.fontVariations, const [FontVariation.weight(640)]);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test('editor chrome sets menus in regular-weight Inter', () {
       final style = EditorChromeStyle.textStyleFor(
         TargetPlatform.windows,
         Brightness.light,
       );
 
-      expect(style.fontFamily, 'Segoe UI');
+      expect(style.fontFamily, 'Inter');
       expect(style.fontSize, 14);
-      expect(style.fontWeight, FontWeight.w600);
+      expect(style.fontWeight, FontWeight.w500);
+      expect(style.fontVariations, defaultFontVariations);
       expect(style.color, EditorChromeStyle.lightForeground);
       expect(style.fontFeatures, isNotEmpty);
       expect(style.shadows, isNotEmpty);

@@ -215,6 +215,7 @@ class _KeepChoiceDialog extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(640)],
                   ),
                 ),
@@ -310,6 +311,7 @@ class _KeepChoiceTile extends StatelessWidget {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
                         fontVariations: const [FontVariation.weight(600)],
                       ),
                     ),

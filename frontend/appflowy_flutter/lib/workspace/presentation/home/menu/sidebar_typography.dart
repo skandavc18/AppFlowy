@@ -32,20 +32,17 @@ abstract final class SidebarTypography {
   static const metaFontSize = 11.5;
   static const metaLineHeight = 16.0;
 
-  /// Navigation copy is set at medium, never at the editor's semibold.
-  ///
-  /// [ObjectTypeTypography.fontWeightForPlatform] answers w600 on Windows,
-  /// which is what made every row of the sidebar read as bold.
+  /// Navigation copy is set at the regular weight; only the section heading
+  /// above the tree steps up to semibold.
   static const navigationWeight = FontWeight.w500;
   static const pageWeight = FontWeight.w500;
   static const headingWeight = FontWeight.w600;
 
-  // Match the non-variable fallback weight instead of synthesizing axis 550.
-  static const fontVariations = [FontVariation.weight(500)];
-  static const headingFontVariations = [FontVariation.weight(600)];
-
   static double letterSpacingForFontSize(double fontSize) =>
       ObjectTypeTypography.letterSpacingForFontSize(fontSize);
+
+  static List<FontVariation> fontVariationsForRole(SidebarTextRole role) =>
+      flowyFontVariationsForWeight(fontWeightForRole(role));
 
   static String fontFamilyForPlatform(TargetPlatform platform) {
     return ObjectTypeTypography.fontFamilyForPlatform(platform);
@@ -93,9 +90,7 @@ abstract final class SidebarTypography {
       fontFamilyFallback: fontFamilyFallbackForPlatform(theme.platform),
       fontSize: resolvedFontSize,
       fontWeight: fontWeightForRole(role),
-      fontVariations: role == SidebarTextRole.heading
-          ? headingFontVariations
-          : fontVariations,
+      fontVariations: fontVariationsForRole(role),
       height: resolvedLineHeight / resolvedFontSize,
       letterSpacing: role == SidebarTextRole.section
           ? sectionLetterSpacing

@@ -208,6 +208,7 @@ class _GooglePhotosPickerState extends State<_GooglePhotosPicker> {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: 16,
+                          fontWeight: FontWeight.w600,
                           fontVariations: const [FontVariation.weight(640)],
                         ),
                       ),

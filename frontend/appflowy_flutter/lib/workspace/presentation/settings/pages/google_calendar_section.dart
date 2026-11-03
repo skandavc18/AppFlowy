@@ -157,6 +157,7 @@ class _GoogleCalendarSectionState extends State<GoogleCalendarSection> {
                 style: TextStyle(
                   fontSize: 12,
                   color: palette.textMuted,
+                  fontWeight: FontWeight.w600,
                   fontVariations: const [FontVariation.weight(600)],
                 ),
               ),
@@ -218,6 +219,7 @@ class _CalendarRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     color: palette.textPrimary,
+                    fontWeight: FontWeight.w500,
                     fontVariations: const [FontVariation.weight(570)],
                   ),
                 ),

@@ -8,9 +8,11 @@ const _localFontFamilies = [
   preferredFontFamily,
   bundledFontFamily,
   builtInCodeFontFamily,
+  // The previous default, still bundled for anyone who picked it.
+  'DM Sans',
 ];
 
-// DM Sans provides the rounded default UI face, with bundled Inter as fallback.
+// Inter is the default UI face on every platform.
 TextStyle getGoogleFontSafely(
   String fontFamily, {
   FontWeight? fontWeight,

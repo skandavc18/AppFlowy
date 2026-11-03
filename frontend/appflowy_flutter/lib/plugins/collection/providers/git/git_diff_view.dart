@@ -141,6 +141,7 @@ class _FileDiff extends StatelessWidget {
                             text: file.name,
                             style: TextStyle(
                               color: palette.textPrimary,
+                              fontWeight: FontWeight.w600,
                               fontVariations: const [FontVariation.weight(600)],
                             ),
                           ),
@@ -293,6 +294,7 @@ class _Count extends StatelessWidget {
         style: TextStyle(
           color: color,
           fontSize: 11.5,
+          fontWeight: FontWeight.w600,
           fontVariations: const [FontVariation.weight(600)],
         ),
       );

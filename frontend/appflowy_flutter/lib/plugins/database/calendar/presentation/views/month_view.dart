@@ -246,6 +246,7 @@ class _WeekdayStrip extends StatelessWidget {
                     color: isWeekend(day)
                         ? palette.textMuted.withValues(alpha: 0.72)
                         : palette.textMuted,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(620)],
                   ),
                 ),
@@ -459,6 +460,7 @@ class _DragGhost extends StatelessWidget {
                     fontSize: 11,
                     height: 1,
                     color: palette.eventInk(color),
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(600)],
                   ),
                 ),
@@ -797,6 +799,7 @@ class _MoreRowState extends State<_MoreRow> {
               fontSize: 11,
               height: 1,
               color: palette.textMuted,
+              fontWeight: FontWeight.w600,
               fontVariations: const [FontVariation.weight(620)],
             ),
           ),

@@ -28,6 +28,7 @@ class UserAvatarButton extends StatelessWidget {
     required this.isCurrent,
     required this.size,
     this.decoration,
+    this.borderRadius,
   });
 
   final UserProfilePB userProfile;
@@ -35,6 +36,10 @@ class UserAvatarButton extends StatelessWidget {
   final bool Function() isCurrent;
   final AFAvatarSize size;
   final Decoration? decoration;
+
+  /// Shapes the avatar, and its hover and press highlight, as a rounded
+  /// square instead of a circle.
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +52,7 @@ class UserAvatarButton extends StatelessWidget {
       icon: userIconData(userProfile.iconUrl),
       documentId: userId.toString(),
       dimension: size.size,
+      borderRadius: borderRadius,
       isCurrent: () =>
           isCurrent() &&
           (workspace == null ||
@@ -63,6 +69,7 @@ class UserAvatarButton extends StatelessWidget {
         name: userProfile.name,
         size: size,
         decoration: decoration,
+        borderRadius: borderRadius,
       ),
     );
   }
@@ -81,6 +88,7 @@ class AvatarPickerButton extends StatefulWidget {
     required this.onSelected,
     required this.child,
     this.isCurrent,
+    this.borderRadius,
   });
 
   final Object identity;
@@ -91,6 +99,9 @@ class AvatarPickerButton extends StatefulWidget {
   final FutureOr<void> Function(EmojiIconData) onSelected;
   final bool Function()? isCurrent;
   final Widget child;
+
+  /// Corners of the hover and press highlight; a circle when null.
+  final BorderRadius? borderRadius;
 
   @override
   State<AvatarPickerButton> createState() => _AvatarPickerButtonState();
@@ -259,6 +270,9 @@ class _AvatarPickerButtonState extends State<AvatarPickerButton> {
             padding: EdgeInsets.zero,
             minimumSize: Size.square(widget.dimension),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: widget.borderRadius == null
+                ? null
+                : RoundedRectangleBorder(borderRadius: widget.borderRadius!),
           ),
           icon: Semantics(
             label: widget.label,

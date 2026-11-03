@@ -3,6 +3,7 @@ import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:flutter/material.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 
 /// Geometry and motion for embedded collection widgets.
 ///
@@ -179,6 +180,9 @@ class CollectionEmbedTheme {
       color: color ?? textBody,
       height: height,
       letterSpacing: tracking,
+      fontWeight: weightAxis == null
+          ? base.fontWeight
+          : flowyFontWeightForAxis(weightAxis),
       fontVariations: weightAxis == null
           ? base.fontVariations
           : [FontVariation('wght', weightAxis)],

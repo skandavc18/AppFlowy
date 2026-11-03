@@ -535,6 +535,7 @@ $fontFaces
       -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial,
       sans-serif;
     font-size: 14.5px;
+    font-weight: 480;
     line-height: 1.65;
     overflow-wrap: anywhere;
     -webkit-font-smoothing: antialiased;
@@ -544,7 +545,7 @@ $fontFaces
   }
   h1, h2, h3, h4, h5, h6 {
     margin: 28px 0 14px;
-    font-weight: 600;
+    font-weight: 560;
     line-height: 1.3;
     letter-spacing: -0.014em;
   }
@@ -595,7 +596,8 @@ $fontFaces
     overflow: hidden;
   }
   th, td { padding: 7px 13px; border-bottom: 1px solid var(--rule); }
-  th { text-align: left; font-weight: 600; background: ${_cssColor(codeBackground)}; }
+  th { text-align: left; font-weight: 560; background: ${_cssColor(codeBackground)}; }
+  b, strong { font-weight: 640; }
   tr:last-child td { border-bottom: 0; }
   hr { border: 0; border-top: 1px solid var(--rule); margin: 24px 0; }
   kbd {

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 
 const _standardFontWeight = FontWeight.w500;
-const _standardFontWeightValue = 550.0;
 const _enhancedFontWeight = FontWeight.w600;
 const _prominentFontWeight = FontWeight.w700;
 const _fontFamilyFallback = ['Inter'];
@@ -11,12 +10,16 @@ const _fontFeatures = <FontFeature>[
   FontFeature.enable('liga'),
 ];
 
-List<FontVariation> _fontVariationsForWeight(FontWeight weight) {
-  final value = weight == _standardFontWeight
-      ? _standardFontWeightValue
-      : weight.value.toDouble();
-  return <FontVariation>[FontVariation.weight(value)];
-}
+// w100..w900 on the `wght` axis, in step with flowy_infra_ui's
+// flowyFontWeightAxisValues and the static Inter faces cut from it.
+const _weightAxisValues = <double>[200, 270, 350, 440, 480, 560, 640, 720, 800];
+
+List<FontVariation> _fontVariationsForWeight(FontWeight weight) =>
+    <FontVariation>[
+      FontVariation.weight(
+        _weightAxisValues[(weight.value ~/ 100 - 1).clamp(0, 8)],
+      ),
+    ];
 
 abstract class TextThemeType {
   const TextThemeType({

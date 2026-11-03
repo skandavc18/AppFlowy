@@ -69,6 +69,7 @@ class _CustomAIProvidersSettingState extends State<CustomAIProvidersSetting> {
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 14,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(600)],
                     ),
                   ),
@@ -260,6 +261,7 @@ class _ProviderCardState extends State<_ProviderCard> {
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 13,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(580)],
                     ),
                   ),
@@ -359,6 +361,7 @@ class _PillButton extends StatelessWidget {
                 style: TextStyle(
                   color: enabled ? foreground : palette.textMuted,
                   fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
                   fontVariations: const [FontVariation.weight(560)],
                 ),
               ),
@@ -551,6 +554,7 @@ class _AIProviderDialogState extends State<_AIProviderDialog> {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(640)],
                   ),
                 ),
@@ -684,6 +688,7 @@ class _KindPicker extends StatelessWidget {
           style: TextStyle(
             color: palette.textSecondary,
             fontSize: 11.5,
+            fontWeight: FontWeight.w600,
             fontVariations: const [FontVariation.weight(580)],
           ),
         ),

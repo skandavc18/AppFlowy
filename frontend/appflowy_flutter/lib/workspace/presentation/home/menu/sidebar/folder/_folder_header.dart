@@ -84,7 +84,7 @@ class _FolderHeaderState extends State<FolderHeader> {
     final palette = SidebarPalette.of(context);
     final rootStyle = SidebarTypography.textStyle(
       context,
-      color: palette.textPrimary,
+      color: palette.textSecondary,
       role: SidebarTextRole.heading,
     );
     return Focus(

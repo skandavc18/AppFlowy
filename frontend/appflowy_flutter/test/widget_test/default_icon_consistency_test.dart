@@ -820,12 +820,12 @@ void main() {
       expect(title.fontVariations, const [ui.FontVariation.weight(700)]);
       expect(
         SidebarTypography.textStyle(context).fontVariations,
-        const [ui.FontVariation.weight(500)],
+        const [ui.FontVariation.weight(480)],
       );
       expect(
         SidebarTypography.textStyle(context, role: SidebarTextRole.heading)
             .fontVariations,
-        const [ui.FontVariation.weight(600)],
+        const [ui.FontVariation.weight(560)],
       );
       expect(AppMenuStyle.of(context).headerStyle.fontWeight, FontWeight.w600);
       expect(

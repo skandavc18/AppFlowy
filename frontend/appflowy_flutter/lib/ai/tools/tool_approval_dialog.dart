@@ -89,6 +89,7 @@ class _ToolApprovalDialog extends StatelessWidget {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 15,
+                        fontWeight: FontWeight.w600,
                         fontVariations: const [FontVariation.weight(620)],
                       ),
                     ),
@@ -200,6 +201,7 @@ class _Choice extends StatelessWidget {
             style: TextStyle(
               color: primary ? palette.accent : palette.textSecondary,
               fontSize: 12.5,
+              fontWeight: FontWeight.w500,
               fontVariations: const [FontVariation.weight(570)],
             ),
           ),

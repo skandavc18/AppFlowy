@@ -322,7 +322,7 @@ Future<void> _loadAssets() async {
     translations: Translations(translations),
   );
   for (final entry in {
-    preferredFontFamily: 'assets/google_fonts/DM_Sans/DMSans-Variable.ttf',
+    preferredFontFamily: 'assets/google_fonts/Inter/Inter-Variable.ttf',
     builtInCodeFontFamily:
         'assets/google_fonts/Roboto_Mono/RobotoMono-Regular.ttf',
     'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',

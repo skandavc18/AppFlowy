@@ -495,6 +495,7 @@ class _BranchSelector extends StatelessWidget {
                 style: TextStyle(
                   color: palette.textPrimary,
                   fontSize: 12,
+                  fontWeight: FontWeight.w500,
                   fontVariations: const [FontVariation.weight(570)],
                 ),
               ),
@@ -918,6 +919,7 @@ class _ReadmeState extends State<_Readme> {
               style: TextStyle(
                 color: palette.textSecondary,
                 fontSize: 12,
+                fontWeight: FontWeight.w600,
                 fontVariations: const [FontVariation.weight(600)],
               ),
             ),
@@ -987,6 +989,7 @@ class _CommitList extends StatelessWidget {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 13,
+                        fontWeight: FontWeight.w500,
                         fontVariations: const [FontVariation.weight(550)],
                       ),
                     ),
@@ -1081,6 +1084,7 @@ class _TicketList extends StatelessWidget {
                           style: TextStyle(
                             color: palette.textPrimary,
                             fontSize: 13,
+                            fontWeight: FontWeight.w500,
                             fontVariations: const [FontVariation.weight(550)],
                           ),
                         ),
@@ -1154,6 +1158,7 @@ class _ReleaseList extends StatelessWidget {
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(600)],
                     ),
                   ),
@@ -1219,6 +1224,7 @@ class _PaneTab extends StatelessWidget {
                   style: TextStyle(
                     color: selected ? palette.accent : palette.textSecondary,
                     fontSize: 12,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     fontVariations: [
                       FontVariation.weight(selected ? 620 : 545),
                     ],

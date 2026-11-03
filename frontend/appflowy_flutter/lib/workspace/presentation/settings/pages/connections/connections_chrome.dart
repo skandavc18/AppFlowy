@@ -143,6 +143,7 @@ class _ConnectionCardState extends State<ConnectionCard> {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
                         fontVariations: const [FontVariation.weight(580)],
                       ),
                     ),
@@ -254,6 +255,7 @@ class _ConnectionAddButtonState extends State<ConnectionAddButton> {
                   style: TextStyle(
                     color: accent,
                     fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(600)],
                   ),
                 ),

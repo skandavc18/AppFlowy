@@ -146,6 +146,7 @@ class _ToolChip extends StatelessWidget {
           style: TextStyle(
             color: colour,
             fontSize: 11.5,
+            fontWeight: FontWeight.w500,
             fontVariations: const [FontVariation.weight(560)],
           ),
         ),
@@ -245,6 +246,7 @@ class _ServerRow extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 13,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(580)],
                   ),
                 ),
@@ -390,6 +392,7 @@ class _SkillRow extends StatelessWidget {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           fontVariations: const [FontVariation.weight(580)],
                         ),
                       ),
@@ -558,6 +561,7 @@ class _SectionHeading extends StatelessWidget {
                 style: TextStyle(
                   color: palette.textPrimary,
                   fontSize: 14,
+                  fontWeight: FontWeight.w600,
                   fontVariations: const [FontVariation.weight(600)],
                 ),
               ),
@@ -651,6 +655,7 @@ class _PillButton extends StatelessWidget {
                 style: TextStyle(
                   color: enabled ? foreground : palette.textMuted,
                   fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
                   fontVariations: const [FontVariation.weight(560)],
                 ),
               ),
@@ -802,6 +807,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(640)],
                   ),
                 ),
@@ -817,6 +823,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
                   style: TextStyle(
                     color: palette.textSecondary,
                     fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(580)],
                   ),
                 ),
@@ -1039,6 +1046,7 @@ class _SkillDialogState extends State<_SkillDialog> {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(640)],
                   ),
                 ),

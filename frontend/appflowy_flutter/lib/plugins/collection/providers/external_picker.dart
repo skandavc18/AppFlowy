@@ -118,6 +118,7 @@ class _ExternalNodePicker extends StatelessWidget {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: 15,
+                          fontWeight: FontWeight.w600,
                           fontVariations: const [FontVariation.weight(620)],
                         ),
                       ),
@@ -305,6 +306,7 @@ class _ExternalPickerState extends State<_ExternalPicker> {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: 15,
+                          fontWeight: FontWeight.w600,
                           fontVariations: const [FontVariation.weight(620)],
                         ),
                       ),

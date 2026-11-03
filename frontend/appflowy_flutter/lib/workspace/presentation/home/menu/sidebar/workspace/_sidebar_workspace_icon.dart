@@ -84,6 +84,7 @@ class WorkspaceIcon extends StatelessWidget {
         documentId: documentId,
         dimension: iconSize,
         isCurrent: isCurrent,
+        borderRadius: BorderRadius.circular(borderRadius),
         onSelected: onSelected,
         child: child,
       );

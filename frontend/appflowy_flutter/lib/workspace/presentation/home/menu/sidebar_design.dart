@@ -204,19 +204,18 @@ class SidebarPalette {
   final bool isPaper;
   final Color background;
 
-  /// Page and workspace names. Deliberately a dark charcoal, never black.
+  /// The strongest ink the sidebar palette offers. Sidebar labels stay on
+  /// [textSecondary]; this is for content set against the sidebar surface.
   final Color textPrimary;
 
-  /// Utility actions and metadata.
+  /// Every sidebar label: navigation actions, pages, files and headings all
+  /// share this soft grey, so the tree reads as one quiet list.
   final Color textSecondary;
 
   /// Section labels and anything at rest.
   final Color textTertiary;
 
-  /// Icon ink.
-  ///
-  /// Deliberately quieter than [textBody], so the navigation symbols support
-  /// the names rather than competing with them.
+  /// Icon ink, matched to the labels beside it.
   final Color icon;
   final Color hover;
   final Color selected;
@@ -227,10 +226,6 @@ class SidebarPalette {
   final Color scrollThumb;
 
   bool get isDark => brightness == Brightness.dark;
-
-  /// A page name at rest: nearly as dark as a heading, so a listing reads as
-  /// content rather than as a row of secondary labels.
-  Color get textBody => Color.lerp(textSecondary, textPrimary, 0.68)!;
 
   static SidebarPalette of(BuildContext context) {
     final theme = Theme.of(context);

@@ -10,7 +10,6 @@ import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
-import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy/workspace/application/appearance_defaults.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -18,6 +17,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:collection/collection.dart';
 import 'package:flowy_infra/theme_extension.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -95,6 +95,7 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
             fontSize: _fontSize,
           ).copyWith(
             fontWeight: FontWeight.normal,
+            fontVariations: flowyFontVariationsForWeight(FontWeight.normal),
             color: EditorSurfaceStyle.inlineCodeForeground(context),
             backgroundColor: EditorSurfaceStyle.inlineCodeBackground(context),
           ),
@@ -121,11 +122,7 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
     final headingFontSize = fontSizes.elementAtOrNull(level - 1) ?? _fontSize;
     return baseTextStyle(
       fontFamily,
-      fontWeight: level <= 2
-          ? FontWeight.w700
-          : ObjectTypeTypography.fontWeightForPlatform(
-              Theme.of(context).platform,
-            ),
+      fontWeight: level <= 2 ? FontWeight.w700 : FontWeight.w600,
       fontSize: headingFontSize,
     );
   }

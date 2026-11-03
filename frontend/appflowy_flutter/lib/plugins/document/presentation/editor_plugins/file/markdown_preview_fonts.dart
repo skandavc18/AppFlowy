@@ -8,9 +8,8 @@ import 'package:flutter/services.dart';
 /// A WebView cannot reach Flutter's asset bundle by path, so the only way to
 /// give a preview the app's typography is to hand it the font itself. Both
 /// files are variable, so one face covers every weight.
-const _uiFontAsset = 'assets/google_fonts/DM_Sans/DMSans-Variable.ttf';
-const _uiItalicFontAsset =
-    'assets/google_fonts/DM_Sans/DMSans-VariableItalic.ttf';
+const _uiFontAsset = 'assets/google_fonts/Inter/Inter-Variable.ttf';
+const _uiItalicFontAsset = 'assets/google_fonts/Inter/Inter-VariableItalic.ttf';
 const _codeFontAsset = 'assets/google_fonts/Roboto_Mono/RobotoMono-Regular.ttf';
 
 /// The CSS family names the preview stylesheet asks for.

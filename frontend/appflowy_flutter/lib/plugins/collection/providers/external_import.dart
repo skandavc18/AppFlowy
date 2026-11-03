@@ -429,6 +429,7 @@ class _ImportProgressDialog extends StatelessWidget {
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 14,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(620)],
                     ),
                   ),

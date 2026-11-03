@@ -243,6 +243,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(640)],
                   ),
                 ),
@@ -623,6 +624,7 @@ class _RedirectNote extends StatelessWidget {
               style: TextStyle(
                 color: palette.textSecondary,
                 fontSize: 11.5,
+                fontWeight: FontWeight.w600,
                 fontVariations: const [FontVariation.weight(580)],
               ),
             ),
@@ -787,6 +789,7 @@ class _DialogButtonState extends State<_DialogButton> {
                   ? accent.withValues(alpha: enabled ? 1 : 0.5)
                   : palette.textSecondary.withValues(alpha: enabled ? 1 : 0.5),
               fontSize: 12.5,
+              fontWeight: FontWeight.w600,
               fontVariations: const [FontVariation.weight(580)],
             ),
           ),

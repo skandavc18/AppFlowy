@@ -160,6 +160,7 @@ class _ReminderComposerState extends State<_ReminderComposer> {
                       height: 1,
                       letterSpacing: -0.2,
                       color: palette.textPrimary,
+                      fontWeight: FontWeight.w700,
                       fontVariations: const [FontVariation.weight(660)],
                     ),
                   ),
@@ -411,6 +412,7 @@ class _ReadAs extends StatelessWidget {
                     fontSize: 13,
                     height: 1.25,
                     color: palette.textPrimary,
+                    fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(600)],
                   ),
                 ),
@@ -541,6 +543,7 @@ class _PickerButton extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12.5,
                     color: palette.textPrimary,
+                    fontWeight: FontWeight.w500,
                     fontVariations: const [FontVariation.weight(570)],
                   ),
                 ),
@@ -615,6 +618,7 @@ class _ChoiceButton<T> extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12.5,
                   color: palette.textPrimary,
+                  fontWeight: FontWeight.w500,
                   fontVariations: const [FontVariation.weight(570)],
                 ),
               ),
@@ -709,6 +713,7 @@ class _TextButton extends StatelessWidget {
             style: TextStyle(
               fontSize: 12.5,
               color: palette.textSecondary,
+              fontWeight: FontWeight.w600,
               fontVariations: const [FontVariation.weight(580)],
             ),
           ),
@@ -753,6 +758,7 @@ class _PrimaryButton extends StatelessWidget {
                 fontSize: 12.5,
                 height: 1,
                 color: Colors.white,
+                fontWeight: FontWeight.w600,
                 fontVariations: [FontVariation.weight(620)],
               ),
             ),

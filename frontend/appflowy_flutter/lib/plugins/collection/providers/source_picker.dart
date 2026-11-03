@@ -117,6 +117,7 @@ class _SourcePickerState extends State<_SourcePicker> {
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
                       fontVariations: const [FontVariation.weight(640)],
                     ),
                   ),
@@ -587,6 +588,7 @@ class _RowState extends State<_Row> {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 13,
+                        fontWeight: FontWeight.w500,
                         fontVariations: const [FontVariation.weight(570)],
                       ),
                     ),
@@ -672,6 +674,7 @@ class _UseThisFolder extends StatelessWidget {
             style: TextStyle(
               color: accent,
               fontSize: 12.5,
+              fontWeight: FontWeight.w600,
               fontVariations: const [FontVariation.weight(580)],
             ),
           ),

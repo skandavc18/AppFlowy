@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 
 abstract final class ObjectTypeTypography {
   static const cssFontWeight = FontWeight.w500;
-  // Chromium maps ObjectType's CSS 500/550 to Segoe UI Semibold on Windows.
-  static const windowsFontWeight = FontWeight.w600;
 
   /// The weight emphasised text sits at inside a table cell.
   ///
@@ -36,8 +36,37 @@ abstract final class ObjectTypeTypography {
   static double letterSpacingForFontSize(double fontSize) =>
       fontSize * letterSpacingEm;
 
+  /// Every desktop platform sets this text in the same bundled Inter, so one
+  /// weight serves them all.
   static FontWeight fontWeightForPlatform(TargetPlatform platform) =>
-      platform == TargetPlatform.windows ? windowsFontWeight : cssFontWeight;
+      cssFontWeight;
+
+  /// Whether [platform] sets ObjectType text in the bundled Inter rather than
+  /// its system face.
+  static bool usesBundledFontForPlatform(TargetPlatform platform) =>
+      switch (platform) {
+        TargetPlatform.linux ||
+        TargetPlatform.macOS ||
+        TargetPlatform.windows =>
+          true,
+        TargetPlatform.android ||
+        TargetPlatform.fuchsia ||
+        TargetPlatform.iOS =>
+          false,
+      };
+
+  /// The `wght` axis for [weight] on the shared ladder, or null where the
+  /// system face picks its own weight.
+  ///
+  /// Inter itself is cut into static weights, so this only matters to a
+  /// variable face that inherits the style, such as inline code.
+  static List<FontVariation>? fontVariationsForPlatform(
+    TargetPlatform platform,
+    FontWeight weight,
+  ) =>
+      usesBundledFontForPlatform(platform)
+          ? flowyFontVariationsForWeight(weight)
+          : null;
 
   static Color editorTextColorForBrightness(
     Brightness brightness,
@@ -99,14 +128,10 @@ abstract final class ObjectTypeTypography {
   }
 
   static String fontFamilyForPlatform(TargetPlatform platform) {
-    return switch (platform) {
-      TargetPlatform.android => 'Roboto',
-      TargetPlatform.fuchsia => 'Roboto',
-      TargetPlatform.iOS => '.AppleSystemUIFont',
-      TargetPlatform.linux => 'sans-serif',
-      TargetPlatform.macOS => '.AppleSystemUIFont',
-      TargetPlatform.windows => 'Segoe UI',
-    };
+    if (usesBundledFontForPlatform(platform)) {
+      return bundledFontFamily;
+    }
+    return platform == TargetPlatform.iOS ? '.AppleSystemUIFont' : 'Roboto';
   }
 
   static List<String> fontFamilyFallbackForPlatform(TargetPlatform platform) {
@@ -118,6 +143,7 @@ abstract final class ObjectTypeTypography {
           'Noto Sans Hebrew',
         ],
       TargetPlatform.iOS || TargetPlatform.macOS => const [
+          '.AppleSystemUIFont',
           'SF Pro Text',
           'Helvetica Neue',
           'Arial',
@@ -134,6 +160,7 @@ abstract final class ObjectTypeTypography {
           'Noto Sans Hebrew',
         ],
       TargetPlatform.windows => const [
+          'Segoe UI',
           'Roboto',
           'Helvetica Neue',
           'Arial',
@@ -152,12 +179,14 @@ abstract final class ObjectTypeTypography {
     Color? color,
     double? height,
   }) {
+    final resolvedFontWeight = fontWeight ?? fontWeightForPlatform(platform);
     return TextStyle(
       color: color,
       fontFamily: fontFamilyForPlatform(platform),
       fontFamilyFallback: fontFamilyFallbackForPlatform(platform),
       fontSize: fontSize,
-      fontWeight: fontWeight ?? fontWeightForPlatform(platform),
+      fontWeight: resolvedFontWeight,
+      fontVariations: fontVariationsForPlatform(platform, resolvedFontWeight),
       letterSpacing:
           fontSize == null ? null : letterSpacingForFontSize(fontSize),
       height: height,

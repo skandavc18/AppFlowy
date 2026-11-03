@@ -8,6 +8,7 @@ import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 
 /// The fixed geometry and motion a database collection is drawn to.
 abstract final class DatabaseMetrics {
@@ -119,14 +120,14 @@ class DatabaseTheme {
     required double fontSize,
     required Color color,
     double axis = DatabaseMetrics.bodyWeightAxis,
-    FontWeight weight = FontWeight.w500,
+    FontWeight? weight,
     double tracking = DatabaseMetrics.tracking,
     double height = 1.0,
   }) =>
       AppTextRendering.polish(
         baseTextStyle.copyWith(
           fontSize: fontSize,
-          fontWeight: weight,
+          fontWeight: weight ?? flowyFontWeightForAxis(axis),
           fontVariations: [FontVariation.weight(axis)],
           height: height,
           letterSpacing: fontSize * tracking,

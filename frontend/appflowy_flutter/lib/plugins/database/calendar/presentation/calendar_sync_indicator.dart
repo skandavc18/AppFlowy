@@ -109,6 +109,7 @@ class CalendarSyncIndicator extends StatelessWidget {
                   fontSize: 11.5,
                   height: 1,
                   color: tint,
+                  fontWeight: FontWeight.w600,
                   fontVariations: const [FontVariation.weight(590)],
                 ),
               ),

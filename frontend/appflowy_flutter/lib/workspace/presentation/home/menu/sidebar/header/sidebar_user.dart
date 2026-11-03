@@ -15,6 +15,9 @@ import 'package:flowy_infra_ui/widget/spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+// The same rounded tile as the workspace icons in the sidebar.
+const _avatarCorners = BorderRadius.all(Radius.circular(6));
+
 // keep this widget in case we need to roll back (lucas.xu)
 class SidebarUser extends StatefulWidget {
   const SidebarUser({
@@ -72,10 +75,11 @@ class _SidebarUserState extends State<SidebarUser> {
                     isCurrent: () =>
                         !user.isClosed && user.state.userProfile.id == userId,
                     size: AFAvatarSize.s,
+                    borderRadius: _avatarCorners,
                     decoration: ShapeDecoration(
                       color: palette.selected,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: _avatarCorners,
                       ),
                     ),
                   ),
@@ -118,7 +122,7 @@ class _SidebarUserState extends State<SidebarUser> {
     return SidebarText.heading(
       name,
       overflow: TextOverflow.ellipsis,
-      color: SidebarPalette.of(context).textPrimary,
+      color: SidebarPalette.of(context).textSecondary,
     );
   }
 

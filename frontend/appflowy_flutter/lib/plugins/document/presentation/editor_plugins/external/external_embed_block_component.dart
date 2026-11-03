@@ -342,6 +342,7 @@ class _ExternalEmbedBlockComponentState
                 style: TextStyle(
                   color: palette.textPrimary,
                   fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
                   fontVariations: const [FontVariation.weight(570)],
                 ),
               ),

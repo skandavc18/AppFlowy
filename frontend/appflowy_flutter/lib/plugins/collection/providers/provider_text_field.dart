@@ -62,6 +62,7 @@ class _ProviderTextFieldState extends State<ProviderTextField> {
           style: TextStyle(
             color: palette.textSecondary,
             fontSize: 11.5,
+            fontWeight: FontWeight.w600,
             fontVariations: const [FontVariation.weight(580)],
           ),
         ),

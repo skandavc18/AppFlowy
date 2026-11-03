@@ -19,7 +19,7 @@ abstract final class EditorChromeStyle {
   static const lightIcon = Color(0xFF37352F);
   static const darkIcon = Color(0xE6FFFFFF);
   static const lightMenuBackground = Color(0xFFFFFEFC);
-  static const menuFontWeight = FontWeight.w600;
+  static const menuFontWeight = FontWeight.w500;
   static const menuFontSize = 14.0;
 
   static Color foregroundFor(Brightness brightness) =>

@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 // Keep the persisted default value empty so existing settings remain compatible.
 const defaultFontFamily = '';
 
-const preferredFontFamily = 'DM Sans';
+const preferredFontFamily = 'Inter';
 const bundledFontFamily = 'Inter';
 const builtInCodeFontFamily = 'RobotoMono';
 const defaultFontWeight = flowyRegularFontWeight;

@@ -178,6 +178,7 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
                 fontSize: 10.5,
                 height: 1,
                 color: ink.withValues(alpha: 0.78),
+                fontWeight: FontWeight.w600,
                 fontVariations: const [FontVariation.weight(600)],
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
@@ -194,6 +195,7 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
                 height: 1,
                 letterSpacing: -0.1,
                 color: ink,
+                fontWeight: FontWeight.w600,
                 fontVariations: const [FontVariation.weight(590)],
                 decoration:
                     event.isCompleted ? TextDecoration.lineThrough : null,
@@ -241,6 +243,7 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
                           height: 1.15,
                           letterSpacing: -0.15,
                           color: ink,
+                          fontWeight: FontWeight.w600,
                           fontVariations: const [FontVariation.weight(600)],
                           decoration: event.isCompleted
                               ? TextDecoration.lineThrough
@@ -322,6 +325,7 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
                         height: 1.15,
                         letterSpacing: -0.1,
                         color: ink,
+                        fontWeight: FontWeight.w600,
                         fontVariations: const [FontVariation.weight(600)],
                         decoration: event.isCompleted
                             ? TextDecoration.lineThrough

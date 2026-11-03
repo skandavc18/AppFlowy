@@ -230,6 +230,7 @@ class _SwitcherSegmentState extends State<_SwitcherSegment> {
               letterSpacing: -0.1,
               color:
                   widget.selected ? palette.textPrimary : palette.textSecondary,
+              fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w500,
               fontVariations: [
                 FontVariation.weight(widget.selected ? 620 : 545),
               ],
@@ -287,6 +288,7 @@ class CalendarEmptyState extends StatelessWidget {
                 fontSize: compact ? 13 : 14.5,
                 height: 1.25,
                 color: palette.textSecondary,
+                fontWeight: FontWeight.w600,
                 fontVariations: const [FontVariation.weight(600)],
               ),
             ),
@@ -350,6 +352,7 @@ class _QuietActionState extends State<_QuietAction> {
               fontSize: 12.5,
               height: 1,
               color: palette.accent,
+              fontWeight: FontWeight.w600,
               fontVariations: const [FontVariation.weight(600)],
             ),
           ),
@@ -382,6 +385,7 @@ class CalendarSectionLabel extends StatelessWidget {
         height: 1,
         letterSpacing: 0.7,
         color: color ?? (emphasised ? palette.accent : palette.textMuted),
+        fontWeight: emphasised ? FontWeight.w700 : FontWeight.w600,
         fontVariations: [FontVariation.weight(emphasised ? 660 : 600)],
       ),
     );

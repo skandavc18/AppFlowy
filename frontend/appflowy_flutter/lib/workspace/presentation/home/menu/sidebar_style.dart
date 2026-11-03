@@ -78,7 +78,7 @@ abstract final class SidebarStyle {
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
         secondary: palette.hover,
-        onSecondary: palette.textPrimary,
+        onSecondary: palette.textSecondary,
         tertiary: palette.textPrimary,
         onSurface: palette.textPrimary,
         surfaceContainerHighest: palette.background,
@@ -93,7 +93,7 @@ abstract final class SidebarStyle {
         bodyMedium: WorkspaceTypography.style(
           context,
           WorkspaceTextRole.body,
-          color: palette.textPrimary,
+          color: palette.textSecondary,
         ),
       ),
     );

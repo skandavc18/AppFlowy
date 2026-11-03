@@ -13,6 +13,7 @@ import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
+import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/util/string_extension.dart';
@@ -25,6 +26,7 @@ import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
 import 'package:flutter/foundation.dart';
@@ -175,6 +177,7 @@ class EditorStyleCustomizer {
         code: GoogleFonts.robotoMono(
           textStyle: baseStyle.copyWith(
             fontWeight: FontWeight.normal,
+            fontVariations: flowyFontVariationsForWeight(FontWeight.normal),
             color: EditorSurfaceStyle.inlineCodeForeground(context),
             backgroundColor: EditorSurfaceStyle.inlineCodeBackground(context),
           ),
@@ -235,6 +238,7 @@ class EditorStyleCustomizer {
           textStyle: baseStyle.copyWith(
             fontSize: fontSize,
             fontWeight: FontWeight.normal,
+            fontVariations: flowyFontVariationsForWeight(FontWeight.normal),
             color: EditorSurfaceStyle.inlineCodeForeground(context),
             backgroundColor: EditorSurfaceStyle.inlineCodeBackground(context),
           ),
@@ -280,9 +284,7 @@ class EditorStyleCustomizer {
     return _enhanceEditorTextStyle(
       baseTextStyle(
         fontFamily,
-        fontWeight: level <= 2
-            ? FontWeight.w700
-            : ObjectTypeTypography.fontWeightForPlatform(defaultTargetPlatform),
+        fontWeight: level <= 2 ? FontWeight.w700 : FontWeight.w600,
         fontSize: headingFontSize,
       ),
     );
@@ -461,19 +463,23 @@ class EditorStyleCustomizer {
     TextInsert text,
     TextSpan before,
     TextSpan after,
-  ) =>
-      decorateWithSpellCheck(
+  ) {
+    final span = decorateWithSpellCheck(
+      context,
+      editorState,
+      node,
+      index,
+      decorateWithSearchHighlight(
         context,
-        editorState,
         node,
         index,
-        decorateWithSearchHighlight(
-          context,
-          node,
-          index,
-          _decorateAttributes(context, node, index, text, before, after),
-        ),
-      );
+        _decorateAttributes(context, node, index, text, before, after),
+      ),
+    );
+    return AppTextRendering.smoothsDocumentText(context)
+        ? AppTextRendering.smoothDocumentText(span)
+        : span;
+  }
 
   InlineSpan _decorateAttributes(
     BuildContext context,
