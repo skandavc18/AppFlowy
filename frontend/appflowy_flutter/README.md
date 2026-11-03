@@ -53,6 +53,23 @@ an image can still reflow the document.
 
 Regression coverage: `flutter test test/unit_test/file/native_markup_preview_test.dart`.
 
+### Linux display refresh rate
+
+Flutter's Linux embedder (3.27.4, and still on Flutter's main branch) starts the
+engine's frames on a fixed 60 Hz timer, and GTK 3 paints the OpenGL-drawn
+Flutter view at 60 Hz as well. The runner's `linux/display_vsync.cc` lifts both
+caps before the engine starts, so frames follow the display (120 Hz on a 120 Hz
+screen). It gives the engine a vsync callback by wrapping
+`FlutterEngineInitialize` in the procedure table `FlEngine` keeps, and gives each
+GTK frame the monitor's refresh interval.
+
+This relies on the engine's private layout, which is checked at startup against
+`linux/third_party/flutter_embedder/embedder.h` from the pinned engine revision.
+On any mismatch it logs a warning and stays at 60 Hz. When upgrading Flutter,
+replace that header with `shell/platform/embedder/embedder.h` from the new
+engine revision and check the startup log. Set `APPFLOWY_DISPLAY_VSYNC=0` to turn
+it off, or run with `G_MESSAGES_DEBUG=all` to see the intervals in use.
+
 ### Need Help?
 
 - New to GitHub? Follow [these](https://docs.appflowy.io/docs/documentation/software-contributions/submitting-code/setting-up-your-repositories) steps to get started

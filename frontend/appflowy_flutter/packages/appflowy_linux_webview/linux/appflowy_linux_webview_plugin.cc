@@ -57,8 +57,11 @@ bool PrepareSharedMemoryFrames() {
   return shared;
 }
 
-// Coalesces repaints into at most one copy per display frame.
-constexpr guint kCaptureDelayMs = 8;
+// Copies a frame right after GDK has finished painting the offscreen window:
+// every damage event of that paint is in, and nothing waits on a timer.
+constexpr gint kCapturePriority = GDK_PRIORITY_REDRAW + 10;
+
+constexpr GdkRGBA kTransparent = {0, 0, 0, 0};
 
 constexpr char kMessageHandler[] = "appflowyLinuxWebView";
 
@@ -120,6 +123,7 @@ struct WebKitApi {
   guint (*get_major_version)();
   guint (*get_minor_version)();
   void (*web_view_terminate_web_process)(gpointer view);
+  void (*web_view_set_background_color)(gpointer view, const GdkRGBA* rgba);
   gpointer (*web_view_get_settings)(gpointer view);
   void (*settings_set_javascript_can_access_clipboard)(gpointer settings,
                                                        gboolean enabled);
@@ -267,6 +271,9 @@ const WebKitApi* LoadWebKit() {
   api.web_view_terminate_web_process =
       reinterpret_cast<decltype(api.web_view_terminate_web_process)>(
           dlsym(handle, "webkit_web_view_terminate_web_process"));
+  api.web_view_set_background_color =
+      reinterpret_cast<decltype(api.web_view_set_background_color)>(
+          dlsym(handle, "webkit_web_view_set_background_color"));
   available = true;
   return &api;
 }
@@ -697,7 +704,8 @@ gboolean CaptureFrame(gpointer user_data) {
 
 void ScheduleCapture(WebView* view) {
   if (view->capture_source == 0 && view->active) {
-    view->capture_source = g_timeout_add(kCaptureDelayMs, CaptureFrame, view);
+    view->capture_source =
+        g_idle_add_full(kCapturePriority, CaptureFrame, view, nullptr);
   }
 }
 
@@ -1083,6 +1091,11 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
   view->view = GTK_WIDGET(g_object_new(api->web_view_get_type(),
                                        "user-content-manager", manager,
                                        "is-ephemeral", TRUE, nullptr));
+  // Before the page draws anything, the surface behind the texture shows
+  // rather than WebKit's white.
+  if (api->web_view_set_background_color != nullptr) {
+    api->web_view_set_background_color(view->view, &kTransparent);
+  }
 
   gpointer settings = api->web_view_get_settings(view->view);
   api->settings_set_javascript_can_access_clipboard(settings, TRUE);
@@ -1104,6 +1117,11 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
       settings, gpu ? kHardwareAccelerationAlways : kHardwareAccelerationNever);
 
   view->offscreen = gtk_offscreen_window_new();
+  // WebKit leaves part of the view unpainted until its next frame whenever
+  // the view's size changes. That part stays transparent, so the surface
+  // behind the texture shows there instead of the theme's window colour,
+  // which is near black in dark themes.
+  gtk_widget_set_app_paintable(view->offscreen, TRUE);
   gtk_container_add(GTK_CONTAINER(view->offscreen), view->view);
   ApplyGeometry(view, SizeArg(args, "width", 800), SizeArg(args, "height", 600),
                 DoubleArg(args, "x", 0), DoubleArg(args, "y", 0));
@@ -1112,6 +1130,11 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
   // application window's scale and a place for native coordinates.
   gtk_widget_realize(view->offscreen);
   GdkWindow* offscreen_window = gtk_widget_get_window(view->offscreen);
+  // GDK clears each repaint to this before anything draws; the default is
+  // opaque black.
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  gdk_window_set_background_rgba(offscreen_window, &kTransparent);
+  G_GNUC_END_IGNORE_DEPRECATIONS
   g_signal_connect(offscreen_window, "create-surface",
                    G_CALLBACK(OnCreateSurface), nullptr);
   GdkWindow* embedder = self->toplevel != nullptr

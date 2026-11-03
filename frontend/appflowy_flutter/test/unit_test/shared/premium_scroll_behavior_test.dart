@@ -195,10 +195,10 @@ void main() {
     );
   });
 
-  test('wheel frames use exponential decay with a conservative speed cap', () {
+  test('wheel frames use exponential decay with a speed cap', () {
     const config = PremiumScrollPhysicsConfig();
     final highRefreshStep = premiumWheelFrameDisplacement(
-      remainingDistance: 120,
+      remainingDistance: 1200,
       elapsedSeconds: 1 / 120,
     );
     final uncappedStep = premiumWheelFrameDisplacement(
@@ -206,7 +206,7 @@ void main() {
       elapsedSeconds: 1 / 120,
     );
     final delayedFrameStep = premiumWheelFrameDisplacement(
-      remainingDistance: 120,
+      remainingDistance: 1200,
       elapsedSeconds: 0.2,
     );
 
@@ -584,7 +584,8 @@ void main() {
     final pointerPosition = tester.getCenter(
       find.byKey(const ValueKey('bounded-wheel-list')),
     );
-    for (var notch = 0; notch < 6; notch++) {
+    // More notches than the queue holds, delivered within a single frame.
+    for (var notch = 0; notch < 14; notch++) {
       await tester.sendEventToBinding(
         PointerScrollEvent(
           position: pointerPosition,

@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -780,52 +781,54 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
         : _settings.baseUri!.toString();
     final physics = officeScrollPhysics(context);
 
-    return PremiumScrollExclusion(
-      key: kOfficeEditorScrollExclusionKey,
-      child: ViewerCard(
-        color: skin.desk,
-        child: OfficeEditorScroll(
-          controller: _scroll,
-          child: widget.editorBuilder?.call(context, hostedEditor) ??
-              InAppWebView(
-                key: ValueKey(hostedEditor.token),
-                initialUrlRequest: URLRequest(
-                  url: WebUri(hostedEditor.url),
-                ),
-                initialUserScripts: UnmodifiableListView([
-                  buildOfficeThemeStorageUserScript(
-                    documentServerUrl: documentServerUrl,
-                    skin: skin,
+    return StandaloneFileFullHeight(
+      child: PremiumScrollExclusion(
+        key: kOfficeEditorScrollExclusionKey,
+        child: ViewerCard(
+          color: skin.desk,
+          child: OfficeEditorScroll(
+            controller: _scroll,
+            child: widget.editorBuilder?.call(context, hostedEditor) ??
+                InAppWebView(
+                  key: ValueKey(hostedEditor.token),
+                  initialUrlRequest: URLRequest(
+                    url: WebUri(hostedEditor.url),
                   ),
-                  buildOfficeEditorChromeUserScript(
-                    documentServerUrl: documentServerUrl,
-                    typography: _typography ??
-                        OfficeEditorTypography(
-                          family: resolveFontFamily(defaultFontFamily),
-                        ),
-                  ),
-                  if (officeEditorScrollSupported)
-                    buildOfficeScrollUserScript(
+                  initialUserScripts: UnmodifiableListView([
+                    buildOfficeThemeStorageUserScript(
                       documentServerUrl: documentServerUrl,
-                      hostUrl: hostedEditor.url,
-                      config: physics.config,
-                      smooth: physics.smooth,
+                      skin: skin,
                     ),
-                ]),
-                // The editor is a JavaScript application, so scripting stays on
-                // (the default) unlike sandboxed markdown and HTML previews.
-                initialSettings: InAppWebViewSettings(
-                  supportZoom: false,
-                  transparentBackground: true,
-                  mediaPlaybackRequiresUserGesture: false,
+                    buildOfficeEditorChromeUserScript(
+                      documentServerUrl: documentServerUrl,
+                      typography: _typography ??
+                          OfficeEditorTypography(
+                            family: resolveFontFamily(defaultFontFamily),
+                          ),
+                    ),
+                    if (officeEditorScrollSupported)
+                      buildOfficeScrollUserScript(
+                        documentServerUrl: documentServerUrl,
+                        hostUrl: hostedEditor.url,
+                        config: physics.config,
+                        smooth: physics.smooth,
+                      ),
+                  ]),
+                  // The editor is a JavaScript application, so scripting stays on
+                  // (the default) unlike sandboxed markdown and HTML previews.
+                  initialSettings: InAppWebViewSettings(
+                    supportZoom: false,
+                    transparentBackground: true,
+                    mediaPlaybackRequiresUserGesture: false,
+                  ),
+                  onWebViewCreated: _scroll.attach,
+                  onConsoleMessage: (_, message) {
+                    if (message.messageLevel == ConsoleMessageLevel.ERROR) {
+                      Log.error('ONLYOFFICE: ${message.message}');
+                    }
+                  },
                 ),
-                onWebViewCreated: _scroll.attach,
-                onConsoleMessage: (_, message) {
-                  if (message.messageLevel == ConsoleMessageLevel.ERROR) {
-                    Log.error('ONLYOFFICE: ${message.message}');
-                  }
-                },
-              ),
+          ),
         ),
       ),
     );

@@ -5,6 +5,7 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include "display_vsync.h"
 #include "flutter/generated_plugin_registrant.h"
 
 // Files the system asks AppFlowy to open reach Dart on this channel.
@@ -92,6 +93,8 @@ static void my_application_activate(GApplication *application)
   fl_dart_project_set_dart_entrypoint_arguments(project, self->dart_entrypoint_arguments);
 
   FlView *view = fl_view_new(project);
+  // Before the view is added to the window, which starts the engine.
+  appflowy_display_vsync_install(view, window);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 

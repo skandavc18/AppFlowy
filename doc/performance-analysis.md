@@ -1,5 +1,42 @@
 # Large-page loading and scrolling performance
 
+## Linux scrolling, office files and refresh rate (2026-11-03)
+
+Measured on Ubuntu 26.10 (GNOME, Wayland, 120 Hz, power-saver profile) with a
+profile-mode harness built on the real runner, `StandaloneFilePage`, office
+editor and Linux web view. The harness was not committed.
+
+- **Dark boxes in office files.** The whole-file page's body is a
+  `SliverFillRemaining`, so it resized the embedded editor on every frame the
+  header moved. WebKitGTK paints its last buffer at its own size: a growing view
+  is left unpainted at the bottom, a shrinking one at the top. The offscreen
+  `GtkWindow` showed the GTK theme's window colour there (`#242424` in dark
+  themes): up to 350k such pixels per frame, for about half a second after each
+  header move. The editor is now laid out at the header-retired height
+  (`StandaloneFileFullHeight`) and only moves with the header. The offscreen
+  window and WebKit's default background are transparent, so any unpainted part
+  shows the editor card. Result: no dark frames in header or animated-resize
+  runs, and a single web view size while the header moves.
+- **Web view frame latency.** Frames were copied 8 ms after each WebKit paint;
+  they are now copied right after GDK's redraw, cutting damage-to-texture latency
+  from about 14 ms to 2–8 ms. Scrolling inside ONLYOFFICE is still bounded by
+  WebKit's offscreen GPU-to-shared-memory pipeline: 30–60 fps depending on the
+  power profile, including for a trivial page.
+- **60 Hz cap.** Flutter's Linux embedder has no vsync source, so the engine used
+  its fixed 60 Hz fallback timer, and GTK 3 paces OpenGL windows at 60 Hz because
+  it only learns the refresh rate from frame callbacks it never requests for
+  them. `linux/display_vsync.cc` (see the Flutter README) fixes both. A long list
+  scrolled by wheel went from 16.67 ms to 8.33 ms frame intervals (p50 and p90),
+  GTK from at most 60 to 115–120 paints a second, and 40 back-to-back window
+  resizes, during which the embedder blocks the main thread, still completed.
+- **Fast wheel spins lost distance.** A 1,000 px/s cap with a 240 px queue
+  travelled 55% of the requested distance at 40 notches a second and 37% at 66.
+  At 6,000 px/s and 1,200 px, all three rates travel 100% and stop sooner
+  (0.37–0.46 s instead of 0.51–0.63 s). Single notches are unchanged.
+
+Regression coverage: `test/widget_test/standalone_file_full_height_test.dart`
+and the wheel cases in `test/unit_test/shared/premium_scroll_behavior_test.dart`.
+
 ## Windows startup profiling (2026-09-20)
 
 The normal Release application was measured over three controlled relaunches of

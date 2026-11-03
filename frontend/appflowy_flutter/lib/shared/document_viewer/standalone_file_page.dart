@@ -157,6 +157,118 @@ class StandaloneFilePageBoundary extends InheritedWidget {
       enabled != oldWidget.enabled;
 }
 
+/// Lays [child] out, top-aligned, at the height it gets once the page header
+/// has scrolled away, rather than at the body's current height.
+///
+/// The body of a [StandaloneFilePage] grows and shrinks on every frame the
+/// header moves. A native surface, such as an embedded web view, would be
+/// resized, re-laid out and repainted at each of those sizes, and it cannot
+/// keep up. At the full height it only moves: its lower part sits below the
+/// viewport while the header shows and scrolls into view as the header goes.
+/// Outside a whole-file page it is laid out like its parent's other children.
+class StandaloneFileFullHeight extends SingleChildRenderObjectWidget {
+  const StandaloneFileFullHeight({super.key, required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderStandaloneFileFullHeight(
+        StandaloneFilePageScroll.maybeOf(context)?.outer,
+      );
+
+  @override
+  void updateRenderObject(BuildContext context, RenderObject renderObject) =>
+      (renderObject as _RenderStandaloneFileFullHeight).outer =
+          StandaloneFilePageScroll.maybeOf(context)?.outer;
+}
+
+class _RenderStandaloneFileFullHeight extends RenderProxyBox {
+  _RenderStandaloneFileFullHeight(this._outer);
+
+  ScrollController? _outer;
+  set outer(ScrollController? value) {
+    if (identical(value, _outer)) return;
+    if (attached) _outer?.removeListener(markNeedsLayout);
+    _outer = value;
+    if (attached) _outer?.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  bool _checkScheduled = false;
+
+  /// How much of the header is on screen, which is how much taller than its
+  /// body the page's content gets once the header is gone.
+  double get _headerShown {
+    final outer = _outer;
+    if (outer == null || outer.positions.length != 1) return 0;
+    final position = outer.position;
+    if (!position.hasPixels || !position.hasContentDimensions) return 0;
+    return (position.maxScrollExtent - position.pixels)
+        .clamp(0.0, position.maxScrollExtent)
+        .toDouble();
+  }
+
+  double _usedHeaderShown = 0;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _outer?.addListener(markNeedsLayout);
+  }
+
+  @override
+  void detach() {
+    _outer?.removeListener(markNeedsLayout);
+    super.detach();
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null || !constraints.hasBoundedHeight) {
+      super.performLayout();
+      return;
+    }
+    _usedHeaderShown = _headerShown;
+    child.layout(
+      constraints.copyWith(
+        minHeight: constraints.minHeight + _usedHeaderShown,
+        maxHeight: constraints.maxHeight + _usedHeaderShown,
+      ),
+      parentUsesSize: true,
+    );
+    size = constraints.constrain(Size(child.size.width, constraints.maxHeight));
+    _scheduleCheck();
+  }
+
+  /// The page's scroll range is settled only after the body has been laid
+  /// out, on the first frame and whenever the header's height changes, so
+  /// the height is checked again once the frame is done.
+  void _scheduleCheck() {
+    if (_checkScheduled) return;
+    _checkScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _checkScheduled = false;
+      if (attached && _headerShown != _usedHeaderShown) markNeedsLayout();
+    });
+  }
+
+  @override
+  Rect get paintBounds => Offset.zero & (child?.size ?? size);
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final child = this.child;
+    if (child == null || !(Offset.zero & child.size).contains(position)) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+}
+
 /// A renderer-local boundary for an explicitly owned primary vertical
 /// controller. It does not inspect descendants, reparent controls, or claim
 /// mouse/touch selection. Horizontal and modified-wheel input remain native.

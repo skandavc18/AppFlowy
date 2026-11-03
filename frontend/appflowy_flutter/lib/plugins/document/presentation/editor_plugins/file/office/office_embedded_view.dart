@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -404,12 +405,14 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
   }
 
   Widget _buildTextureView(LinuxWebViewController view) {
-    return PremiumScrollExclusion(
-      child: ViewerCard(
-        color: OfficeEditorSkin.of(context).desk,
-        child: OfficeEditorScroll(
-          controller: _scroll,
-          child: LinuxWebView(controller: view),
+    return StandaloneFileFullHeight(
+      child: PremiumScrollExclusion(
+        child: ViewerCard(
+          color: OfficeEditorSkin.of(context).desk,
+          child: OfficeEditorScroll(
+            controller: _scroll,
+            child: LinuxWebView(controller: view),
+          ),
         ),
       ),
     );
@@ -420,43 +423,45 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
     InAppWebViewKeepAlive keepAlive,
   ) {
     final skin = OfficeEditorSkin.of(context);
-    return PremiumScrollExclusion(
-      child: ViewerCard(
-        color: skin.desk,
-        child: OfficeEditorScroll(
-          controller: _scroll,
-          child: InAppWebView(
-            keepAlive: keepAlive,
-            initialUrlRequest: URLRequest(
-              url: WebUri(session.pageUrl.toString()),
+    return StandaloneFileFullHeight(
+      child: PremiumScrollExclusion(
+        child: ViewerCard(
+          color: skin.desk,
+          child: OfficeEditorScroll(
+            controller: _scroll,
+            child: InAppWebView(
+              keepAlive: keepAlive,
+              initialUrlRequest: URLRequest(
+                url: WebUri(session.pageUrl.toString()),
+              ),
+              initialUserScripts: UnmodifiableListView(_userScripts(session)),
+              // The editor is a JavaScript application, so scripting stays on
+              // (the default) unlike sandboxed markdown and HTML previews.
+              initialSettings: InAppWebViewSettings(
+                supportZoom: false,
+                transparentBackground: true,
+                mediaPlaybackRequiresUserGesture: false,
+                supportMultipleWindows: true,
+              ),
+              onWebViewCreated: (controller) {
+                _controller = controller;
+                _scroll.attach(controller);
+              },
+              // Links in a document open in the browser.
+              onCreateWindow: (_, action) async {
+                final uri = action.request.url;
+                if (uri != null &&
+                    const {'http', 'https', 'mailto'}.contains(uri.scheme)) {
+                  await afLaunchUri(uri);
+                }
+                return false;
+              },
+              onConsoleMessage: (_, message) {
+                if (message.messageLevel == ConsoleMessageLevel.ERROR) {
+                  Log.error('Office editor: ${message.message}');
+                }
+              },
             ),
-            initialUserScripts: UnmodifiableListView(_userScripts(session)),
-            // The editor is a JavaScript application, so scripting stays on
-            // (the default) unlike sandboxed markdown and HTML previews.
-            initialSettings: InAppWebViewSettings(
-              supportZoom: false,
-              transparentBackground: true,
-              mediaPlaybackRequiresUserGesture: false,
-              supportMultipleWindows: true,
-            ),
-            onWebViewCreated: (controller) {
-              _controller = controller;
-              _scroll.attach(controller);
-            },
-            // Links in a document open in the browser.
-            onCreateWindow: (_, action) async {
-              final uri = action.request.url;
-              if (uri != null &&
-                  const {'http', 'https', 'mailto'}.contains(uri.scheme)) {
-                await afLaunchUri(uri);
-              }
-              return false;
-            },
-            onConsoleMessage: (_, message) {
-              if (message.messageLevel == ConsoleMessageLevel.ERROR) {
-                Log.error('Office editor: ${message.message}');
-              }
-            },
           ),
         ),
       ),
