@@ -26,8 +26,18 @@ class ApplicationInfo {
   // the version number is like 0.9.0
   static String get latestVersion => latestVersionNotifier.value;
 
+  /// Whether this build follows AppFlowy's public releases.
+  ///
+  /// These builds are private, so nothing reads the public release feed,
+  /// shows the "New version available" card or asks for a critical update
+  /// unless the app is built with `--dart-define=APPFLOWY_UPDATES=true`.
+  static const updatesEnabled = bool.fromEnvironment('APPFLOWY_UPDATES');
+
   // If the latest version is greater than the current version, it means there is an update available
   static bool get isUpdateAvailable {
+    if (!updatesEnabled) {
+      return false;
+    }
     try {
       if (latestVersion.isEmpty) {
         return false;
