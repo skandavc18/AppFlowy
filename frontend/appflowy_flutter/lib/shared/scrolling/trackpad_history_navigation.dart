@@ -369,13 +369,20 @@ class _HistorySwipeRecognizer extends OneSequenceGestureRecognizer {
         return;
       }
       _pan += event.localPanDelta;
-      if (_direction == 0 && (_pan.dx.abs() >= 12 || _pan.dy.abs() >= 12)) {
-        if (_pan.dx.abs() < 2 * _pan.dy.abs()) {
+      if (_direction == 0) {
+        // Scrolling is the common case and must not wait: the first movement
+        // that is not clearly sideways hands the gesture to the page at once
+        // (libinput already locks a two-finger scroll to its axis). Waiting
+        // for 12px made every scroll start sticky, and the page then dropped
+        // that distance.
+        if (_pan.dy.abs() >= 2 && _pan.dx.abs() < 2 * _pan.dy.abs()) {
           _reject();
           return;
         }
-        _direction = _pan.dx.sign;
-        resolve(GestureDisposition.accepted);
+        if (_pan.dx.abs() >= 12) {
+          _direction = _pan.dx.sign;
+          resolve(GestureDisposition.accepted);
+        }
       }
       _reportProgress();
     } else if (event is PointerPanZoomEndEvent) {

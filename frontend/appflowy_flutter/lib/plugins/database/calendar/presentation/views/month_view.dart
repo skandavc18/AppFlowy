@@ -243,9 +243,9 @@ class _WeekdayStrip extends StatelessWidget {
                     fontSize: 10.5,
                     height: 1,
                     letterSpacing: 0.6,
-                    color: isWeekend(day)
-                        ? palette.textMuted.withValues(alpha: 0.72)
-                        : palette.textMuted,
+                    // The weekend column's wash already sets it apart; its
+                    // name stays as readable as the rest of the week.
+                    color: palette.textMuted,
                     fontWeight: FontWeight.w600,
                     fontVariations: const [FontVariation.weight(620)],
                   ),
@@ -319,7 +319,7 @@ class _WeekRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 9.5,
                     height: 1,
-                    color: palette.textMuted.withValues(alpha: 0.6),
+                    color: palette.textMuted,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),

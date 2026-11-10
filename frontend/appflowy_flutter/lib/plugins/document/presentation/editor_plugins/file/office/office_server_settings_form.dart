@@ -5,6 +5,7 @@ import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 
+import 'office_platform.dart';
 import 'office_server_settings.dart';
 
 class OfficeServerSettingsForm extends StatefulWidget {
@@ -48,6 +49,10 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
   bool _showSecret = false;
 
   bool get _isConnecting => widget.status == OfficeServerStatus.connecting;
+
+  /// A phone runs no document server of its own, so the desktop's Docker
+  /// examples do not apply there.
+  bool get _isMobile => officeRunsOnMobile;
 
   @override
   void initState() {
@@ -113,7 +118,9 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
           _Field(
             controller: _url,
             label: 'Document server address',
-            hint: 'http://localhost:8080',
+            hint: _isMobile
+                ? 'https://docs.example.com'
+                : 'http://localhost:8080',
             prefixIcon: Icons.dns_rounded,
             validator: validateOfficeServerUrl,
             enabled: !_isConnecting,
@@ -158,14 +165,17 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
             _Field(
               controller: _bridge,
               label: 'Callback host',
-              hint: 'host.docker.internal',
+              hint: _isMobile ? '192.168.1.20' : 'host.docker.internal',
               prefixIcon: Icons.swap_horiz_rounded,
               enabled: !_isConnecting,
             ),
             const SizedBox(height: 7),
             Text(
-              'Leave this empty for the recommended Docker setup. AppFlowy '
-              'will choose it automatically.',
+              _isMobile
+                  ? 'This device\'s address on your network, which the '
+                      'document server uses to reach AppFlowy.'
+                  : 'Leave this empty for the recommended Docker setup. '
+                      'AppFlowy will choose it automatically.',
               style: TextStyle(
                 fontSize: 12,
                 height: 17 / 12,

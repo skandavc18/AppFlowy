@@ -1,9 +1,11 @@
 #include "include/appflowy_linux_webview/appflowy_linux_webview_plugin.h"
 
 #include <dlfcn.h>
+#include <epoxy/gl.h>
 #include <flutter_linux/flutter_linux.h>
 #include <gio/gio.h>
 #include <gtk/gtk.h>
+#include <sys/resource.h>
 
 #include <algorithm>
 #include <cmath>
@@ -14,16 +16,18 @@
 #include <mutex>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 // A WebKitGTK view drawn into a Flutter texture.
 //
 // Flutter has no platform views on Linux, so the web view lives in a
-// GtkOffscreenWindow: each repaint is copied into an FlPixelBufferTexture and
-// Flutter forwards pointer input over the method channel. While a view has
-// Flutter's focus, key presses reaching the application window go to it
-// instead. Because the texture is an ordinary Flutter widget, Flutter's menus
-// and dialogs draw above it.
+// GtkOffscreenWindow. GDK never paints that window: the view draws each of
+// its frames straight into an image of its own (see DrawFrame), whose changed
+// rows go to an FlTextureGL, and Flutter forwards pointer input over the
+// method channel. While a view has Flutter's focus, key presses reaching the
+// application window go to it instead. Because the texture is an ordinary
+// Flutter widget, Flutter's menus and dialogs draw above it.
 //
 // WebKitGTK is opened with dlopen rather than linked, so AppFlowy builds
 // without its development headers and still starts where it is missing. WebKit
@@ -57,11 +61,111 @@ bool PrepareSharedMemoryFrames() {
   return shared;
 }
 
-// Copies a frame right after GDK has finished painting the offscreen window:
-// every damage event of that paint is in, and nothing waits on a timer.
-constexpr gint kCapturePriority = GDK_PRIORITY_REDRAW + 10;
+// Kernel drivers of GPUs that Mesa renders with.
+constexpr const char* kMesaDrivers[] = {
+    "i915",  "xe",      "amdgpu",  "radeon", "nouveau", "msm",
+    "v3d",   "vc4",     "panfrost", "panthor", "lima",  "etnaviv",
+    "asahi", "powervr", "virtio_gpu", "vmwgfx",
+};
+
+// Mesa's EGL vendor file for glvnd, or an empty string.
+std::string MesaEglVendorFile() {
+  for (const char* directory :
+       {"/etc/glvnd/egl_vendor.d", "/usr/share/glvnd/egl_vendor.d",
+        "/usr/local/share/glvnd/egl_vendor.d"}) {
+    GDir* dir = g_dir_open(directory, 0, nullptr);
+    if (dir == nullptr) {
+      continue;
+    }
+    std::string found;
+    while (const gchar* name = g_dir_read_name(dir)) {
+      if (!g_str_has_suffix(name, ".json")) {
+        continue;
+      }
+      g_autofree gchar* path = g_build_filename(directory, name, nullptr);
+      g_autofree gchar* contents = nullptr;
+      if (g_file_get_contents(path, &contents, nullptr, nullptr) &&
+          strstr(contents, "libEGL_mesa") != nullptr) {
+        found = path;
+        break;
+      }
+    }
+    g_dir_close(dir);
+    if (!found.empty()) {
+      return found;
+    }
+  }
+  return std::string();
+}
+
+// WebKit's web processes draw pages with the first EGL vendor glvnd offers,
+// which is NVIDIA's on a computer with an NVIDIA GPU, beside an integrated
+// one or not. With NVIDIA's EGL, every frame a page draws leaves a sync file
+// open in its web process: once it has the 1024 open files a process started
+// from the desktop may keep, the page stops drawing, and a document stops
+// scrolling after a few seconds of motion. Frames reach the view in shared
+// memory, so any GPU will do: pages are drawn with Mesa wherever it drives a
+// GPU, which also leaves a discrete GPU asleep. Otherwise the web processes
+// may keep as many files open as the system allows. An EGL vendor chosen
+// with __EGL_VENDOR_LIBRARY_FILENAMES or __EGL_VENDOR_LIBRARY_DIRS is kept.
+// Called before the first view starts its web process, and after this
+// process has chosen its own vendor, which the variable no longer changes.
+void PrepareWebProcessGpu() {
+  static bool prepared = false;
+  if (prepared) {
+    return;
+  }
+  prepared = true;
+  bool nvidia = false;
+  bool mesa = false;
+  GDir* drm = g_dir_open("/sys/class/drm", 0, nullptr);
+  while (const gchar* name = drm != nullptr ? g_dir_read_name(drm) : nullptr) {
+    if (!g_str_has_prefix(name, "renderD")) {
+      continue;
+    }
+    g_autofree gchar* link =
+        g_strdup_printf("/sys/class/drm/%s/device/driver", name);
+    g_autofree gchar* target = g_file_read_link(link, nullptr);
+    if (target == nullptr) {
+      continue;
+    }
+    g_autofree gchar* driver = g_path_get_basename(target);
+    if (g_strcmp0(driver, "nvidia") == 0) {
+      nvidia = true;
+    }
+    for (const char* known : kMesaDrivers) {
+      mesa = mesa || g_strcmp0(driver, known) == 0;
+    }
+  }
+  if (drm != nullptr) {
+    g_dir_close(drm);
+  }
+  if (!nvidia || g_getenv("__EGL_VENDOR_LIBRARY_FILENAMES") != nullptr ||
+      g_getenv("__EGL_VENDOR_LIBRARY_DIRS") != nullptr) {
+    return;
+  }
+  const std::string vendor = mesa ? MesaEglVendorFile() : std::string();
+  if (!vendor.empty()) {
+    g_setenv("__EGL_VENDOR_LIBRARY_FILENAMES", vendor.c_str(), TRUE);
+    return;
+  }
+  struct rlimit limit;
+  if (getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
+      limit.rlim_cur < limit.rlim_max) {
+    limit.rlim_cur = limit.rlim_max;
+    setrlimit(RLIMIT_NOFILE, &limit);
+  }
+}
 
 constexpr GdkRGBA kTransparent = {0, 0, 0, 0};
+
+// Where an offscreen window keeps its WebView, for OnInvalidate.
+constexpr char kWebViewKey[] = "appflowy-web-view";
+
+// WebKit composites a page's next frame only once its last one has been
+// taken (see DrawFrame), so a frame is taken as soon as WebKit hands it over,
+// ahead of redraws, rather than in the offscreen window's next frame.
+constexpr gint kDrawPriority = G_PRIORITY_DEFAULT;
 
 constexpr char kMessageHandler[] = "appflowyLinuxWebView";
 
@@ -134,6 +238,15 @@ struct WebKitApi {
       gboolean enabled);
   void (*settings_set_hardware_acceleration_policy)(gpointer settings,
                                                     int policy);
+  // WebKitGTK 2.42 and later; optional.
+  gpointer (*settings_get_all_features)();
+  gsize (*feature_list_get_length)(gpointer list);
+  gpointer (*feature_list_get)(gpointer list, gsize index);
+  void (*feature_list_unref)(gpointer list);
+  const gchar* (*feature_get_identifier)(gpointer feature);
+  void (*settings_set_feature_enabled)(gpointer settings,
+                                       gpointer feature,
+                                       gboolean enabled);
   gpointer (*user_content_manager_new)();
   void (*user_content_manager_add_script)(gpointer manager, gpointer script);
   void (*user_content_manager_remove_all_scripts)(gpointer manager);
@@ -274,35 +387,19 @@ const WebKitApi* LoadWebKit() {
   api.web_view_set_background_color =
       reinterpret_cast<decltype(api.web_view_set_background_color)>(
           dlsym(handle, "webkit_web_view_set_background_color"));
+  auto optional = [&](auto& function, const char* symbol) {
+    function = reinterpret_cast<std::remove_reference_t<decltype(function)>>(
+        dlsym(handle, symbol));
+  };
+  optional(api.settings_get_all_features, "webkit_settings_get_all_features");
+  optional(api.feature_list_get_length, "webkit_feature_list_get_length");
+  optional(api.feature_list_get, "webkit_feature_list_get");
+  optional(api.feature_list_unref, "webkit_feature_list_unref");
+  optional(api.feature_get_identifier, "webkit_feature_get_identifier");
+  optional(api.settings_set_feature_enabled,
+           "webkit_settings_set_feature_enabled");
   available = true;
   return &api;
-}
-
-// One published picture of a view, in the RGBA layout Flutter uploads: each
-// element holds a pixel's four bytes in memory order.
-struct Frame {
-  Frame() = default;
-  Frame(const Frame&) = delete;
-  Frame& operator=(const Frame&) = delete;
-  ~Frame() {
-    if (stale != nullptr) {
-      cairo_region_destroy(stale);
-    }
-  }
-
-  std::vector<uint32_t> pixels;
-  uint32_t width = 0;
-  uint32_t height = 0;
-  // Once replaced, what the view has repainted since, in logical pixels.
-  cairo_region_t* stale = nullptr;
-};
-
-std::shared_ptr<Frame> BlankFrame() {
-  auto frame = std::make_shared<Frame>();
-  frame->width = 1;
-  frame->height = 1;
-  frame->pixels.assign(1, 0);
-  return frame;
 }
 
 }  // namespace
@@ -310,68 +407,299 @@ std::shared_ptr<Frame> BlankFrame() {
 // ---------------------------------------------------------------------------
 // Texture
 
+// A view's latest frame, in the image the view draws it into (see DrawFrame),
+// sent to a GL texture when Flutter next draws the view: only the rows that
+// changed since, straight from the image.
 G_DECLARE_FINAL_TYPE(WebViewTexture,
                      webview_texture,
                      APPFLOWY,
                      WEBVIEW_TEXTURE,
-                     FlPixelBufferTexture)
+                     FlTextureGL)
 
 struct _WebViewTexture {
-  FlPixelBufferTexture parent_instance;
-  // Published frames never change: the raster thread keeps the one it was
-  // handed while the main thread prepares the next.
+  FlTextureGL parent_instance;
+  // Flutter uploads on its raster thread, which on Linux is the main thread
+  // the view draws on; the lock keeps that an assumption rather than a need.
   std::mutex* mutex;
-  std::shared_ptr<Frame>* current;
-  std::shared_ptr<Frame>* lent;
+  // Premultiplied native-endian ARGB in device pixels, or null before the
+  // view has drawn.
+  cairo_surface_t* frame;
+  // What the GL texture lacks of the frame, in device pixels.
+  cairo_region_t* stale;
+  // What WebKit has handed over and the frame lacks, in logical pixels, and
+  // the view's offscreen window and web view it is copied from (see
+  // CopyFrame); those are cleared when the view goes.
+  cairo_region_t* pending;
+  GtkWidget* offscreen;
+  GtkWidget* web_view;
+  std::vector<uint32_t>* scratch;
+  GLuint name;
+  int width;
+  int height;
 };
 
-G_DEFINE_TYPE(WebViewTexture,
-              webview_texture,
-              fl_pixel_buffer_texture_get_type())
+G_DEFINE_TYPE(WebViewTexture, webview_texture, fl_texture_gl_get_type())
 
-static gboolean webview_texture_copy_pixels(FlPixelBufferTexture* texture,
-                                            const uint8_t** out_buffer,
-                                            uint32_t* width,
-                                            uint32_t* height,
-                                            GError**) {
+namespace {
+
+// Textures of views that have gone, deleted once Flutter's GL context is
+// current again.
+std::mutex g_orphans_mutex;
+std::vector<GLuint> g_orphans;
+
+void DeleteOrphanTextures() {
+  std::lock_guard<std::mutex> lock(g_orphans_mutex);
+  if (!g_orphans.empty()) {
+    glDeleteTextures(static_cast<GLsizei>(g_orphans.size()), g_orphans.data());
+    g_orphans.clear();
+  }
+}
+
+// Cairo's pixels are BGRA in memory on little-endian machines, which desktop
+// GL takes as it is.
+bool UploadsBgra() {
+  static const bool bgra =
+      G_BYTE_ORDER == G_LITTLE_ENDIAN && epoxy_is_desktop_gl();
+  return bgra;
+}
+
+// Otherwise each pixel is put in RGBA byte order first.
+inline uint32_t ToRgba(uint32_t argb) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+  return (argb & 0xff00ff00u) | ((argb >> 16) & 0xffu) | ((argb & 0xffu) << 16);
+#else
+  return (argb << 8) | (argb >> 24);
+#endif
+}
+
+// Sends rows [top, bottom) of an image to the bound texture.
+void UploadRows(const uint8_t* data,
+                int stride,
+                int width,
+                int top,
+                int bottom,
+                std::vector<uint32_t>* scratch) {
+  const uint8_t* rows = data + static_cast<size_t>(top) * stride;
+  if (UploadsBgra()) {
+    // Cairo's stride for ARGB32 is exactly four bytes a pixel, so whole rows
+    // need no unpack row length.
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, top, width, bottom - top, GL_BGRA,
+                    GL_UNSIGNED_BYTE, rows);
+    return;
+  }
+  scratch->resize(static_cast<size_t>(width) * (bottom - top));
+  for (int y = 0; y < bottom - top; ++y) {
+    const uint8_t* in = rows + static_cast<size_t>(y) * stride;
+    uint32_t* out = scratch->data() + static_cast<size_t>(y) * width;
+    for (int x = 0; x < width; ++x) {
+      uint32_t argb;
+      std::memcpy(&argb, in + static_cast<size_t>(x) * 4, sizeof(argb));
+      out[x] = ToRgba(argb);
+    }
+  }
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, top, width, bottom - top, GL_RGBA,
+                  GL_UNSIGNED_BYTE, scratch->data());
+}
+
+// Copies what WebKit has handed over and the texture's image lacks into the
+// image, with the texture's lock held. WebKit blends its frame over what is
+// there, so that is cleared first: parts of a page left transparent would
+// otherwise keep showing the frame before.
+void CopyFrame(WebViewTexture* texture) {
+  if (texture->web_view == nullptr || cairo_region_is_empty(texture->pending)) {
+    return;
+  }
+  GdkWindow* window = gtk_widget_get_window(texture->offscreen);
+  if (window == nullptr) {
+    return;
+  }
+  const int scale = std::max(1, gdk_window_get_scale_factor(window));
+  const int width = std::max(1, gdk_window_get_width(window));
+  const int height = std::max(1, gdk_window_get_height(window));
+  const cairo_rectangle_int_t all = {0, 0, width, height};
+  cairo_region_t* area = texture->pending;
+  texture->pending = cairo_region_create();
+  cairo_surface_t* frame = texture->frame;
+  if (frame == nullptr || cairo_image_surface_get_width(frame) != width * scale ||
+      cairo_image_surface_get_height(frame) != height * scale) {
+    if (frame != nullptr) {
+      cairo_surface_destroy(frame);
+    }
+    frame = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width * scale,
+                                       height * scale);
+    cairo_surface_set_device_scale(frame, scale, scale);
+    texture->frame = frame;
+    cairo_region_union_rectangle(area, &all);
+  }
+  cairo_region_intersect_rectangle(area, &all);
+  cairo_t* cr = cairo_create(frame);
+  gdk_cairo_region(cr, area);
+  cairo_clip(cr);
+  cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+  cairo_paint(cr);
+  cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+  gtk_widget_draw(texture->web_view, cr);
+  cairo_destroy(cr);
+  const int rectangles = cairo_region_num_rectangles(area);
+  for (int i = 0; i < rectangles; ++i) {
+    cairo_rectangle_int_t rect;
+    cairo_region_get_rectangle(area, i, &rect);
+    const cairo_rectangle_int_t pixels = {rect.x * scale, rect.y * scale,
+                                          rect.width * scale,
+                                          rect.height * scale};
+    cairo_region_union_rectangle(texture->stale, &pixels);
+  }
+  cairo_region_destroy(area);
+}
+
+}  // namespace
+
+static gboolean webview_texture_populate(FlTextureGL* texture,
+                                         uint32_t* target,
+                                         uint32_t* name,
+                                         uint32_t* width,
+                                         uint32_t* height,
+                                         GError**) {
   WebViewTexture* self = APPFLOWY_WEBVIEW_TEXTURE(texture);
+  DeleteOrphanTextures();
   std::lock_guard<std::mutex> lock(*self->mutex);
-  *self->lent = *self->current;
-  *out_buffer = reinterpret_cast<const uint8_t*>((*self->lent)->pixels.data());
-  *width = (*self->lent)->width;
-  *height = (*self->lent)->height;
+  const int frame_width =
+      self->frame != nullptr ? cairo_image_surface_get_width(self->frame) : 1;
+  const int frame_height =
+      self->frame != nullptr ? cairo_image_surface_get_height(self->frame) : 1;
+
+  // Flutter's own state is left as it was found.
+  GLint previous_texture = 0;
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+  // A buffer bound for unpacking would make the image's address an offset
+  // into that buffer, and a row length or skips set for some other upload
+  // would misplace its rows.
+  GLint previous_buffer = 0;
+  GLint previous_alignment = 4;
+  GLint previous_row_length = 0;
+  GLint previous_skip_rows = 0;
+  GLint previous_skip_pixels = 0;
+  const bool unpack_buffers = epoxy_is_desktop_gl()
+                                  ? epoxy_gl_version() >= 21
+                                  : epoxy_gl_version() >= 30;
+  const bool unpack_layout =
+      epoxy_is_desktop_gl() || epoxy_gl_version() >= 30;
+  if (unpack_buffers) {
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previous_buffer);
+    if (previous_buffer != 0) {
+      glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+  }
+  glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_alignment);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+  if (unpack_layout) {
+    glGetIntegerv(GL_UNPACK_ROW_LENGTH, &previous_row_length);
+    glGetIntegerv(GL_UNPACK_SKIP_ROWS, &previous_skip_rows);
+    glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &previous_skip_pixels);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+  }
+
+  if (self->name == 0) {
+    glGenTextures(1, &self->name);
+    glBindTexture(GL_TEXTURE_2D, self->name);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  } else {
+    glBindTexture(GL_TEXTURE_2D, self->name);
+  }
+  const cairo_rectangle_int_t all = {0, 0, frame_width, frame_height};
+  if (frame_width != self->width || frame_height != self->height) {
+    glTexImage2D(GL_TEXTURE_2D, 0, UploadsBgra() ? GL_RGBA8 : GL_RGBA,
+                 frame_width, frame_height, 0,
+                 UploadsBgra() ? GL_BGRA : GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    self->width = frame_width;
+    self->height = frame_height;
+    cairo_region_union_rectangle(self->stale, &all);
+  }
+  cairo_region_intersect_rectangle(self->stale, &all);
+
+  if (self->frame != nullptr) {
+    // One upload per band of changed rows.
+    std::vector<std::pair<int, int>> bands;
+    const int rectangles = cairo_region_num_rectangles(self->stale);
+    for (int i = 0; i < rectangles; ++i) {
+      cairo_rectangle_int_t rect;
+      cairo_region_get_rectangle(self->stale, i, &rect);
+      bands.emplace_back(rect.y, rect.y + rect.height);
+    }
+    std::sort(bands.begin(), bands.end());
+    cairo_surface_flush(self->frame);
+    const uint8_t* data = cairo_image_surface_get_data(self->frame);
+    const int stride = cairo_image_surface_get_stride(self->frame);
+    for (size_t i = 0; data != nullptr && i < bands.size();) {
+      int top = bands[i].first;
+      int bottom = bands[i].second;
+      for (++i; i < bands.size() && bands[i].first <= bottom; ++i) {
+        bottom = std::max(bottom, bands[i].second);
+      }
+      UploadRows(data, stride, frame_width, top, bottom, self->scratch);
+    }
+  } else if (!cairo_region_is_empty(self->stale)) {
+    const uint32_t transparent = 0;
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1, 1,
+                    UploadsBgra() ? GL_BGRA : GL_RGBA, GL_UNSIGNED_BYTE,
+                    &transparent);
+  }
+  cairo_region_subtract_rectangle(self->stale, &all);
+
+  glBindTexture(GL_TEXTURE_2D, previous_texture);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, previous_alignment);
+  if (unpack_layout) {
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, previous_row_length);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, previous_skip_rows);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, previous_skip_pixels);
+  }
+  if (previous_buffer != 0) {
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, previous_buffer);
+  }
+  *target = GL_TEXTURE_2D;
+  *name = self->name;
+  *width = frame_width;
+  *height = frame_height;
   return TRUE;
 }
 
 static void webview_texture_finalize(GObject* object) {
   WebViewTexture* self = APPFLOWY_WEBVIEW_TEXTURE(object);
-  delete self->lent;
-  delete self->current;
+  if (self->name != 0) {
+    std::lock_guard<std::mutex> lock(g_orphans_mutex);
+    g_orphans.push_back(self->name);
+  }
+  if (self->frame != nullptr) {
+    cairo_surface_destroy(self->frame);
+  }
+  cairo_region_destroy(self->stale);
+  cairo_region_destroy(self->pending);
+  delete self->scratch;
   delete self->mutex;
   G_OBJECT_CLASS(webview_texture_parent_class)->finalize(object);
 }
 
 static void webview_texture_class_init(WebViewTextureClass* klass) {
-  FL_PIXEL_BUFFER_TEXTURE_CLASS(klass)->copy_pixels =
-      webview_texture_copy_pixels;
+  FL_TEXTURE_GL_CLASS(klass)->populate = webview_texture_populate;
   G_OBJECT_CLASS(klass)->finalize = webview_texture_finalize;
 }
 
 static void webview_texture_init(WebViewTexture* self) {
   self->mutex = new std::mutex();
-  self->current = new std::shared_ptr<Frame>(BlankFrame());
-  self->lent = new std::shared_ptr<Frame>();
-}
-
-static std::shared_ptr<Frame> webview_texture_latest(WebViewTexture* self) {
-  std::lock_guard<std::mutex> lock(*self->mutex);
-  return *self->current;
-}
-
-static void webview_texture_publish(WebViewTexture* self,
-                                    std::shared_ptr<Frame> frame) {
-  std::lock_guard<std::mutex> lock(*self->mutex);
-  *self->current = std::move(frame);
+  self->frame = nullptr;
+  self->stale = cairo_region_create();
+  self->pending = cairo_region_create();
+  self->offscreen = nullptr;
+  self->web_view = nullptr;
+  self->scratch = new std::vector<uint32_t>();
+  self->name = 0;
+  self->width = 0;
+  self->height = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,12 +746,12 @@ struct WebView {
   // Where the view sits in the Flutter view, for native coordinates.
   double x = 0;
   double y = 0;
-  // Area repainted since the last copy, in logical pixels.
-  cairo_region_t* damage = nullptr;
-  // Replaced frames to draw the next ones into, once Flutter is done with
-  // them; each knows what it has missed.
-  std::vector<std::shared_ptr<Frame>> spare;
-  guint capture_source = 0;
+  // What WebKit has invalidated and the view has not drawn yet, in logical
+  // pixels, and the pending draw; see OnInvalidate.
+  cairo_region_t* invalid = nullptr;
+  guint draw_source = 0;
+  // What DrawFrame draws a frame's first pixel into.
+  cairo_surface_t* pixel = nullptr;
   bool active = true;
   // Set once the web process has been ended outright; see EndWebProcess.
   bool ended = false;
@@ -552,177 +880,109 @@ void SetFocused(AppflowyLinuxWebviewPlugin* self, WebView* view, bool focused) {
   }
 }
 
-// Cairo keeps native-endian premultiplied ARGB; Flutter takes RGBA bytes.
-inline uint32_t ToRgba(uint32_t argb) {
-#if G_BYTE_ORDER == G_LITTLE_ENDIAN
-  return (argb & 0xff00ff00u) | ((argb >> 16) & 0xffu) | ((argb & 0xffu) << 16);
-#else
-  return (argb << 8) | (argb >> 24);
-#endif
-}
-
-// Copies a rectangle of device pixels out of an ARGB32 image.
-void CopyPixels(const uint8_t* data,
-                int stride,
-                const cairo_rectangle_int_t& rect,
-                Frame* frame) {
-  for (int y = rect.y; y < rect.y + rect.height; ++y) {
-    const uint8_t* in = data + static_cast<size_t>(y) * stride +
-                        static_cast<size_t>(rect.x) * 4;
-    uint32_t* out =
-        frame->pixels.data() + static_cast<size_t>(y) * frame->width + rect.x;
-    for (int x = 0; x < rect.width; ++x) {
-      uint32_t argb;
-      std::memcpy(&argb, in + static_cast<size_t>(x) * 4, sizeof(argb));
-      out[x] = ToRgba(argb);
-    }
+// Tells Flutter the texture has a new frame, unless the view is hidden.
+void MarkFrame(WebView* view) {
+  if (view->active) {
+    fl_texture_registrar_mark_texture_frame_available(
+        view->plugin->textures, FL_TEXTURE(view->texture));
   }
 }
 
-// Frames Flutter may still be uploading, beyond the current one, that are
-// kept to be drawn into again.
-constexpr size_t kSpareFrames = 2;
+void DrawFrame(WebView* view);
 
-gboolean CaptureFrame(gpointer user_data) {
+gboolean OnDrawDue(gpointer user_data) {
   auto* view = static_cast<WebView*>(user_data);
-  view->capture_source = 0;
-  GdkWindow* window = gtk_widget_get_window(view->offscreen);
-  cairo_surface_t* source =
-      gtk_offscreen_window_get_surface(GTK_OFFSCREEN_WINDOW(view->offscreen));
-  if (window == nullptr || source == nullptr) {
-    return G_SOURCE_REMOVE;
-  }
-  double scale_x = 1;
-  double scale_y = 1;
-  cairo_surface_get_device_scale(source, &scale_x, &scale_y);
-  const int scale = std::max(1, static_cast<int>(std::lround(scale_x)));
-  const int logical_width = std::max(1, gdk_window_get_width(window));
-  const int logical_height = std::max(1, gdk_window_get_height(window));
-  const auto width = static_cast<uint32_t>(logical_width * scale);
-  const auto height = static_cast<uint32_t>(logical_height * scale);
-  const cairo_rectangle_int_t all = {0, 0, logical_width, logical_height};
-
-  // What changed since the last capture; everything when that is unknown.
-  cairo_region_t* damage = view->damage != nullptr
-                               ? view->damage
-                               : cairo_region_create_rectangle(&all);
-  view->damage = nullptr;
-
-  // Spare frames miss this change too. One Flutter has let go of needs only
-  // what it missed redrawn; a new one needs everything.
-  std::shared_ptr<Frame> frame;
-  for (auto it = view->spare.begin(); it != view->spare.end();) {
-    if ((*it)->width != width || (*it)->height != height) {
-      it = view->spare.erase(it);
-      continue;
-    }
-    cairo_region_union((*it)->stale, damage);
-    if (frame == nullptr && it->use_count() == 1) {
-      frame = std::move(*it);
-      it = view->spare.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  cairo_region_t* area;
-  if (frame != nullptr) {
-    area = frame->stale;
-    frame->stale = nullptr;
-  } else {
-    frame = std::make_shared<Frame>();
-    frame->width = width;
-    frame->height = height;
-    frame->pixels.resize(static_cast<size_t>(width) * height);
-    area = cairo_region_create_rectangle(&all);
-  }
-  cairo_region_intersect_rectangle(area, &all);
-
-  // The offscreen window draws into an image surface (see OnCreateSurface),
-  // which is read directly; anything else is copied into one first.
-  cairo_surface_t* image = source;
-  cairo_surface_t* scratch = nullptr;
-  if (cairo_surface_get_type(source) != CAIRO_SURFACE_TYPE_IMAGE ||
-      cairo_image_surface_get_format(source) != CAIRO_FORMAT_ARGB32) {
-    scratch = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-                                         static_cast<int>(width),
-                                         static_cast<int>(height));
-    cairo_surface_set_device_scale(scratch, scale, scale);
-    cairo_t* cr = cairo_create(scratch);
-    gdk_cairo_region(cr, area);
-    cairo_clip(cr);
-    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-    cairo_set_source_surface(cr, source, 0, 0);
-    cairo_paint(cr);
-    cairo_destroy(cr);
-    image = scratch;
-  }
-  cairo_surface_flush(image);
-  const uint8_t* data = cairo_image_surface_get_data(image);
-  const int stride = cairo_image_surface_get_stride(image);
-  const int image_width =
-      std::min(static_cast<int>(width), cairo_image_surface_get_width(image));
-  const int image_height = std::min(static_cast<int>(height),
-                                    cairo_image_surface_get_height(image));
-  const int rectangles = cairo_region_num_rectangles(area);
-  for (int i = 0; data != nullptr && i < rectangles; ++i) {
-    cairo_rectangle_int_t rect;
-    cairo_region_get_rectangle(area, i, &rect);
-    const int x0 = std::min(std::max(rect.x * scale, 0), image_width);
-    const int y0 = std::min(std::max(rect.y * scale, 0), image_height);
-    const int x1 =
-        std::min(std::max((rect.x + rect.width) * scale, 0), image_width);
-    const int y1 =
-        std::min(std::max((rect.y + rect.height) * scale, 0), image_height);
-    if (x1 > x0 && y1 > y0) {
-      CopyPixels(data, stride, {x0, y0, x1 - x0, y1 - y0}, frame.get());
-    }
-  }
-  if (scratch != nullptr) {
-    cairo_surface_destroy(scratch);
-  }
-  cairo_region_destroy(area);
-
-  std::shared_ptr<Frame> previous = webview_texture_latest(view->texture);
-  webview_texture_publish(view->texture, frame);
-  // The frame just replaced lacks this change.
-  if (previous != frame && previous->width == width &&
-      previous->height == height) {
-    previous->stale = damage;
-    damage = nullptr;
-    view->spare.push_back(std::move(previous));
-    if (view->spare.size() > kSpareFrames) {
-      view->spare.erase(view->spare.begin());
-    }
-  }
-  if (damage != nullptr) {
-    cairo_region_destroy(damage);
-  }
-  fl_texture_registrar_mark_texture_frame_available(
-      view->plugin->textures, FL_TEXTURE(view->texture));
+  view->draw_source = 0;
+  DrawFrame(view);
   return G_SOURCE_REMOVE;
 }
 
-void ScheduleCapture(WebView* view) {
-  if (view->capture_source == 0 && view->active) {
-    view->capture_source =
-        g_idle_add_full(kCapturePriority, CaptureFrame, view, nullptr);
+// GDK would paint the offscreen window in its next frame by clearing a buffer,
+// having WebKit blend its frame into it and copying the buffer into the
+// window's own image, all on the main thread, before anything could be handed
+// to Flutter. Instead GDK is left nothing to paint: what WebKit invalidates is
+// noted here and drawn by DrawFrame once WebKit is done invalidating (see
+// kDrawPriority).
+void OnInvalidate(GdkWindow* window, cairo_region_t* region) {
+  auto* view =
+      static_cast<WebView*>(g_object_get_data(G_OBJECT(window), kWebViewKey));
+  if (view == nullptr || cairo_region_is_empty(region)) {
+    return;
+  }
+  if (view->invalid == nullptr) {
+    view->invalid = cairo_region_create();
+  }
+  cairo_region_union(view->invalid, region);
+  const cairo_rectangle_int_t nothing = {0, 0, 0, 0};
+  cairo_region_intersect_rectangle(region, &nothing);
+  if (view->draw_source == 0) {
+    view->draw_source =
+        g_idle_add_full(kDrawPriority, OnDrawDue, view, nullptr);
   }
 }
 
-gboolean OnDamage(GtkWidget*, GdkEvent* event, gpointer user_data) {
-  auto* view = static_cast<WebView*>(user_data);
-  if (view->damage == nullptr) {
-    view->damage = cairo_region_create();
+// Takes the frame WebKit has handed over, and copies it while the view is
+// shown; a hidden view's frames are copied once it is shown again. WebKit
+// composites the page's next frame only once it hears this one has been
+// drawn, which it would hear only after the whole frame had been copied, so
+// one pixel is drawn first: that tells it at once, and the page composites
+// its next frame while this one is copied.
+void DrawFrame(WebView* view) {
+  if (view->texture == nullptr || view->invalid == nullptr ||
+      cairo_region_is_empty(view->invalid) ||
+      gtk_widget_get_window(view->offscreen) == nullptr) {
+    return;
   }
-  const GdkRectangle& area = event->expose.area;
-  cairo_rectangle_int_t rect = {area.x, area.y, area.width, area.height};
-  cairo_region_union_rectangle(view->damage, &rect);
-  ScheduleCapture(view);
-  return FALSE;
+  WebViewTexture* texture = view->texture;
+  {
+    std::lock_guard<std::mutex> lock(*texture->mutex);
+    cairo_region_union(texture->pending, view->invalid);
+    g_clear_pointer(&view->invalid, cairo_region_destroy);
+    if (view->pixel == nullptr) {
+      view->pixel = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
+    }
+    cairo_t* cr = cairo_create(view->pixel);
+    cairo_rectangle(cr, 0, 0, 1, 1);
+    cairo_clip(cr);
+    gtk_widget_draw(view->view, cr);
+    cairo_destroy(cr);
+    if (view->active) {
+      CopyFrame(texture);
+    }
+  }
+  MarkFrame(view);
 }
 
-// An image surface keeps every copy in memory; the default would mirror the
-// application window, which on X11 means a server round trip per frame.
+// On a display faster than 60 Hz, WebKit renders a page only about 60 times
+// a second unless told otherwise. Set APPFLOWY_DISPLAY_VSYNC=0 to keep that.
+void DisableSixtyHertzPreference(const WebKitApi* api, gpointer settings) {
+  if (api->settings_get_all_features == nullptr ||
+      api->feature_list_get_length == nullptr ||
+      api->feature_list_get == nullptr || api->feature_list_unref == nullptr ||
+      api->feature_get_identifier == nullptr ||
+      api->settings_set_feature_enabled == nullptr) {
+    return;
+  }
+  gpointer features = api->settings_get_all_features();
+  if (features == nullptr) {
+    return;
+  }
+  const gsize count = api->feature_list_get_length(features);
+  for (gsize i = 0; i < count; ++i) {
+    gpointer feature = api->feature_list_get(features, i);
+    if (g_strcmp0(api->feature_get_identifier(feature),
+                  "PreferPageRenderingUpdatesNear60FPS") == 0) {
+      api->settings_set_feature_enabled(settings, feature, FALSE);
+      break;
+    }
+  }
+  api->feature_list_unref(features);
+}
+
+// GDK still gives the offscreen window a surface of its own, though nothing
+// is drawn into it (see OnInvalidate); an image one stays in memory, where
+// the default would mirror the application window, a server round trip on
+// X11.
 cairo_surface_t* OnCreateSurface(GdkWindow* window,
                                  gint width,
                                  gint height,
@@ -1067,6 +1327,9 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
     return Failure("exists", "A web view with this id already exists.");
   }
   EnsureToplevel(self);
+  if (PrepareSharedMemoryFrames()) {
+    PrepareWebProcessGpu();
+  }
 
   auto* view = new WebView();
   view->plugin = self;
@@ -1115,6 +1378,9 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
                      api->get_minor_version() >= 44));
   api->settings_set_hardware_acceleration_policy(
       settings, gpu ? kHardwareAccelerationAlways : kHardwareAccelerationNever);
+  if (g_strcmp0(g_getenv("APPFLOWY_DISPLAY_VSYNC"), "0") != 0) {
+    DisableSixtyHertzPreference(api, settings);
+  }
 
   view->offscreen = gtk_offscreen_window_new();
   // WebKit leaves part of the view unpainted until its next frame whenever
@@ -1130,13 +1396,16 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
   // application window's scale and a place for native coordinates.
   gtk_widget_realize(view->offscreen);
   GdkWindow* offscreen_window = gtk_widget_get_window(view->offscreen);
-  // GDK clears each repaint to this before anything draws; the default is
-  // opaque black.
+  // GDK never paints the window (see OnInvalidate), but nothing it might
+  // ever paint should come out opaque black, its default.
   G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   gdk_window_set_background_rgba(offscreen_window, &kTransparent);
   G_GNUC_END_IGNORE_DEPRECATIONS
   g_signal_connect(offscreen_window, "create-surface",
                    G_CALLBACK(OnCreateSurface), nullptr);
+  g_object_set_data(G_OBJECT(offscreen_window), kWebViewKey, view);
+  gdk_window_set_invalidate_handler(offscreen_window, OnInvalidate);
+  gdk_window_invalidate_rect(offscreen_window, nullptr, TRUE);
   GdkWindow* embedder = self->toplevel != nullptr
                             ? gtk_widget_get_window(self->toplevel)
                             : nullptr;
@@ -1148,8 +1417,6 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
                      G_CALLBACK(OnFromEmbedder), view);
   }
 
-  g_signal_connect(view->offscreen, "damage-event", G_CALLBACK(OnDamage),
-                   view);
   g_signal_connect(view->view, "decide-policy", G_CALLBACK(OnDecidePolicy),
                    view);
   g_signal_connect(view->view, "web-process-terminated",
@@ -1170,6 +1437,8 @@ FlMethodResponse* CreateView(AppflowyLinuxWebviewPlugin* self, FlValue* args) {
 
   view->texture = APPFLOWY_WEBVIEW_TEXTURE(
       g_object_new(webview_texture_get_type(), nullptr));
+  view->texture->offscreen = view->offscreen;
+  view->texture->web_view = view->view;
   fl_texture_registrar_register_texture(self->textures,
                                         FL_TEXTURE(view->texture));
   (*self->views)[view->id] = view;
@@ -1182,17 +1451,22 @@ void DestroyView(AppflowyLinuxWebviewPlugin* self, WebView* view) {
   if (self->focused == view) {
     self->focused = nullptr;
   }
-  if (view->capture_source != 0) {
-    g_source_remove(view->capture_source);
-    view->capture_source = 0;
-  }
-  g_clear_pointer(&view->damage, cairo_region_destroy);
   g_signal_handlers_disconnect_by_data(view->content_manager, view);
   g_signal_handlers_disconnect_by_data(view->view, view);
   g_signal_handlers_disconnect_by_data(view->offscreen, view);
   GdkWindow* offscreen_window = gtk_widget_get_window(view->offscreen);
   if (offscreen_window != nullptr) {
     g_signal_handlers_disconnect_by_data(offscreen_window, view);
+    gdk_window_set_invalidate_handler(offscreen_window, nullptr);
+    g_object_set_data(G_OBJECT(offscreen_window), kWebViewKey, nullptr);
+  }
+  g_clear_handle_id(&view->draw_source, g_source_remove);
+  g_clear_pointer(&view->invalid, cairo_region_destroy);
+  g_clear_pointer(&view->pixel, cairo_surface_destroy);
+  {
+    std::lock_guard<std::mutex> lock(*view->texture->mutex);
+    view->texture->offscreen = nullptr;
+    view->texture->web_view = nullptr;
   }
   if (self->textures != nullptr) {
     fl_texture_registrar_unregister_texture(self->textures,
@@ -1306,6 +1580,23 @@ FlMethodResponse* Evaluate(WebView* view, FlValue* args) {
   return Success();
 }
 
+// Shows another page in a view made earlier. The view keeps its web process,
+// and with it what that process has already loaded and compiled. The page it
+// showed loses the keyboard: whatever shows the next one takes it back.
+FlMethodResponse* LoadUrl(AppflowyLinuxWebviewPlugin* self,
+                          WebView* view,
+                          FlValue* args) {
+  const gchar* url = StringArg(args, "url");
+  const gchar* origin = StringArg(args, "origin");
+  if (url == nullptr || origin == nullptr) {
+    return Failure("bad_arguments", "url and origin are required.");
+  }
+  SetFocused(self, view, false);
+  view->origin = origin;
+  LoadWebKit()->web_view_load_uri(view->view, url);
+  return Success();
+}
+
 void HandleMethodCall(FlMethodChannel*,
                       FlMethodCall* method_call,
                       gpointer user_data) {
@@ -1333,6 +1624,8 @@ void HandleMethodCall(FlMethodChannel*,
       response = Success();
     } else if (strcmp(method, "pointer") == 0) {
       response = SendPointer(view, args);
+    } else if (strcmp(method, "load") == 0) {
+      response = LoadUrl(self, view, args);
     } else if (strcmp(method, "evaluate") == 0) {
       response = Evaluate(view, args);
     } else if (strcmp(method, "geometry") == 0) {
@@ -1347,9 +1640,13 @@ void HandleMethodCall(FlMethodChannel*,
       response = Success();
     } else if (strcmp(method, "active") == 0) {
       view->active = BoolArg(args, "active", true);
+      // Frames that came while the view was hidden were neither copied nor
+      // handed to Flutter.
       if (view->active) {
-        ScheduleCapture(view);
+        std::lock_guard<std::mutex> lock(*view->texture->mutex);
+        CopyFrame(view->texture);
       }
+      MarkFrame(view);
       response = Success();
     } else if (strcmp(method, "setUserScripts") == 0) {
       LoadWebKit()->user_content_manager_remove_all_scripts(

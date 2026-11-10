@@ -144,6 +144,15 @@ impl AppFlowyCore {
       config.app_version.clone(),
     );
 
+    // A workspace restore is applied here, while nothing has the user's
+    // databases open yet and before the session below is read — the restore may
+    // move it to the workspace that was brought back.
+    flowy_user::services::workspace_sync::apply_pending_restore(
+      std::path::Path::new(&config.storage_path),
+      &user_config,
+      &store_preference,
+    );
+
     let authenticate_user = Arc::new(AuthenticateUser::new(
       user_config.clone(),
       store_preference.clone(),

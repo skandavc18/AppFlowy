@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup_archive.dart';
 import 'package:appflowy/workspace/application/backup/backup_crypto.dart';
 import 'package:appflowy/workspace/application/backup/backup_manifest.dart';
@@ -16,7 +17,11 @@ import 'package:appflowy/workspace/application/backup/backup_policy.dart';
 import 'package:appflowy/workspace/application/backup/backup_settings.dart';
 import 'package:appflowy/workspace/application/backup/backup_target.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
+import 'package:appflowy/workspace/application/providers/provider_state.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
+import 'package:appflowy/workspace/application/sync/sync_engine.dart';
+import 'package:appflowy/workspace/application/sync/sync_files.dart';
+import 'package:appflowy/workspace/application/sync/workspace_bundle_bridge.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:flutter/foundation.dart';
@@ -102,7 +107,82 @@ class BackupRestoreResult {
   final int fileCount;
 }
 
+/// What a restore in place set in motion.
+@immutable
+class BackupInPlaceRestore {
+  const BackupInPlaceRestore({
+    required this.workspaceName,
+    required this.fileCount,
+    required this.syncedEverywhere,
+    this.syncDetail = '',
+  });
+
+  final String workspaceName;
+
+  /// Attached files put back.
+  final int fileCount;
+
+  /// Whether every computer syncing the workspace takes the restore up too.
+  final bool syncedEverywhere;
+
+  /// Why it does not, when sync was on but the folder could not be updated.
+  final String syncDetail;
+}
+
+/// The workspace snapshot gathered for one copy.
+class _GatheredWorkspace {
+  const _GatheredWorkspace({
+    required this.path,
+    required this.workspaceId,
+    required this.workspaceName,
+  });
+
+  final String path;
+  final String workspaceId;
+  final String workspaceName;
+
+  Map<String, String> get entries => {backupSnapshotEntry: path};
+}
+
 /// Raised when a copy or a restore cannot go ahead.
+/// Says what went wrong with a copy in words somebody can act on.
+///
+/// A provider's own wording is never shown: a stranger's server decides what
+/// goes in it.
+String describeBackupFailure(Object error) => switch (error) {
+      BackupError(:final detail) => detail,
+      BackupTargetError(:final detail) => detail,
+      BackupArchiveError(:final detail) => detail,
+      BackupCipherError(reason: BackupCipherFailure.wrongKeyOrAltered) =>
+        'The passphrase did not open this copy.',
+      BackupCipherError(reason: BackupCipherFailure.truncated) =>
+        'That copy is incomplete.',
+      BackupCipherError(reason: BackupCipherFailure.notABackup) =>
+        'That file is not an AppFlowy backup.',
+      BackupCipherError(reason: BackupCipherFailure.unsupportedVersion) =>
+        'That copy was written by a newer version of AppFlowy.',
+      ProviderFailure(:final status) => switch (status) {
+          ProviderStatus.authExpired =>
+            'The account that holds your copies needs signing in again.',
+          ProviderStatus.offline =>
+            'The service holding your copies cannot be reached right now.',
+          ProviderStatus.permissionDenied =>
+            'The account can no longer reach the folder your copies go in.',
+          ProviderStatus.notFound =>
+            'The folder your copies go in is gone. Choose it again.',
+          ProviderStatus.rateLimited =>
+            'The service asked AppFlowy to slow down. Try again in a moment.',
+          _ => 'The service holding your copies could not be used.',
+        },
+      FileSystemException(:final message, :final path) =>
+        path == null ? message : '$message ($path)',
+      _ => error.toString(),
+    };
+
+/// Whether [error] is cured by signing in to the destination's account again.
+bool backupFailureNeedsSignIn(Object? error) =>
+    error is ProviderFailure && error.status.needsReconnect;
+
 class BackupError implements Exception {
   const BackupError(this.detail, {this.needsPassphrase = false});
 
@@ -132,6 +212,9 @@ class BackupService extends ChangeNotifier {
 
   /// The signed-in person, needed only for AppFlowy Cloud.
   UserProfilePB? userProfile;
+
+  /// The backend's door to the workspace itself.
+  WorkspaceBundleBridge bundles = const RustWorkspaceBundleBridge();
 
   BackupProgress get progress => _progress;
 
@@ -185,6 +268,7 @@ class BackupService extends ChangeNotifier {
 
       final dataPath = await getIt<ApplicationDataStorage>().getPath();
       final preferencesPath = await _preferencesPath();
+      final snapshot = await _gatherWorkspace(policy, staging);
 
       // The copy that is sent away and the copy kept here can be squeezed
       // differently, and when they are they really are two different files —
@@ -199,6 +283,7 @@ class BackupService extends ChangeNotifier {
         compression: policy.compressionForDestination,
         preferencesPath: preferencesPath,
         maximumFileBytes: policy.maximumFileBytes,
+        extraFiles: snapshot?.entries ?? const {},
         onProgress: (done, total) => _report(
           BackupProgress(
             stage: BackupStage.gathering,
@@ -218,8 +303,10 @@ class BackupService extends ChangeNotifier {
         archiveBytes: destinationResult.archiveBytes,
         omissions: destinationResult.omissions,
         appVersion: await _appVersion(),
-        workspaceName: userProfile?.name ?? '',
+        workspaceName: snapshot?.workspaceName ?? userProfile?.name ?? '',
         hint: policy.hint,
+        hasWorkspaceSnapshot: snapshot != null,
+        workspaceId: snapshot?.workspaceId ?? '',
       );
 
       var toSend = destinationArchive;
@@ -279,6 +366,7 @@ class BackupService extends ChangeNotifier {
           dataPath: dataPath,
           preferencesPath: preferencesPath,
           sealedForDestination: toSend,
+          extraFiles: snapshot?.entries ?? const {},
         );
       }
 
@@ -336,6 +424,7 @@ class BackupService extends ChangeNotifier {
     required String dataPath,
     required String preferencesPath,
     required File sealedForDestination,
+    Map<String, String> extraFiles = const {},
   }) async {
     final folder = Directory(await resolveLocalCopyFolder(policy));
     final local = LocalFolderBackupTarget(folder);
@@ -352,6 +441,7 @@ class BackupService extends ChangeNotifier {
         compression: policy.localCompression,
         preferencesPath: preferencesPath,
         maximumFileBytes: policy.maximumFileBytes,
+        extraFiles: extraFiles,
         onProgress: (done, total) => _report(
           BackupProgress(
             stage: BackupStage.keeping,
@@ -482,18 +572,31 @@ class BackupService extends ChangeNotifier {
     }
   }
 
-  /// The copies kept on this computer beside a remote destination.
+  /// The copies kept on this computer: the ones kept beside a remote
+  /// destination, and the safety copies taken before a restore or a join.
+  ///
+  /// Empty when that folder is the destination itself, whose copies are listed
+  /// already.
   Future<List<BackupCopy>> listLocalCopies() async {
     await _settings.ensureLoaded();
     final policy = _settings.policy;
-    if (!policy.keepLocalCopy || !policy.destination.kind.isRemote) {
+    final folder = Directory(await resolveLocalCopyFolder(policy));
+    if (policy.destination.kind == BackupDestinationKind.folder &&
+        p.equals(folder.path, policy.destination.localPath)) {
       return const [];
     }
-    final folder = Directory(await resolveLocalCopyFolder(policy));
     if (!folder.existsSync()) {
       return const [];
     }
     return LocalFolderBackupTarget(folder).list();
+  }
+
+  /// Opens the folder copies kept on this computer live in.
+  Future<BackupTarget> openLocalTarget() async {
+    await _settings.ensureLoaded();
+    return LocalFolderBackupTarget(
+      Directory(await resolveLocalCopyFolder(_settings.policy)),
+    );
   }
 
   Future<void> removeCopy(BackupCopy copy) async {
@@ -622,6 +725,216 @@ class BackupService extends ChangeNotifier {
     }
   }
 
+  /// Puts the workspace back the way [copy] has it, in place.
+  ///
+  /// The order matters, because the workspace that is open must stay whole
+  /// until the very last step:
+  ///   1. the copy is fetched and unpacked aside, and its snapshot checked;
+  ///   2. the workspace as it is now is copied aside, so the restore itself
+  ///      can be undone;
+  ///   3. the backend sets the snapshot aside to replace the workspace at the
+  ///      next start, refusing it there and then if it is damaged;
+  ///   4. attached files are put back;
+  ///   5. when sync is on, the restore is published so every other computer
+  ///      takes it up too.
+  /// AppFlowy then restarts, and the backend swaps the workspace in before
+  /// anything has opened it.
+  Future<BackupInPlaceRestore> restoreInPlace({
+    required BackupCopy copy,
+    Uint8List? key,
+    BackupTarget? from,
+  }) async {
+    final unpacked = Directory(
+      p.join(
+        (await getTemporaryDirectory()).path,
+        stagingFolderName,
+        'in-place-${copy.id}',
+      ),
+    );
+    await _discard(unpacked);
+
+    try {
+      await restore(copy: copy, into: unpacked, key: key, from: from);
+      final snapshot = File(
+        p.joinAll([unpacked.path, ...p.posix.split(backupSnapshotEntry)]),
+      );
+      final header = snapshot.existsSync()
+          ? await readWorkspaceBundleHeader(snapshot)
+          : null;
+      if (header == null || !header.isSnapshot) {
+        throw const BackupError(
+          'This copy was taken before copies carried the workspace itself, so '
+          'it can only be unpacked into a folder.',
+        );
+      }
+
+      _reportRestore(
+        const RestoreProgress(stage: RestoreStage.unpacking, detail: 'safety'),
+      );
+      await takeSafetyCopy(reason: BackupReason.beforeRestore);
+
+      final sync = WorkspaceSyncEngine.instance;
+      final epoch = sync.newRestoreEpoch();
+      await bundles.scheduleRestore(
+        path: snapshot.path,
+        syncStatePath: epoch == null ? '' : await sync.collabStatePath(epoch),
+      );
+
+      final dataPath = await getIt<ApplicationDataStorage>().getPath();
+      final restoredFiles = await _putBackFiles(
+        from: Directory(p.join(unpacked.path, appFlowyDataFolder)),
+        into: dataPath,
+      );
+
+      var syncedEverywhere = false;
+      var syncDetail = '';
+      if (epoch != null) {
+        try {
+          await sync.publishRestore(
+            epoch: epoch,
+            snapshot: snapshot,
+            filesRoot: dataPath,
+          );
+          syncedEverywhere = true;
+        } on SyncError catch (error) {
+          syncDetail = error.detail;
+        }
+      }
+
+      _reportRestore(const RestoreProgress(stage: RestoreStage.finished));
+      return BackupInPlaceRestore(
+        workspaceName: header.workspaceName,
+        fileCount: restoredFiles,
+        syncedEverywhere: syncedEverywhere,
+        syncDetail: syncDetail,
+      );
+    } on Object catch (error) {
+      _reportRestore(
+        RestoreProgress(stage: RestoreStage.failed, detail: _describe(error)),
+      );
+      rethrow;
+    } finally {
+      await _discard(unpacked);
+    }
+  }
+
+  /// Copies the synced folders of a restored data folder over the live one.
+  ///
+  /// ⚠️ Only those folders. A data folder can also hold the backend's own
+  /// databases, which are open while AppFlowy runs: writing a copy of them
+  /// over the live ones would ruin both. The workspace itself is restored from
+  /// its snapshot instead.
+  Future<int> _putBackFiles({
+    required Directory from,
+    required String into,
+  }) async {
+    var count = 0;
+    for (final folder in syncedDataFolders) {
+      final source = Directory(p.join(from.path, folder));
+      if (!source.existsSync()) {
+        continue;
+      }
+      await for (final entity
+          in source.list(recursive: true, followLinks: false)) {
+        if (entity is! File) {
+          continue;
+        }
+        final relative = p.relative(entity.path, from: from.path);
+        final target = File(p.join(into, relative));
+        await target.parent.create(recursive: true);
+        await entity.copy(target.path);
+        // A restored file is the newest version of its path for sync, which
+        // keeps the latest version of each file. A copy keeping the backup's
+        // old time would lose to the very version it replaced.
+        try {
+          await target.setLastModified(DateTime.now());
+        } on FileSystemException catch (error) {
+          Log.info('A restored file kept the time it was copied with: $error');
+        }
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /// Copies the workspace as it is now into the folder of copies kept on this
+  /// computer, before something replaces it.
+  ///
+  /// Always complete and never sealed: it exists to undo what is about to
+  /// happen, on this computer, and must not depend on a passphrase being at
+  /// hand.
+  Future<BackupCopy> takeSafetyCopy({required BackupReason reason}) async {
+    await _settings.ensureLoaded();
+    final policy = _settings.policy;
+    final started = DateTime.now();
+    final id = '${newBackupId(started)}-${reason.name}';
+    final staging = Directory(
+      p.join((await getTemporaryDirectory()).path, stagingFolderName, id),
+    );
+    await staging.create(recursive: true);
+    try {
+      const parts = {
+        BackupPart.workspace,
+        BackupPart.attachments,
+        BackupPart.pageVersions,
+      };
+      final snapshot = await _gatherWorkspace(
+        policy.copyWith(parts: parts),
+        staging,
+      );
+      final archive = File(p.join(staging.path, '$id.zip'));
+      final result = await writeBackupArchive(
+        dataPath: await getIt<ApplicationDataStorage>().getPath(),
+        destination: archive,
+        parts: parts,
+        compression: BackupCompression.fast,
+        extraFiles: snapshot?.entries ?? const {},
+      );
+      final manifest = BackupManifest(
+        id: id,
+        createdAt: started.toUtc(),
+        parts: parts,
+        compression: BackupCompression.fast,
+        fileCount: result.fileCount,
+        rawBytes: result.rawBytes,
+        archiveBytes: result.archiveBytes,
+        omissions: result.omissions,
+        appVersion: await _appVersion(),
+        workspaceName: snapshot?.workspaceName ?? '',
+        hasWorkspaceSnapshot: snapshot != null,
+        workspaceId: snapshot?.workspaceId ?? '',
+        reason: reason,
+      );
+      final local = LocalFolderBackupTarget(
+        Directory(await resolveLocalCopyFolder(policy)),
+      );
+      return await local.put(archive: archive, manifest: manifest);
+    } finally {
+      await _discard(staging);
+    }
+  }
+
+  /// Exports the workspace for a copy that is meant to carry it.
+  Future<_GatheredWorkspace?> _gatherWorkspace(
+    BackupPolicy policy,
+    Directory staging,
+  ) async {
+    if (!policy.parts.contains(BackupPart.workspace)) {
+      return null;
+    }
+    final path = p.join(staging.path, backupSnapshotFileName);
+    try {
+      final exported = await bundles.exportSnapshot(path: path);
+      return _GatheredWorkspace(
+        path: path,
+        workspaceId: exported.workspaceId,
+        workspaceName: exported.workspaceName,
+      );
+    } on Object catch (error) {
+      throw BackupError('The workspace could not be gathered: $error');
+    }
+  }
+
   // --- Odds and ends --------------------------------------------------------
 
   /// Where copies kept on this computer go.
@@ -637,6 +950,19 @@ class BackupService extends ChangeNotifier {
     final held = _settings.key;
     if (held != null) {
       return held;
+    }
+    // Copies are sealed with the AppFlowy password. A policy made from
+    // another password — one of its own from before, or an AppFlowy password
+    // changed since — is made again from this one.
+    final password = await AppPassword.instance.current();
+    if (password != null) {
+      final key = await _settings.keyFromAppPassword(password);
+      if (key != null) {
+        _settings.unlockWith(key);
+        return key;
+      }
+      await _settings.useAppPassword(password);
+      return _settings.key;
     }
     final remembered = await _settings.rememberedPassphrase();
     if (remembered == null || remembered.isEmpty) {
@@ -685,20 +1011,7 @@ class BackupService extends ChangeNotifier {
     notifyListeners();
   }
 
-  static String _describe(Object error) => switch (error) {
-        BackupError(:final detail) => detail,
-        BackupTargetError(:final detail) => detail,
-        BackupArchiveError(:final detail) => detail,
-        BackupCipherError(reason: BackupCipherFailure.wrongKeyOrAltered) =>
-          'The passphrase did not open this copy.',
-        BackupCipherError(reason: BackupCipherFailure.truncated) =>
-          'That copy is incomplete.',
-        BackupCipherError(reason: BackupCipherFailure.notABackup) =>
-          'That file is not an AppFlowy backup.',
-        BackupCipherError(reason: BackupCipherFailure.unsupportedVersion) =>
-          'That copy was written by a newer version of AppFlowy.',
-        _ => error.toString(),
-      };
+  static String _describe(Object error) => describeBackupFailure(error);
 
   static Future<void> _discard(Directory directory) async {
     try {

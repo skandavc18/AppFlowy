@@ -270,14 +270,50 @@ void main() {
     });
 
     test('without a key the map still has somewhere to get tiles', () {
-      final provider = resolveMapProvider(
-        preferred: MapProviderKind.google,
-        style: MapStyleName.light,
-      );
-      expect(provider.kind, isNot(MapProviderKind.google));
+      for (final style in MapStyleName.values) {
+        final provider = resolveMapProvider(
+          preferred: MapProviderKind.google,
+          style: style,
+        );
+        // CARTO now draws a notice in place of the map without a key of its
+        // own, so the open map is what every look falls back to.
+        expect(provider.kind, MapProviderKind.openStreetMap, reason: '$style');
+        expect(
+          provider.tileUri(const MapTile(1, 2, 3), style),
+          isNotNull,
+          reason: '$style',
+        );
+      }
+    });
+
+    test('the open map is toned to each of the application\'s looks', () {
+      const provider = OpenStreetMapTileProvider();
+      const tile = MapTile(1, 2, 3);
+      final tones = {
+        for (final style in const [
+          MapStyleName.light,
+          MapStyleName.dark,
+          MapStyleName.paper,
+        ])
+          provider.toneFor(style),
+      };
+      expect(tones, hasLength(3));
+      expect(tones, isNot(contains(null)));
+      expect(provider.toneFor(MapStyleName.streets), isNull);
+      // One picture, toned as it is drawn.
       expect(
-        provider.tileUri(const MapTile(1, 2, 3), MapStyleName.light),
-        isNotNull,
+        provider.tileUri(tile, MapStyleName.dark),
+        provider.tileUri(tile, MapStyleName.light),
+      );
+    });
+
+    test('CARTO is only used when asked for by name', () {
+      expect(
+        resolveMapProvider(
+          preferred: MapProviderKind.carto,
+          style: MapStyleName.dark,
+        ).kind,
+        MapProviderKind.carto,
       );
     });
 
@@ -334,11 +370,18 @@ void main() {
         expect(sessions, 1);
         expect(
           provider.tileUri(tile, MapStyleName.light),
-          const CartoTileProvider().tileUri(tile, MapStyleName.light),
+          const OpenStreetMapTileProvider().tileUri(tile, MapStyleName.light),
         );
-        expect(provider.kind, MapProviderKind.carto);
-        expect(provider.attribution, const CartoTileProvider().attribution);
-        // CARTO draws no satellite pictures; the street map stands in.
+        expect(provider.kind, MapProviderKind.openStreetMap);
+        expect(
+          provider.attribution,
+          const OpenStreetMapTileProvider().attribution,
+        );
+        // The open map is toned to the look Google would have drawn.
+        expect(
+          provider.toneFor(MapStyleName.dark),
+          const OpenStreetMapTileProvider().toneFor(MapStyleName.dark),
+        );
         expect(
           provider.tileUri(tile, MapStyleName.satellite),
           const OpenStreetMapTileProvider()
@@ -369,7 +412,7 @@ void main() {
 
         expect(sessions, 1);
         expect(provider.tileUri(tile, MapStyleName.light), isNotNull);
-        expect(provider.kind, MapProviderKind.carto);
+        expect(provider.kind, MapProviderKind.openStreetMap);
         // The key itself was not refused, so the next map asks again.
         final next =
             GoogleTileProvider(apiKey: 'flaky-key', client: unavailable);

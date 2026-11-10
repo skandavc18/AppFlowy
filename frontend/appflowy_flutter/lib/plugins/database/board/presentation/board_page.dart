@@ -25,6 +25,7 @@ import 'package:appflowy/plugins/database/widgets/setting/field_visibility_exten
 import 'package:appflowy/shared/conditional_listenable_builder.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
 import 'package:appflowy/util/field_type_extension.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_board/appflowy_board.dart';
@@ -56,19 +57,27 @@ class BoardPageTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
     DatabaseController controller,
     bool shrinkWrap,
     String? initialRowId,
-  ) =>
-      UniversalPlatform.isDesktop
-          ? DesktopBoardPage(
-              key: _makeValueKey(controller),
-              view: view,
-              databaseController: controller,
-              shrinkWrap: shrinkWrap,
-            )
-          : MobileBoardPage(
-              key: _makeValueKey(controller),
-              view: view,
-              databaseController: controller,
-            );
+  ) {
+    if (UniversalPlatform.isDesktop) {
+      return DesktopBoardPage(
+        key: _makeValueKey(controller),
+        view: view,
+        databaseController: controller,
+        shrinkWrap: shrinkWrap,
+      );
+    }
+    final board = MobileBoardPage(
+      key: _makeValueKey(controller),
+      view: view,
+      databaseController: controller,
+    );
+    // The phone's board scrolls its columns inside the height it is given and
+    // cannot grow with its cards, so in a document it takes a box of its own;
+    // left unbounded there it laid nothing out at all.
+    return shrinkWrap
+        ? SizedBox(height: ViewLayoutPB.Board.pluginHeight, child: board)
+        : board;
+  }
 
   @override
   Widget settingBar(BuildContext context, DatabaseController controller) =>

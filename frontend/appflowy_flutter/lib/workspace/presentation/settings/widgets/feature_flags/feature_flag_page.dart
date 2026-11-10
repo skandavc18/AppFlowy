@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:appflowy/shared/feature_flags.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -24,7 +25,10 @@ class FeatureFlagsPage extends StatelessWidget {
         FlowyTextButton(
           'Restart the app to apply changes',
           fontSize: 16.0,
-          fontColor: Colors.red,
+          fontColor: LegibleColor.on(
+            Theme.of(context).colorScheme.secondaryContainer,
+            Theme.of(context).colorScheme.error,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           onPressed: () async => runAppFlowy(),
         ),

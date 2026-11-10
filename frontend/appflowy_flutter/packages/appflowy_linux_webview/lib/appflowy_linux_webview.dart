@@ -140,6 +140,14 @@ class LinuxWebViewController {
   Future<void> setUserScripts(List<String> userScripts) =>
       _invoke('setUserScripts', {'userScripts': userScripts});
 
+  /// Shows [url] in this view, keeping its web process and what that process
+  /// has already loaded. The page shown until now loses the keyboard.
+  Future<void> load(Uri url) => _invoke('load', {
+        'url': url.toString(),
+        'origin':
+            url.isScheme('http') || url.isScheme('https') ? url.origin : '',
+      });
+
   /// Runs [source] in the page's main frame, without waiting for a result.
   Future<void> evaluateJavascript(String source) =>
       _invoke('evaluate', {'source': source});
@@ -554,45 +562,82 @@ class _LinuxWebViewState extends State<LinuxWebView> {
           onExit: (event) => _controller._pointer('leave', event, buttons: 0),
           child: child,
         ),
-        child: Listener(
-          onPointerDown: _onDown,
-          onPointerMove: _onMove,
-          onPointerHover: _onHover,
-          onPointerUp: _onUp,
-          onPointerCancel: _onUp,
-          onPointerSignal: _onSignal,
-          onPointerPanZoomStart: _onPanStart,
-          onPointerPanZoomUpdate: _onPanUpdate,
-          onPointerPanZoomEnd: _onPanEnd,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final size = Size(
-                _whole(constraints.maxWidth, 800),
-                _whole(constraints.maxHeight, 600),
-              );
-              if (size != _size) {
-                _size = size;
-                WidgetsBinding.instance
-                    .addPostFrameCallback((_) => _sendGeometry());
-              }
-              // Whole pixels keep the page sharp: the texture is never
-              // stretched.
-              return Align(
-                alignment: Alignment.topLeft,
-                child: SizedBox.fromSize(
-                  size: size,
-                  child: Texture(
-                    textureId: _controller.textureId,
-                    filterQuality: FilterQuality.none,
+        child: RawGestureDetector(
+          // Two-finger pans over the view scroll the page (or its host), so
+          // no ancestor may scroll on the same gesture as well.
+          gestures: {
+            _TrackpadPanClaim:
+                GestureRecognizerFactoryWithHandlers<_TrackpadPanClaim>(
+                    _TrackpadPanClaim.new, (_) {}),
+          },
+          excludeFromSemantics: true,
+          child: Listener(
+            onPointerDown: _onDown,
+            onPointerMove: _onMove,
+            onPointerHover: _onHover,
+            onPointerUp: _onUp,
+            onPointerCancel: _onUp,
+            onPointerSignal: _onSignal,
+            onPointerPanZoomStart: _onPanStart,
+            onPointerPanZoomUpdate: _onPanUpdate,
+            onPointerPanZoomEnd: _onPanEnd,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final size = Size(
+                  _whole(constraints.maxWidth, 800),
+                  _whole(constraints.maxHeight, 600),
+                );
+                if (size != _size) {
+                  _size = size;
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _sendGeometry());
+                }
+                // Whole pixels keep the page sharp: the texture is never
+                // stretched.
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: SizedBox.fromSize(
+                    size: size,
+                    child: Texture(
+                      textureId: _controller.textureId,
+                      filterQuality: FilterQuality.none,
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Wins the gesture arena for every two-finger pan that starts over a
+/// [LinuxWebView], so an enclosing Scrollable never drags along with the page.
+/// Mouse, touch and stylus input are left to the arena.
+class _TrackpadPanClaim extends OneSequenceGestureRecognizer {
+  @override
+  bool isPointerAllowed(PointerDownEvent event) => false;
+
+  @override
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
+    startTrackingPointer(event.pointer, event.transform);
+    resolve(GestureDisposition.accepted);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerPanZoomEndEvent || event is PointerCancelEvent) {
+      stopTrackingPointer(event.pointer);
+    }
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {}
+
+  @override
+  String get debugDescription => 'web view trackpad pan';
 }
 
 double _whole(double extent, double fallback) =>

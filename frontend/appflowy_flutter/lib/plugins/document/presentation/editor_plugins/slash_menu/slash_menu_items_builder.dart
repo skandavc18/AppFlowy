@@ -10,8 +10,11 @@ import 'slash_menu_items/mobile_items.dart';
 import 'slash_menu_items/slash_menu_items.dart';
 import 'slash_menu_metadata.dart';
 
-/// Build slash menu items
+/// The items the `/` menu shows.
 ///
+/// Desktop lists every entry under its section's heading; mobile shows one
+/// group per section, opening onto the same entries. Both come from
+/// [slashMenuEntries], so every platform offers exactly the same blocks.
 List<SelectionMenuItem> slashMenuItemsBuilder({
   bool isLocalMode = false,
   DocumentBloc? documentBloc,
@@ -19,31 +22,59 @@ List<SelectionMenuItem> slashMenuItemsBuilder({
   Node? node,
   ViewPB? view,
 }) {
+  final sections = slashMenuSections(
+    isLocalMode: isLocalMode,
+    documentBloc: documentBloc,
+    editorState: editorState,
+    node: node,
+    view: view,
+  );
+  final entries = registerSlashMenuSections(sections);
+  return UniversalPlatform.isMobile ? mobileSlashMenuGroups(sections) : entries;
+}
+
+/// Every `/` entry, flat and in menu order, with its metadata registered,
+/// whatever the platform.
+List<SelectionMenuItem> slashMenuEntries({
+  bool isLocalMode = false,
+  DocumentBloc? documentBloc,
+  EditorState? editorState,
+  Node? node,
+  ViewPB? view,
+}) =>
+    registerSlashMenuSections(
+      slashMenuSections(
+        isLocalMode: isLocalMode,
+        documentBloc: documentBloc,
+        editorState: editorState,
+        node: node,
+        view: view,
+      ),
+    );
+
+/// The `/` menu's sections, before any platform arranges them.
+List<SlashMenuSectionItems> slashMenuSections({
+  bool isLocalMode = false,
+  DocumentBloc? documentBloc,
+  EditorState? editorState,
+  Node? node,
+  ViewPB? view,
+}) {
   final isInTable = node != null && node.parentTableCellNode != null;
-  final isMobile = UniversalPlatform.isMobile;
+  if (isInTable) {
+    return _simpleTableSlashMenuSections();
+  }
   bool isEmpty = false;
   if (editorState == null || editorState.isEmptyForContinueWriting()) {
     if (view == null || view.name.isEmpty) {
       isEmpty = true;
     }
   }
-  if (isMobile) {
-    if (isInTable) {
-      return mobileItemsInTale;
-    } else {
-      return mobileItems;
-    }
-  } else {
-    if (isInTable) {
-      return _simpleTableSlashMenuItems();
-    } else {
-      return _defaultSlashMenuItems(
-        isLocalMode: isLocalMode,
-        documentBloc: documentBloc,
-        isEmpty: isEmpty,
-      );
-    }
-  }
+  return _defaultSlashMenuSections(
+    isLocalMode: isLocalMode,
+    documentBloc: documentBloc,
+    isEmpty: isEmpty,
+  );
 }
 
 /// The default slash menu items are used in the text-based block.
@@ -57,7 +88,7 @@ List<SelectionMenuItem> slashMenuItemsBuilder({
 /// not provided, the linked database items will be disabled.
 ///
 ///
-List<SelectionMenuItem> _defaultSlashMenuItems({
+List<SlashMenuSectionItems> _defaultSlashMenuSections({
   bool isLocalMode = false,
   DocumentBloc? documentBloc,
   bool isEmpty = false,
@@ -78,7 +109,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
     ...linkedViews,
   ];
 
-  return registerSlashMenuSections([
+  return [
     SlashMenuSectionItems(
       section: SlashMenuSection.suggestions,
       items: [
@@ -259,7 +290,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         subPageSlashMenuItem,
       },
     ),
-  ]);
+  ];
 }
 
 /// One entry per island every enabled extension declares.
@@ -321,8 +352,8 @@ SlashMenuSectionItems _widgetSection() {
 ///
 /// - Database Items
 /// - Image Gallery
-List<SelectionMenuItem> _simpleTableSlashMenuItems() {
-  return registerSlashMenuSections([
+List<SlashMenuSectionItems> _simpleTableSlashMenuSections() {
+  return [
     SlashMenuSectionItems(
       section: SlashMenuSection.basicBlocks,
       items: [
@@ -391,5 +422,5 @@ List<SelectionMenuItem> _simpleTableSlashMenuItems() {
         subPageSlashMenuItem,
       ],
     ),
-  ]);
+  ];
 }

@@ -16,10 +16,15 @@ import 'package:flutter_inappwebview_windows/flutter_inappwebview_windows.dart';
 
 /// Whether this platform has a renderer a web embed can live in.
 bool get canShowWebEmbedPages =>
-    Platform.isWindows ||
-    Platform.isMacOS ||
-    Platform.isAndroid ||
-    Platform.isIOS;
+    debugCanShowWebEmbedPagesOverride ??
+    (Platform.isWindows ||
+        Platform.isMacOS ||
+        Platform.isAndroid ||
+        Platform.isIOS);
+
+/// Stands in for the platform's answer, so tests reach both paths on any host.
+@visibleForTesting
+bool? debugCanShowWebEmbedPagesOverride;
 
 /// How one site's page should be dressed inside a frame.
 @immutable

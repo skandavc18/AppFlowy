@@ -160,8 +160,7 @@ class _InteractiveEditableTextState extends State<InteractiveEditableText> {
         hoverColor: Colors.transparent,
         contentPadding: EdgeInsets.zero,
         hintText: widget.hint,
-        hintStyle: widget.hintStyle ??
-            style.copyWith(color: palette.textMuted.withValues(alpha: 0.8)),
+        hintStyle: widget.hintStyle ?? style.copyWith(color: palette.textMuted),
       ),
     );
   }

@@ -278,6 +278,7 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
                               node.kind == ProviderNodeKind.image ||
                                   imgExtensionRegex
                                       .hasMatch(providerFileNameFor(node)),
+                          pinHeader: isOfficeFile(providerFileNameFor(node)),
                           header: ValueListenableBuilder<StandaloneFileHeader>(
                             valueListenable: _chrome,
                             builder: (context, controls, _) =>

@@ -145,84 +145,105 @@ class SettingsDialog extends StatelessWidget {
     SettingsPage page,
     UserProfilePB user,
     AFRolePB? currentWorkspaceMemberRole,
-  ) {
-    switch (page) {
-      case SettingsPage.account:
-        return SettingsAccountView(
-          userProfile: user,
-          didLogout: didLogout,
-          didLogin: dismissDialog,
-        );
-      case SettingsPage.workspace:
-        return SettingsWorkspaceView(
+  ) =>
+      buildSettingsPageView(
+        page: page,
+        workspace: workspace,
+        user: user,
+        currentWorkspaceMemberRole: currentWorkspaceMemberRole,
+        didLogout: didLogout,
+        didLogin: dismissDialog,
+        restartApp: restartApp,
+      );
+}
+
+/// The content of one settings page. The desktop dialog and the mobile
+/// settings screens both host exactly this widget for [page].
+Widget buildSettingsPageView({
+  required SettingsPage page,
+  required UserWorkspacePB workspace,
+  required UserProfilePB user,
+  required AFRolePB? currentWorkspaceMemberRole,
+  required VoidCallback didLogout,
+  required VoidCallback didLogin,
+  required VoidCallback restartApp,
+}) {
+  switch (page) {
+    case SettingsPage.account:
+      return SettingsAccountView(
+        userProfile: user,
+        didLogout: didLogout,
+        didLogin: didLogin,
+      );
+    case SettingsPage.workspace:
+      return SettingsWorkspaceView(
+        userProfile: user,
+        currentWorkspaceMemberRole: currentWorkspaceMemberRole,
+      );
+    case SettingsPage.manageData:
+      return SettingsManageDataView(
+        userProfile: user,
+        workspace: workspace,
+      );
+    case SettingsPage.notifications:
+      return const SettingsNotificationsView();
+    case SettingsPage.cloud:
+      return SettingCloud(restartAppFlowy: restartApp);
+    case SettingsPage.documentEditing:
+      return SettingsOfficeView(userProfile: user);
+    case SettingsPage.editor:
+      return const SettingsEditorView();
+    case SettingsPage.pageVersions:
+      return const SettingsPageVersionsView();
+    case SettingsPage.encryption:
+      return const SettingsEncryptionView();
+    case SettingsPage.backup:
+      return const SettingsBackupView();
+    case SettingsPage.maps:
+      return const SettingsMapsView();
+    case SettingsPage.connections:
+      return const SettingsConnectionsView();
+    case SettingsPage.extensions:
+      return const SettingsExtensionsView();
+    case SettingsPage.shortcuts:
+      return const SettingsShortcutsView();
+    case SettingsPage.ai:
+      if (user.workspaceType == WorkspaceTypePB.ServerW) {
+        return SettingsAIView(
+          key: ValueKey(workspace.workspaceId),
           userProfile: user,
           currentWorkspaceMemberRole: currentWorkspaceMemberRole,
+          workspaceId: workspace.workspaceId,
         );
-      case SettingsPage.manageData:
-        return SettingsManageDataView(
-          userProfile: user,
-          workspace: workspace,
-        );
-      case SettingsPage.notifications:
-        return const SettingsNotificationsView();
-      case SettingsPage.cloud:
-        return SettingCloud(restartAppFlowy: () => restartApp());
-      case SettingsPage.documentEditing:
-        return SettingsOfficeView(userProfile: user);
-      case SettingsPage.editor:
-        return const SettingsEditorView();
-      case SettingsPage.pageVersions:
-        return const SettingsPageVersionsView();
-      case SettingsPage.encryption:
-        return const SettingsEncryptionView();
-      case SettingsPage.backup:
-        return const SettingsBackupView();
-      case SettingsPage.maps:
-        return const SettingsMapsView();
-      case SettingsPage.connections:
-        return const SettingsConnectionsView();
-      case SettingsPage.extensions:
-        return const SettingsExtensionsView();
-      case SettingsPage.shortcuts:
-        return const SettingsShortcutsView();
-      case SettingsPage.ai:
-        if (user.workspaceType == WorkspaceTypePB.ServerW) {
-          return SettingsAIView(
-            key: ValueKey(workspace.workspaceId),
-            userProfile: user,
-            currentWorkspaceMemberRole: currentWorkspaceMemberRole,
-            workspaceId: workspace.workspaceId,
-          );
-        } else {
-          return LocalSettingsAIView(
-            key: ValueKey(workspace.workspaceId),
-            userProfile: user,
-            workspaceId: workspace.workspaceId,
-          );
-        }
-      case SettingsPage.member:
-        return WorkspaceMembersPage(
+      } else {
+        return LocalSettingsAIView(
+          key: ValueKey(workspace.workspaceId),
           userProfile: user,
           workspaceId: workspace.workspaceId,
         );
-      case SettingsPage.plan:
-        return SettingsPlanView(
-          workspaceId: workspace.workspaceId,
-          user: user,
-        );
-      case SettingsPage.billing:
-        return SettingsBillingView(
-          workspaceId: workspace.workspaceId,
-          user: user,
-        );
-      case SettingsPage.sites:
-        return SettingsSitesPage(
-          workspaceId: workspace.workspaceId,
-          user: user,
-        );
-      case SettingsPage.featureFlags:
-        return const FeatureFlagsPage();
-    }
+      }
+    case SettingsPage.member:
+      return WorkspaceMembersPage(
+        userProfile: user,
+        workspaceId: workspace.workspaceId,
+      );
+    case SettingsPage.plan:
+      return SettingsPlanView(
+        workspaceId: workspace.workspaceId,
+        user: user,
+      );
+    case SettingsPage.billing:
+      return SettingsBillingView(
+        workspaceId: workspace.workspaceId,
+        user: user,
+      );
+    case SettingsPage.sites:
+      return SettingsSitesPage(
+        workspaceId: workspace.workspaceId,
+        user: user,
+      );
+    case SettingsPage.featureFlags:
+      return const FeatureFlagsPage();
   }
 }
 

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/workspace/application/finance/finance_format.dart';
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
@@ -347,7 +348,18 @@ class ChangePill extends StatelessWidget {
     final color = colors.change(value);
     final up = (value ?? 0) > 0;
     final flat = value == null || value!.abs() < 1e-9;
-    final ink = solid ? Colors.white : color;
+    final fill =
+        solid ? color : colors.solidWash(color, colors.palette.surface, 0.12);
+    // Green and red are chosen to glow, not to be read on a wash of
+    // themselves: the words keep the hue and only deepen as far as needed.
+    final ink = solid
+        ? LegibleColor.contrast(Colors.white, fill) >= LegibleColor.glyph
+            ? Colors.white
+            : LegibleColor.on(
+                fill,
+                HSLColor.fromColor(fill).withLightness(0.15).toColor(),
+              )
+        : LegibleColor.on(fill, color);
     return AnimatedContainer(
       duration: DashboardMetrics.settle,
       curve: DashboardMetrics.curve,
@@ -571,6 +583,17 @@ class FinanceAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final hue = color ?? colors.hueFor(label);
     final stops = colors.gradientOf(hue);
+    final middle = Color.lerp(stops.first, stops.last, 0.5)!;
+    // White on a deep hue; on a pale or bright one the initials take the
+    // hue's own dark shade, since white there falls to about 1:1.
+    final ink =
+        LegibleColor.contrast(Colors.white, middle) >= LegibleColor.glyph
+            ? Colors.white
+            : LegibleColor.on(
+                middle,
+                HSLColor.fromColor(hue).withLightness(0.2).toColor(),
+                minimum: LegibleColor.glyph,
+              );
     return Container(
       width: size,
       height: size,
@@ -595,7 +618,7 @@ class FinanceAvatar extends StatelessWidget {
         financeInitials(label),
         maxLines: 1,
         style: financeLabel(
-          Colors.white,
+          ink,
           size: size * 0.36,
           weight: FontWeight.w700,
           letterSpacing: 0.2,

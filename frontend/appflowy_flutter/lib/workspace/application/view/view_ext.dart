@@ -106,6 +106,21 @@ extension ViewExtension on ViewPB {
         PluginType.calendar,
       ].contains(pluginType);
 
+  /// Whether [plugin] opens this page in a view of its own (a collection,
+  /// workspace file or folder, chart, map, deck, table view, dashboard or
+  /// canvas) rather than in the document editor or a plain database.
+  bool get opensInOwnView =>
+      isCollection ||
+      isWorkspaceFolder ||
+      isBookmark ||
+      isWorkspaceFile ||
+      isChart ||
+      isMap ||
+      isSlideDeck ||
+      tableViewKind != null ||
+      isDashboard ||
+      isCanvas;
+
   Widget defaultIcon({Size? size}) {
     if (isWorkspaceItem) {
       return WorkspaceItemIcon.fromView(

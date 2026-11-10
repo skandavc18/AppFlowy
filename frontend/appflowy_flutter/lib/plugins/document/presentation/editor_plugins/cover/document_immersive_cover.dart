@@ -5,6 +5,7 @@ import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/build_context_extension.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/cover_ink.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_style/_page_style_icon_bloc.dart';
@@ -12,6 +13,7 @@ import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
@@ -105,6 +107,29 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
               child: Stack(
                 children: [
                   _buildCover(context, state),
+                  // A shade under the title, so white type reads on a bright
+                  // sky as well as on a night one.
+                  if (state.cover.isPhotographic)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: kDocumentCoverHeight * 0.75,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0),
+                                Colors.black.withValues(alpha: 0.45),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned(
                     left: 0,
                     right: 0,
@@ -153,6 +178,7 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
       fontFamily = getGoogleFontSafely(documentFontFamily).fontFamily ??
           preferredFontFamily;
     }
+    final ink = CoverInk.over(context, state.cover);
 
     if (widget.fixedTitle != null) {
       return FlowyText(
@@ -160,8 +186,7 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
         fontSize: 28.0,
         fontWeight: FontWeight.w700,
         fontFamily: fontFamily,
-        color:
-            state.cover.isNone || state.cover.isPresets ? null : Colors.white,
+        color: ink,
         overflow: TextOverflow.ellipsis,
       );
     }
@@ -176,6 +201,8 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
         disabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
         hintText: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+        hintStyle:
+            ink == null ? null : TextStyle(color: ink.withValues(alpha: 0.6)),
         contentPadding: EdgeInsets.zero,
       ),
       scrollController: scrollController,
@@ -185,8 +212,7 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
         fontSize: 28.0,
         fontWeight: FontWeight.w700,
         fontFamily: fontFamily,
-        color:
-            state.cover.isNone || state.cover.isPresets ? null : Colors.white,
+        color: ink,
         overflow: TextOverflow.ellipsis,
       ),
       onChanged: (name) => Debounce.debounce(
@@ -304,7 +330,7 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
         height: height,
         width: double.infinity,
         child: Image.file(
-          File(cover.value),
+          File(resolveWorkspaceFilePath(cover.value)),
           fit: BoxFit.cover,
         ),
       );

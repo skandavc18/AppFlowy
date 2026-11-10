@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:flowy_infra/size.dart';
 
@@ -30,7 +31,10 @@ class ImageRender extends StatelessWidget {
           userProfilePB: userProfile,
           fit: fit,
         ),
-      CustomImageType.local => Image.file(File(image.url), fit: fit),
+      CustomImageType.local => Image.file(
+          File(resolveWorkspaceFilePath(image.url)),
+          fit: fit,
+        ),
     };
 
     return Container(

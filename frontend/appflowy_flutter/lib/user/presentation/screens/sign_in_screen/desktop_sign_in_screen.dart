@@ -5,7 +5,8 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/settings/show_settings.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
 import 'package:appflowy/user/application/sign_in_bloc.dart';
-import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/anonymous_sign_in_button.dart';
+import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/first_run_sync_options.dart';
 import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/widgets.dart';
 import 'package:appflowy/user/presentation/widgets/widgets.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -29,7 +30,10 @@ class _DesktopSignInScreenState extends State<DesktopSignInScreen>
     with WindowListener {
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
+    // A computer pointed at a self-hosted AppFlowy server signs in to it.
+    // Everywhere else the first screen asks where the workspace should live.
+    final selfHosted = isAuthEnabled &&
+        currentCloudType() == AuthenticatorType.appflowyCloudSelfHost;
 
     return BlocBuilder<SignInBloc, SignInState>(
       builder: (context, state) {
@@ -37,57 +41,85 @@ class _DesktopSignInScreenState extends State<DesktopSignInScreen>
         return Scaffold(
           appBar: _buildAppBar(),
           body: Center(
-            child: AuthFormContainer(
-              children: [
-                const Spacer(),
-
-                // logo and title
-                FlowyLogoTitle(
-                  title: LocaleKeys.welcomeText.tr(),
-                  logoSize: Size.square(36),
-                ),
-                VSpace(theme.spacing.xxl),
-
-                // continue with email and password
-                isLocalAuthEnabled
-                    ? const SignInAnonymousButtonV3()
-                    : const ContinueWithEmailAndPassword(),
-
-                VSpace(theme.spacing.l),
-
-                // sign up
-                const SignUpPrompt(),
-
-                VSpace(theme.spacing.xxl),
-
-                // third-party sign in.
-                if (isAuthEnabled) ...[
-                  const _OrDivider(),
-                  VSpace(theme.spacing.xxl),
-                  const ThirdPartySignInButtons(),
-                  VSpace(theme.spacing.xxl),
-                ],
-
-                // sign in agreement
-                const SignInAgreement(),
-
-                const Spacer(),
-
-                // anonymous sign in and settings
-                const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DesktopSignInSettingsButton(),
-                    HSpace(20),
-                    SignInAnonymousButtonV2(),
-                  ],
-                ),
-                VSpace(bottomPadding),
-              ],
-            ),
+            child: selfHosted
+                ? _serverSignIn(context, bottomPadding)
+                : _welcome(context, bottomPadding),
           ),
         );
       },
+    );
+  }
+
+  Widget _welcome(BuildContext context, double bottomPadding) {
+    final theme = AppFlowyTheme.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              VSpace(theme.spacing.xxl),
+              FlowyLogoTitle(
+                title: LocaleKeys.welcomeText.tr(),
+                logoSize: const Size.square(36),
+              ),
+              VSpace(theme.spacing.xxl),
+              const FirstRunSyncOptions(),
+              VSpace(theme.spacing.xxl),
+              const DesktopSignInSettingsButton(),
+              VSpace(bottomPadding),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _serverSignIn(BuildContext context, double bottomPadding) {
+    final theme = AppFlowyTheme.of(context);
+    final server = Uri.tryParse(
+          getIt<AppFlowyCloudSharedEnv>().appflowyCloudConfig.base_url,
+        )?.host ??
+        '';
+    return AuthFormContainer(
+      children: [
+        const Spacer(),
+        FlowyLogoTitle(
+          title: server.isEmpty
+              ? LocaleKeys.welcomeText.tr()
+              : LocaleKeys.firstRun_signInTo.tr(args: [server]),
+          logoSize: const Size.square(36),
+        ),
+        VSpace(theme.spacing.xxl),
+        const ContinueWithEmailAndPassword(),
+        VSpace(theme.spacing.l),
+        const SignUpPrompt(),
+        VSpace(theme.spacing.xxl),
+        // Whatever the server itself offers to sign in with.
+        const _OrDivider(),
+        VSpace(theme.spacing.xxl),
+        const ThirdPartySignInButtons(),
+        VSpace(theme.spacing.xxl),
+        const SignInAgreement(),
+        const Spacer(),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const DesktopSignInSettingsButton(),
+            const HSpace(20),
+            AFGhostTextButton(
+              text: LocaleKeys.firstRun_anotherWay.tr(),
+              size: AFButtonSize.s,
+              onTap: () => chooseAnotherWayToStart(),
+            ),
+            const HSpace(20),
+            const SignInAnonymousButtonV2(),
+          ],
+        ),
+        VSpace(bottomPadding),
+      ],
     );
   }
 

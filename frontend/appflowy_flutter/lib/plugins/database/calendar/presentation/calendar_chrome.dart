@@ -276,7 +276,7 @@ class CalendarEmptyState extends StatelessWidget {
             Icon(
               icon,
               size: compact ? 26 : 34,
-              color: palette.textMuted.withValues(alpha: 0.55),
+              color: palette.textMuted,
             ),
             SizedBox(
               height: compact ? CalendarMetrics.space2 : CalendarMetrics.space3,

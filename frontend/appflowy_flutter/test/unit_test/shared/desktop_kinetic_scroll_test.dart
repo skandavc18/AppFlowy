@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +12,9 @@ const _desktop = TargetPlatformVariant({
 });
 const _listKey = ValueKey('desktop-kinetic-list');
 const _frame = Duration(microseconds: 8333);
+
+double get _gain =>
+    const PremiumScrollPhysicsConfig().desktopDirectManipulationScale;
 
 void main() {
   for (final tail in [-1.0, 0.0, 1.0]) {
@@ -25,7 +31,7 @@ void main() {
         }
         expect(
           tracker.getVelocityEstimate()!.pixelsPerSecond.dy,
-          closeTo(tail / 0.008 * 0.60, 0.001),
+          closeTo(tail / 0.008 * _gain, 0.001),
           reason: 'Slow, stopped, and reversed tails must not inherit a '
               'speed boost from the fast part of the gesture.',
         );
@@ -61,8 +67,8 @@ void main() {
     (tester) async {
       final controller = await _mount(tester);
       final physics = controller.position.physics;
-      expect(physics.maxFlingVelocity, 4800);
-      for (final velocity in [-4800.0, -1200.0, 1200.0, 4800.0]) {
+      expect(physics.maxFlingVelocity, 8000);
+      for (final velocity in [-8000.0, -1200.0, 1200.0, 8000.0]) {
         expect(physics.carriedMomentum(velocity), 0);
         final simulation = physics.createBallisticSimulation(
           controller.position,
@@ -70,7 +76,8 @@ void main() {
         )!;
         expect(simulation.dx(0), closeTo(velocity, 0.001));
         expect(simulation.dx(0.05).abs(), lessThan(velocity.abs()));
-        expect(simulation.isDone(2), isTrue);
+        // Even the fastest flick settles as soon as the desktop's own glide.
+        expect(simulation.isDone(2.1), isTrue);
       }
     },
     variant: _desktop,
@@ -119,7 +126,7 @@ void main() {
           Offset(0, -150 + tail),
         );
         final velocity = tracker.getVelocityEstimate()!.pixelsPerSecond.dy;
-        expect(velocity.abs(), lessThanOrEqualTo(tail.abs() / 0.008 * 0.60));
+        expect(velocity.abs(), lessThanOrEqualTo(tail.abs() / 0.008 * _gain));
         expect(velocity == 0 || velocity.sign == tail.sign, isTrue);
       }
     },
@@ -160,14 +167,14 @@ void main() {
         for (var step = 1; step <= 8; step++) {
           await _update(tester, point, step, -20);
         }
-        expect(controller.offset - start, closeTo(160 * 0.60, 0.01));
+        expect(controller.offset - start, closeTo(160 * _gain, 0.01));
         final release = controller.offset;
         await _end(tester, point, _frame * 8 + const Duration(milliseconds: 1));
         await tester.pump();
         final simulation =
             controller.position.physics.createBallisticSimulation(
           controller.position,
-          20 / (_frame.inMicroseconds / 1e6) * 0.60,
+          20 / (_frame.inMicroseconds / 1e6) * _gain,
         )!;
         await tester.pump(const Duration(milliseconds: 100));
         expect(controller.offset, closeTo(simulation.x(0.1), 0.01));
@@ -246,6 +253,139 @@ void main() {
         expect(resumed.x(time), closeTo(upward.x(restart + time), 0.01));
         expect(resumed.dx(time), closeTo(upward.dx(restart + time), 0.01));
       }
+    },
+    variant: _desktop,
+  );
+
+  testWidgets(
+    'a released page glides as macOS momentum does, then settles',
+    (tester) async {
+      final controller = await _mount(tester);
+      final physics = controller.position.physics;
+      final flick = physics.createBallisticSimulation(
+        controller.position,
+        1000,
+      )!;
+      final start = controller.position.pixels;
+      expect(flick.x(10) - start, closeTo(premiumCoastDistance(1000), 0.01));
+      expect(flick.x(10) - start, closeTo(363, 1));
+      expect(flick.isDone(1.1), isTrue);
+      expect(flick.x(1.1), flick.x(10));
+      // Halfway through, it still carries a useful share of its speed.
+      expect(flick.dx(0.5), greaterThan(250));
+
+      // A slow lift drifts only briefly.
+      final lift = physics.createBallisticSimulation(controller.position, 150)!;
+      expect(lift.x(10) - start, lessThan(26));
+      expect(lift.isDone(0.4), isTrue);
+    },
+    variant: _desktop,
+  );
+
+  testWidgets(
+    'a hard flick decelerates into an edge without a jolt',
+    (tester) async {
+      final controller = await _mount(tester);
+      final physics = controller.position.physics;
+      final top = controller.position.copyWith(pixels: 20);
+      final upward = physics.createBallisticSimulation(top, -8000)!;
+      var before = 0.0;
+      var after = 0.01;
+      for (var iteration = 0; iteration < 40; iteration++) {
+        final middle = (before + after) / 2;
+        if (upward.x(middle) > 0) {
+          before = middle;
+        } else {
+          after = middle;
+        }
+      }
+      // The spring takes over at the coast's own speed: clamping it there
+      // halved the page's speed in one frame.
+      expect(
+        upward.dx(after + 1e-6),
+        closeTo(upward.dx(before - 1e-6), upward.dx(before).abs() * 0.01),
+      );
+      var deepest = 0.0;
+      for (var sample = 0; sample <= 240; sample++) {
+        deepest = math.min(deepest, upward.x(sample / 120));
+      }
+      expect(deepest, inExclusiveRange(-160, -120));
+      expect(upward.isDone(0.6), isTrue);
+      expect(upward.x(0.6), 0);
+    },
+    variant: _desktop,
+  );
+
+  for (final bottom in [false, true]) {
+    testWidgets(
+      'a pull released past an edge carries on at the page speed: '
+      'bottom=$bottom',
+      (tester) async {
+        final controller = await _mount(tester, initialOffset: 0);
+        final position = controller.position;
+        final edge =
+            bottom ? position.maxScrollExtent : position.minScrollExtent;
+        controller.jumpTo(edge);
+        await tester.pumpAndSettle();
+        final point = tester.getCenter(find.byKey(_listKey));
+        final direction = bottom ? -1.0 : 1.0;
+        double outward(double from) =>
+            (controller.offset - from) * (bottom ? 1 : -1);
+        await _start(tester, point);
+        var previous = controller.offset;
+        var lastStep = 0.0;
+        for (var step = 1; step <= 6; step++) {
+          await _update(tester, point, step, direction * 30);
+          lastStep = outward(previous);
+          previous = controller.offset;
+        }
+        // The fingers move 30 px a frame; the stretched page far less.
+        expect(lastStep, inExclusiveRange(0, 15));
+        await _end(tester, point, _frame * 6 + const Duration(microseconds: 1));
+        for (var frame = 0; frame < 8; frame++) {
+          await tester.pump(_frame);
+          // Launched at the fingers' speed, it lurched outward first.
+          expect(outward(previous), lessThanOrEqualTo(lastStep + 0.01));
+          previous = controller.offset;
+        }
+        await tester.pumpAndSettle(_frame);
+        expect(controller.offset, closeTo(edge, 0.01));
+      },
+      variant: _desktop,
+    );
+  }
+
+  testWidgets(
+    'pulling back eases the rubber band exactly as pulling out stretched it',
+    (tester) async {
+      final controller = await _mount(tester, initialOffset: 0);
+      final point = tester.getCenter(find.byKey(_listKey));
+      await _start(tester, point);
+      final stretched = [controller.offset];
+      for (var step = 1; step <= 6; step++) {
+        await _update(tester, point, step, 30);
+        stretched.add(controller.offset);
+      }
+      expect(stretched.last, lessThan(-60));
+      for (var step = 5; step >= 0; step--) {
+        await tester.sendEventToBinding(
+          PointerPanZoomUpdateEvent(
+            pointer: 61,
+            device: 61,
+            position: point,
+            pan: Offset(0, 30.0 * step),
+            panDelta: const Offset(0, -30),
+            timeStamp: _frame * (12 - step),
+          ),
+        );
+        await tester.pump(_frame);
+        // Easing one-to-one reached the edge after a fraction of the way
+        // back, and scrolled the page past it with the rest.
+        expect(controller.offset, closeTo(stretched[step], 0.01));
+      }
+      await _end(tester, point, _frame * 12 + const Duration(milliseconds: 1));
+      await tester.pumpAndSettle(_frame);
+      expect(controller.offset, closeTo(0, 0.01));
     },
     variant: _desktop,
   );
@@ -400,7 +540,7 @@ void main() {
         final pulled = controller.offset;
         final outside = (pulled - edge).abs();
         expect(bottom ? pulled > edge : pulled < edge, isTrue);
-        expect(outside, inExclusiveRange(0, 180 * 0.60));
+        expect(outside, inExclusiveRange(0, 180 * _gain));
         // Hold before release: the spring must return even with zero velocity.
         await tester.sendEventToBinding(
           PointerPanZoomUpdateEvent(

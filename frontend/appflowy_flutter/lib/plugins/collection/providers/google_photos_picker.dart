@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
@@ -171,6 +172,11 @@ class _GooglePhotosPickerState extends State<_GooglePhotosPicker> {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
+    final accent = LegibleColor.onWash(
+      palette.floatingSurface,
+      ProviderServices.googlePhotos.accent,
+      wash: 0.12,
+    );
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -191,14 +197,13 @@ class _GooglePhotosPickerState extends State<_GooglePhotosPicker> {
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: ProviderServices.googlePhotos.accent
-                            .withValues(alpha: 0.12),
+                        color: accent.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(11),
                       ),
                       child: Icon(
                         ProviderServices.googlePhotos.icon,
                         size: 19,
-                        color: ProviderServices.googlePhotos.accent,
+                        color: accent,
                       ),
                     ),
                     const SizedBox(width: 12),

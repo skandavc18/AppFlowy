@@ -6,10 +6,12 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_picker.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/encryption/encryption.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -19,59 +21,54 @@ import 'package:flowy_infra/file_picker/file_picker_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// What a backup passphrase dialog is being opened for.
-enum BackupPassphrasePurpose { create, unlock, change, remove }
-
-/// Chooses the passphrase a copy is sealed with.
-Future<bool> showSetBackupPassphraseDialog(BuildContext context) =>
-    _ask(context, BackupPassphrasePurpose.create);
-
-/// Enters the passphrase for this session, so scheduled copies can run.
-Future<bool> showUnlockBackupDialog(BuildContext context) =>
-    _ask(context, BackupPassphrasePurpose.unlock);
-
-Future<bool> showChangeBackupPassphraseDialog(BuildContext context) =>
-    _ask(context, BackupPassphrasePurpose.change);
-
-Future<bool> showRemoveBackupPassphraseDialog(BuildContext context) =>
-    _ask(context, BackupPassphrasePurpose.remove);
-
-/// Asks for the passphrase one particular copy was sealed with.
+/// The key of one stored copy: the AppFlowy password's, when the copy was
+/// sealed with it, or the one made from the password the copy asks for.
 ///
 /// ⚠️ Reads the salt and work factor from the COPY's own manifest, never from
 /// the settings on this computer. A restore usually happens on a machine that
-/// has never seen this workspace, and on one that has, the passphrase may well
+/// has never seen this workspace, and on one that has, the password may well
 /// have been changed since that copy was taken.
 Future<Uint8List?> askForBackupPassphrase(
   BuildContext context, {
   required BackupManifest manifest,
-}) =>
-    showDialog<Uint8List>(
-      context: context,
-      builder: (context) => _CopyPassphraseDialog(manifest: manifest),
-    );
-
-Future<bool> _ask(
-  BuildContext context,
-  BackupPassphrasePurpose purpose,
-) async =>
-    await showDialog<bool>(
-      context: context,
-      builder: (context) => _BackupPassphraseDialog(purpose: purpose),
-    ) ??
-    false;
+}) async {
+  final password = await AppPassword.instance.current();
+  if (password != null) {
+    final key = await BackupSettings.keyForCopy(password, manifest);
+    if (key != null) {
+      return key;
+    }
+  }
+  if (!context.mounted) {
+    return null;
+  }
+  return showDialog<Uint8List>(
+    context: context,
+    builder: (context) => _CopyPassphraseDialog(manifest: manifest),
+  );
+}
 
 /// Picks where copies go.
 ///
 /// Returns null when nothing was chosen, so a cancelled pick leaves the
-/// existing destination alone rather than clearing it.
+/// existing destination alone rather than clearing it. Sync passes its own
+/// [title] and [body], and leaves AppFlowy Cloud out: a folder there cannot be
+/// listed, which sync depends on.
 Future<BackupDestination?> chooseBackupDestination(
   BuildContext context, {
   required BackupDestination current,
+  bool allowAppFlowyCloud = true,
+  String? title,
+  String? body,
 }) async {
   final kind = await showDialog<BackupDestinationKind>(
     context: context,
-    builder: (context) => _DestinationKindDialog(current: current.kind),
+    builder: (context) => _DestinationKindDialog(
+      current: current.kind,
+      allowAppFlowyCloud: allowAppFlowyCloud,
+      title: title,
+      body: body,
+    ),
   );
   if (kind == null || !context.mounted) {
     return null;
@@ -94,30 +91,64 @@ Future<BackupDestination?> chooseBackupDestination(
     case BackupDestinationKind.googleDrive:
     case BackupDestinationKind.oneDrive:
     case BackupDestinationKind.box:
-      final service = kind.providerService!;
-      // The picker already knows how to sign an account in when there is not
-      // one yet, so there is no separate "connect first" step.
-      final picked = await showExternalPicker(
-        context,
-        info: ProviderServices.of(service),
-        containersOnly: true,
-      );
-      if (picked == null) {
-        return null;
-      }
-      // A copy cannot be stored by an account that was only signed in to read,
-      // and finding that out at the first backup would be too late.
-      if (context.mounted) {
-        await ensureProviderWriteAccess(context, source: picked.source);
-      }
-      return BackupDestination(
-        kind: kind,
-        connectionId: picked.source.connectionId,
-        accountLabel: picked.source.remoteName,
-        folderId: picked.node.id,
-        folderName: picked.node.name,
-      );
+      return chooseProviderFolder(context, kind);
   }
+}
+
+/// Signs in to Google Drive, OneDrive or Box when needed, and picks a folder
+/// there that AppFlowy may write to.
+Future<BackupDestination?> chooseProviderFolder(
+  BuildContext context,
+  BackupDestinationKind kind,
+) async {
+  final service = kind.providerService;
+  if (service == null) {
+    return null;
+  }
+  // The picker already knows how to sign an account in when there is not one
+  // yet, so there is no separate "connect first" step.
+  final picked = await showExternalPicker(
+    context,
+    info: ProviderServices.of(service),
+    containersOnly: true,
+  );
+  if (picked == null) {
+    return null;
+  }
+  // A copy cannot be stored by an account that was only signed in to read, and
+  // finding that out at the first copy would be too late.
+  if (context.mounted) {
+    await ensureProviderWriteAccess(context, source: picked.source);
+  }
+  return BackupDestination(
+    kind: kind,
+    connectionId: picked.source.connectionId,
+    accountLabel: picked.source.remoteName,
+    folderId: picked.node.id,
+    folderName: picked.node.name,
+  );
+}
+
+/// Signs in again to the account [destination] is kept in, after its sign in
+/// lapsed or was lost, under the very connection the destination names. True
+/// when the account is signed in afterwards.
+Future<bool> signInAgainForDestination(
+  BuildContext context,
+  BackupDestination destination,
+) async {
+  final service = destination.kind.providerService;
+  if (service == null) {
+    return false;
+  }
+  final connection = await showProviderConnectDialog(
+    context,
+    info: ProviderServices.of(service),
+    // Copies and sync both write to the folder.
+    requestWriteAccess: true,
+    reconnectId:
+        destination.connectionId.isEmpty ? null : destination.connectionId,
+  );
+  return connection != null;
 }
 
 /// Says how a copy ended, in the same voice as everything else.
@@ -132,295 +163,6 @@ void reportBackupOutcome({
     );
 
 // --- Choosing a passphrase ----------------------------------------------------
-
-class _BackupPassphraseDialog extends StatefulWidget {
-  const _BackupPassphraseDialog({required this.purpose});
-
-  final BackupPassphrasePurpose purpose;
-
-  @override
-  State<_BackupPassphraseDialog> createState() =>
-      _BackupPassphraseDialogState();
-}
-
-class _BackupPassphraseDialogState extends State<_BackupPassphraseDialog> {
-  // Each dialog owns its controllers and disposes them in `dispose`; handing
-  // them to `showDialog(...).whenComplete(dispose)` reads a disposed field
-  // during the closing animation and takes the window down with it.
-  final TextEditingController _current = TextEditingController();
-  final TextEditingController _next = TextEditingController();
-  final TextEditingController _confirm = TextEditingController();
-  final TextEditingController _hint = TextEditingController();
-
-  String? _error;
-  bool _working = false;
-  bool _remember = false;
-
-  BackupSettings get _settings => BackupSettings.instance;
-
-  bool get _asksCurrent => widget.purpose != BackupPassphrasePurpose.create;
-
-  bool get _asksNew =>
-      widget.purpose == BackupPassphrasePurpose.create ||
-      widget.purpose == BackupPassphrasePurpose.change;
-
-  @override
-  void initState() {
-    super.initState();
-    _hint.text = _settings.policy.hint;
-    _remember = _settings.canRememberPassphrase;
-  }
-
-  @override
-  void dispose() {
-    _current.dispose();
-    _next.dispose();
-    _confirm.dispose();
-    _hint.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (_working) {
-      return;
-    }
-    setState(() {
-      _working = true;
-      _error = null;
-    });
-
-    final failure = await _run();
-    if (!mounted) {
-      return;
-    }
-    if (failure == null) {
-      Navigator.of(context).pop(true);
-      return;
-    }
-    setState(() {
-      _working = false;
-      _error = failure;
-    });
-  }
-
-  /// Null when it worked, or the sentence to show when it did not.
-  Future<String?> _run() async {
-    final policy = _settings.policy;
-
-    if (_asksNew) {
-      if (_next.text.length < minimumPassphraseLength) {
-        return LocaleKeys.backup_passphraseTooShort.tr(
-          args: ['$minimumPassphraseLength'],
-        );
-      }
-      if (_next.text != _confirm.text) {
-        return LocaleKeys.backup_passphraseDoesNotMatch.tr();
-      }
-    }
-
-    if (_asksCurrent) {
-      final key = unlockBackupKey(
-        passphrase: _current.text,
-        salt: policy.salt,
-        verifier: policy.verifier,
-        verifierPhrase: BackupPolicy.verifierPhrase,
-        iterations: policy.iterations,
-      );
-      if (key == null) {
-        return LocaleKeys.backup_passphraseWrong.tr();
-      }
-      if (widget.purpose == BackupPassphrasePurpose.unlock) {
-        _settings.unlockWith(key);
-        if (_remember) {
-          await _settings.rememberPassphrase(_current.text);
-        }
-        return null;
-      }
-      if (widget.purpose == BackupPassphrasePurpose.remove) {
-        await _settings.update(policy.withoutPassphrase());
-        return null;
-      }
-    }
-
-    // Creating or changing: a fresh salt every time, so two workspaces sealed
-    // with the same words still have different keys.
-    final chosen = newBackupPassphrase(
-      passphrase: _next.text,
-      verifierPhrase: BackupPolicy.verifierPhrase,
-      iterations: policy.iterations,
-    );
-    await _settings.update(
-      policy.copyWith(
-        encrypt: true,
-        salt: chosen.salt,
-        verifier: chosen.verifier,
-        hint: _hint.text.trim(),
-      ),
-    );
-    final key = unlockBackupKey(
-      passphrase: _next.text,
-      salt: chosen.salt,
-      verifier: chosen.verifier,
-      verifierPhrase: BackupPolicy.verifierPhrase,
-      iterations: policy.iterations,
-    );
-    if (key == null) {
-      return LocaleKeys.backup_passphraseCouldNotSet.tr();
-    }
-    _settings.unlockWith(key);
-    if (_remember) {
-      await _settings.rememberPassphrase(_next.text);
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final premium = PremiumThemeExtension.of(context);
-    final palette = FolderExplorerPalette.of(context);
-    final strength = ratePassphrase(_next.text);
-
-    return AlertDialog(
-      backgroundColor: premium.floatingSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Text(
-        _title,
-        style: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          color: premium.textPrimary,
-        ),
-      ),
-      content: SizedBox(
-        width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _body,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.4,
-                  color: premium.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 18),
-              if (_asksCurrent) ...[
-                ProviderTextField(
-                  label: LocaleKeys.backup_passphrase.tr(),
-                  controller: _current,
-                  palette: palette,
-                  obscure: true,
-                  autofocus: true,
-                  onSubmitted: (_) => unawaited(_submit()),
-                ),
-                if (_settings.policy.hint.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    LocaleKeys.backup_passphraseHintIs
-                        .tr(args: [_settings.policy.hint]),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: premium.textSecondary,
-                    ),
-                  ),
-                ],
-                if (_asksNew) const SizedBox(height: 14),
-              ],
-              if (_asksNew) ...[
-                ProviderTextField(
-                  label: LocaleKeys.backup_passphraseNew.tr(),
-                  controller: _next,
-                  palette: palette,
-                  obscure: true,
-                  autofocus: !_asksCurrent,
-                  onSubmitted: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 8),
-                _StrengthBar(strength: strength),
-                const SizedBox(height: 14),
-                ProviderTextField(
-                  label: LocaleKeys.backup_passphraseConfirm.tr(),
-                  controller: _confirm,
-                  palette: palette,
-                  obscure: true,
-                  onSubmitted: (_) => unawaited(_submit()),
-                ),
-                const SizedBox(height: 14),
-                ProviderTextField(
-                  label: LocaleKeys.backup_passphraseHint.tr(),
-                  controller: _hint,
-                  palette: palette,
-                  hint: LocaleKeys.backup_passphraseHintPlaceholder.tr(),
-                ),
-              ],
-              if (widget.purpose != BackupPassphrasePurpose.remove) ...[
-                const SizedBox(height: 14),
-                _RememberRow(
-                  value: _remember,
-                  canPersist: _settings.canRememberPassphrase,
-                  onChanged: (value) => setState(() => _remember = value),
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 14),
-                Text(
-                  _error!,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.red),
-                ),
-              ],
-              const SizedBox(height: 14),
-              _Warning(text: _warning),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _working ? null : () => Navigator.of(context).pop(false),
-          child: Text(LocaleKeys.button_cancel.tr()),
-        ),
-        TextButton(
-          onPressed: _working ? null : () => unawaited(_submit()),
-          child: Text(_confirmLabel),
-        ),
-      ],
-    );
-  }
-
-  String get _title => switch (widget.purpose) {
-        BackupPassphrasePurpose.create => LocaleKeys.backup_sealTitle.tr(),
-        BackupPassphrasePurpose.unlock => LocaleKeys.backup_unlockTitle.tr(),
-        BackupPassphrasePurpose.change =>
-          LocaleKeys.backup_changePassphraseTitle.tr(),
-        BackupPassphrasePurpose.remove =>
-          LocaleKeys.backup_removePassphraseTitle.tr(),
-      };
-
-  String get _body => switch (widget.purpose) {
-        BackupPassphrasePurpose.create => LocaleKeys.backup_sealBody.tr(),
-        BackupPassphrasePurpose.unlock => LocaleKeys.backup_unlockBody.tr(),
-        BackupPassphrasePurpose.change =>
-          LocaleKeys.backup_changePassphraseBody.tr(),
-        BackupPassphrasePurpose.remove =>
-          LocaleKeys.backup_removePassphraseBody.tr(),
-      };
-
-  String get _warning => switch (widget.purpose) {
-        BackupPassphrasePurpose.remove =>
-          LocaleKeys.backup_removePassphraseWarning.tr(),
-        _ => LocaleKeys.backup_passphraseWarning.tr(),
-      };
-
-  String get _confirmLabel => switch (widget.purpose) {
-        BackupPassphrasePurpose.create => LocaleKeys.backup_sealConfirm.tr(),
-        BackupPassphrasePurpose.unlock => LocaleKeys.backup_unlockConfirm.tr(),
-        BackupPassphrasePurpose.change => LocaleKeys.button_confirm.tr(),
-        BackupPassphrasePurpose.remove => LocaleKeys.button_remove.tr(),
-      };
-}
 
 /// Asks for the passphrase of one stored copy.
 class _CopyPassphraseDialog extends StatefulWidget {
@@ -547,9 +289,17 @@ class _CopyPassphraseDialogState extends State<_CopyPassphraseDialog> {
 // --- Choosing a destination ---------------------------------------------------
 
 class _DestinationKindDialog extends StatelessWidget {
-  const _DestinationKindDialog({required this.current});
+  const _DestinationKindDialog({
+    required this.current,
+    this.allowAppFlowyCloud = true,
+    this.title,
+    this.body,
+  });
 
   final BackupDestinationKind current;
+  final bool allowAppFlowyCloud;
+  final String? title;
+  final String? body;
 
   @override
   Widget build(BuildContext context) {
@@ -574,7 +324,7 @@ class _DestinationKindDialog extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      LocaleKeys.backup_destinationTitle.tr(),
+                      title ?? LocaleKeys.backup_destinationTitle.tr(),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -583,7 +333,7 @@ class _DestinationKindDialog extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      LocaleKeys.backup_destinationBody.tr(),
+                      body ?? LocaleKeys.backup_destinationBody.tr(),
                       style: TextStyle(
                         fontSize: 12.5,
                         height: 1.4,
@@ -594,12 +344,12 @@ class _DestinationKindDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              for (final kind in const [
+              for (final kind in [
                 BackupDestinationKind.folder,
                 BackupDestinationKind.googleDrive,
                 BackupDestinationKind.oneDrive,
                 BackupDestinationKind.box,
-                BackupDestinationKind.appflowyCloud,
+                if (allowAppFlowyCloud) BackupDestinationKind.appflowyCloud,
               ])
                 _DestinationRow(
                   kind: kind,
@@ -641,7 +391,11 @@ class _DestinationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final premium = PremiumThemeExtension.of(context);
-    final accent = backupDestinationAccent(kind);
+    final accent = LegibleColor.onWash(
+      premium.floatingSurface,
+      backupDestinationAccent(kind),
+      wash: 0.12,
+    );
 
     return InkWell(
       onTap: onTap,
@@ -744,54 +498,9 @@ Color backupDestinationAccent(BackupDestinationKind kind) => switch (kind) {
 
 // --- Shared bits ---------------------------------------------------------------
 
-class _RememberRow extends StatelessWidget {
-  const _RememberRow({
-    required this.value,
-    required this.canPersist,
-    required this.onChanged,
-  });
-
-  final bool value;
-  final bool canPersist;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final premium = PremiumThemeExtension.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                LocaleKeys.backup_rememberPassphrase.tr(),
-                style: TextStyle(fontSize: 13, color: premium.textPrimary),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                canPersist
-                    ? LocaleKeys.backup_rememberPassphraseHint.tr()
-                    : LocaleKeys.backup_rememberPassphraseSession.tr(),
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.35,
-                  color: premium.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Switch.adaptive(value: value, onChanged: onChanged),
-      ],
-    );
-  }
-}
-
-class _StrengthBar extends StatelessWidget {
-  const _StrengthBar({required this.strength});
+/// How well a passphrase being chosen would stand up, as four bars.
+class PassphraseStrengthBar extends StatelessWidget {
+  const PassphraseStrengthBar({super.key, required this.strength});
 
   final PassphraseStrength strength;
 
@@ -834,41 +543,3 @@ class _StrengthBar extends StatelessWidget {
   }
 }
 
-class _Warning extends StatelessWidget {
-  const _Warning({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final premium = PremiumThemeExtension.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: premium.hover,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            size: 15,
-            color: premium.textSecondary,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: premium.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

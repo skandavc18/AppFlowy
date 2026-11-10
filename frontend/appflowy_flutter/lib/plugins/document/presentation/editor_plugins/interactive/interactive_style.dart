@@ -1,4 +1,5 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block_style.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
@@ -132,15 +133,18 @@ enum InteractiveAccent {
     }
 
     final seed = _seed(palette.isDark);
+    final surface = Color.alphaBlend(
+      seed.withValues(alpha: palette.isDark ? 0.16 : 0.13),
+      palette.surface,
+    );
     return InteractiveTone(
-      surface: Color.alphaBlend(
-        seed.withValues(alpha: palette.isDark ? 0.16 : 0.13),
-        palette.surface,
-      ),
+      surface: surface,
       border: seed.withValues(alpha: palette.isDark ? 0.34 : 0.28),
       ink: palette.text,
       inkSoft: palette.textSecondary,
-      strong: seed,
+      // Icons, checks and bars are drawn in this on the tone's own wash; a
+      // yellow seed there sits under 2:1 until it is deepened.
+      strong: LegibleColor.on(surface, seed, minimum: LegibleColor.glyph),
     );
   }
 }
@@ -512,9 +516,10 @@ class _InteractiveButtonState extends State<InteractiveButton> {
           palette.border.withValues(alpha: 0.36 + lift),
         );
       case InteractiveEmphasis.ghost:
+        final wash = 0.10 + lift * 0.6;
         return (
-          accent.withValues(alpha: 0.10 + lift * 0.6),
-          accent,
+          accent.withValues(alpha: wash),
+          LegibleColor.onWash(palette.surface, accent, wash: wash),
           null,
         );
       case InteractiveEmphasis.subtle:
@@ -527,10 +532,16 @@ class _InteractiveButtonState extends State<InteractiveButton> {
     }
   }
 
-  static Color _onColour(Color background) =>
-      background.computeLuminance() > 0.6
-          ? const Color(0xFF1F2430)
-          : Colors.white;
+  /// Whichever of white or ink reads better on [background]. A luminance
+  /// cut-off of 0.6 put white on the dark theme's light sage at about 2:1;
+  /// the two inks actually trade places near 0.18.
+  static Color _onColour(Color background) {
+    const ink = Color(0xFF1F2430);
+    return LegibleColor.contrast(Colors.white, background) >=
+            LegibleColor.contrast(ink, background)
+        ? Colors.white
+        : ink;
+  }
 }
 
 /// A 26px borderless control, the same shape the visual blocks use in their

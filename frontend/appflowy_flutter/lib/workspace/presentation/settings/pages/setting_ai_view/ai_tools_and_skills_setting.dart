@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_e
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:universal_platform/universal_platform.dart';
 
 /// The tools an agent may use and the skills it is taught, shown as part of
 /// Settings ▸ AI so everything the assistant can do is described in one place.
@@ -689,7 +690,9 @@ class _McpServerDialog extends StatefulWidget {
 }
 
 class _McpServerDialogState extends State<_McpServerDialog> {
-  late McpTransport _transport = widget.server?.transport ?? McpTransport.stdio;
+  // Phones cannot run a program for a server, so they start on an address.
+  late McpTransport _transport = widget.server?.transport ??
+      (UniversalPlatform.isMobile ? McpTransport.http : McpTransport.stdio);
   late final TextEditingController _name =
       TextEditingController(text: widget.server?.name ?? '');
   late final TextEditingController _command = TextEditingController(
@@ -830,14 +833,18 @@ class _McpServerDialogState extends State<_McpServerDialog> {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    _Segment(
-                      label: LocaleKeys.aiTools_transportStdio.tr(),
-                      selected: isStdio,
-                      palette: palette,
-                      onTap: () =>
-                          setState(() => _transport = McpTransport.stdio),
-                    ),
-                    const SizedBox(width: 6),
+                    // A program can only be run where there is one to run;
+                    // an existing one stays visible so it can be switched.
+                    if (!UniversalPlatform.isMobile || isStdio) ...[
+                      _Segment(
+                        label: LocaleKeys.aiTools_transportStdio.tr(),
+                        selected: isStdio,
+                        palette: palette,
+                        onTap: () =>
+                            setState(() => _transport = McpTransport.stdio),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
                     _Segment(
                       label: LocaleKeys.aiTools_transportHttp.tr(),
                       selected: !isStdio,

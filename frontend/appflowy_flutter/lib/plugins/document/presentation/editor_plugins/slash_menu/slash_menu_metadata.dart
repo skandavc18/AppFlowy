@@ -1,4 +1,6 @@
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 enum SlashMenuSection {
   suggestions,
@@ -15,6 +17,24 @@ enum SlashMenuSection {
   database,
   advanced,
 }
+
+/// What a section is called, as a heading on desktop and as a group on mobile.
+String slashMenuSectionLabel(SlashMenuSection section) => switch (section) {
+      SlashMenuSection.suggestions =>
+        LocaleKeys.document_toolbar_suggestions.tr(),
+      SlashMenuSection.basicBlocks => 'Basic blocks',
+      SlashMenuSection.interactive => LocaleKeys.interactive_sectionName.tr(),
+      SlashMenuSection.canvas => LocaleKeys.canvas_sectionName.tr(),
+      SlashMenuSection.dashboards => LocaleKeys.dashboard_sectionName.tr(),
+      SlashMenuSection.widgets => LocaleKeys.dashboard_slash_widgets.tr(),
+      SlashMenuSection.media =>
+        LocaleKeys.document_slashMenu_name_fileAndMedia.tr(),
+      SlashMenuSection.collections => LocaleKeys.collections_plural.tr(),
+      SlashMenuSection.database => LocaleKeys.importPanel_database.tr(),
+      SlashMenuSection.diagrams => LocaleKeys.diagrams_sectionName.tr(),
+      SlashMenuSection.advanced =>
+        LocaleKeys.document_slashMenu_name_advanced.tr(),
+    };
 
 class SlashMenuItemMetadata {
   const SlashMenuItemMetadata({

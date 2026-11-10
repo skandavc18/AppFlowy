@@ -70,6 +70,24 @@ class BackupOmission {
       };
 }
 
+/// Why a copy was taken.
+enum BackupReason {
+  /// Asked for, or on a schedule.
+  copy,
+
+  /// Kept automatically before a restore replaced the workspace.
+  beforeRestore,
+
+  /// Kept automatically before this computer joined another computer's
+  /// workspace through sync.
+  beforeJoin;
+
+  bool get isSafetyCopy => this != copy;
+
+  static BackupReason fromValue(Object? value) => BackupReason.values
+      .firstWhere((reason) => reason.name == value, orElse: () => copy);
+}
+
 enum BackupOmissionReason {
   tooLarge,
   unreadable;
@@ -105,6 +123,9 @@ class BackupManifest {
     this.chunkBytes = 0,
     this.hint = '',
     this.omissions = const <BackupOmission>[],
+    this.hasWorkspaceSnapshot = false,
+    this.workspaceId = '',
+    this.reason = BackupReason.copy,
     this.version = backupManifestVersion,
   });
 
@@ -161,6 +182,9 @@ class BackupManifest {
                   ),
             ]
           : const <BackupOmission>[],
+      hasWorkspaceSnapshot: json['snapshot'] == true,
+      workspaceId: readString('workspace_id'),
+      reason: BackupReason.fromValue(json['reason']),
       version: readInt('version'),
     );
   }
@@ -224,6 +248,16 @@ class BackupManifest {
 
   final List<BackupOmission> omissions;
 
+  /// Whether the copy carries a snapshot of the workspace that can be restored
+  /// in place. Copies taken before snapshots existed can only be unpacked into
+  /// a folder.
+  final bool hasWorkspaceSnapshot;
+
+  /// The workspace the snapshot belongs to.
+  final String workspaceId;
+
+  final BackupReason reason;
+
   final int version;
 
   /// The size that matters to somebody looking at a list.
@@ -251,6 +285,9 @@ class BackupManifest {
     BackupCompression? compression,
     int? archiveBytes,
     List<BackupOmission>? omissions,
+    bool? hasWorkspaceSnapshot,
+    String? workspaceId,
+    BackupReason? reason,
   }) =>
       BackupManifest(
         id: id,
@@ -270,6 +307,9 @@ class BackupManifest {
         chunkBytes: chunkBytes ?? this.chunkBytes,
         hint: hint ?? this.hint,
         omissions: omissions ?? this.omissions,
+        hasWorkspaceSnapshot: hasWorkspaceSnapshot ?? this.hasWorkspaceSnapshot,
+        workspaceId: workspaceId ?? this.workspaceId,
+        reason: reason ?? this.reason,
         version: version,
       );
 
@@ -293,6 +333,9 @@ class BackupManifest {
         if (hint.isNotEmpty) 'hint': hint,
         if (omissions.isNotEmpty)
           'omissions': [for (final omission in omissions) omission.toJson()],
+        if (hasWorkspaceSnapshot) 'snapshot': true,
+        if (workspaceId.isNotEmpty) 'workspace_id': workspaceId,
+        if (reason != BackupReason.copy) 'reason': reason.name,
       };
 
   String encode() => const JsonEncoder.withIndent('  ').convert(toJson());

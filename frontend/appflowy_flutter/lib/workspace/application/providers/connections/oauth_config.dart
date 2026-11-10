@@ -371,6 +371,10 @@ class OAuthAppRegistry {
     return null;
   }
 
+  /// Forgets what was read, after an app identity arrived from another
+  /// computer.
+  void invalidate() => _cache.clear();
+
   Future<void> write(ProviderService service, OAuthApp app) =>
       writeFamily(ProviderServices.of(service).family, app);
 

@@ -2,6 +2,28 @@ import 'package:appflowy/shared/workspace_design.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
+/// Lets a host that already shows the page title, such as the mobile settings
+/// app bar, keep a page's description without repeating its title.
+class SettingsHeaderScope extends InheritedWidget {
+  const SettingsHeaderScope({
+    super.key,
+    required this.showTitle,
+    required super.child,
+  });
+
+  final bool showTitle;
+
+  static bool showsTitle(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<SettingsHeaderScope>()
+          ?.showTitle ??
+      true;
+
+  @override
+  bool updateShouldNotify(SettingsHeaderScope oldWidget) =>
+      oldWidget.showTitle != showTitle;
+}
+
 /// Renders a simple header for the settings view
 ///
 class SettingsHeader extends StatelessWidget {
@@ -18,22 +40,27 @@ class SettingsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showTitle = SettingsHeaderScope.showsTitle(context);
+    final descriptionSpacing = showTitle
+        ? const VSpace(WorkspaceTokens.space3)
+        : const SizedBox.shrink();
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Semantics(
-          header: true,
-          child: Text(
-            title,
-            style: WorkspaceTypography.style(
-              context,
-              WorkspaceTextRole.pageTitle,
+        if (showTitle)
+          Semantics(
+            header: true,
+            child: Text(
+              title,
+              style: WorkspaceTypography.style(
+                context,
+                WorkspaceTextRole.pageTitle,
+              ),
             ),
           ),
-        ),
         if (descriptionBuilder != null) ...[
-          const VSpace(WorkspaceTokens.space3),
+          descriptionSpacing,
           DefaultTextStyle(
             style: WorkspaceTypography.style(
               context,
@@ -43,7 +70,7 @@ class SettingsHeader extends StatelessWidget {
             child: descriptionBuilder!(context),
           ),
         ] else if (description?.isNotEmpty == true) ...[
-          const VSpace(WorkspaceTokens.space3),
+          descriptionSpacing,
           Text(
             description!,
             style: WorkspaceTypography.style(

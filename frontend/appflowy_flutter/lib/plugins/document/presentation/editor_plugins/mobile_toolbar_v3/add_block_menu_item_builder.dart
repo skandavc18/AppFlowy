@@ -23,10 +23,14 @@ class AddBlockMenuItemBuilder {
   AddBlockMenuItemBuilder({
     required this.editorState,
     required this.selection,
+    this.showAllBlocks,
   });
 
   final EditorState editorState;
   final Selection selection;
+
+  /// Opens the full `/` menu at the caret, for every block not in this grid.
+  final Future<void> Function()? showAllBlocks;
 
   List<TypeOptionMenuItemValue<String>> buildTypeOptionMenuItemValues(
     BuildContext context,
@@ -62,6 +66,7 @@ class AddBlockMenuItemBuilder {
       ..._buildCalloutMenuItems(colorMap),
       ..._buildCodeMenuItems(colorMap),
       ..._buildMathEquationMenuItems(colorMap),
+      ..._buildAllBlocksMenuItems(colorMap),
     ];
   }
 
@@ -84,6 +89,7 @@ class AddBlockMenuItemBuilder {
       ..._buildCalloutMenuItems(colorMap),
       ..._buildCodeMenuItems(colorMap),
       ..._buildMathEquationMenuItems(colorMap),
+      ..._buildAllBlocksMenuItems(colorMap),
     ];
   }
 
@@ -399,6 +405,30 @@ class AddBlockMenuItemBuilder {
     ];
   }
 
+  /// Everything else `/` offers (interactive blocks, dashboards, diagrams,
+  /// collections, databases...) through the full menu, opened at the caret.
+  List<TypeOptionMenuItemValue<String>> _buildAllBlocksMenuItems(
+    Map<String, Color> colorMap,
+  ) {
+    if (showAllBlocks == null) {
+      return const [];
+    }
+    return [
+      TypeOptionMenuItemValue(
+        value: _allBlocksValue,
+        backgroundColor: colorMap[_allBlocksValue]!,
+        text: LocaleKeys.document_slashMenu_name_allBlocks.tr(),
+        icon: FlowySvgs.m_toolbar_add_m,
+        onTap: (context, __) => requestAllBlocksMenu(
+          context,
+          editorState: editorState,
+          selection: selection,
+          showAllBlocks: showAllBlocks!,
+        ),
+      ),
+    ];
+  }
+
   Map<String, Color> _colorMap(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     if (isDarkMode) {
@@ -417,6 +447,7 @@ class AddBlockMenuItemBuilder {
         CalloutBlockKeys.type: const Color(0xFF66599B),
         CodeBlockKeys.type: const Color(0xFF66599B),
         MathEquationBlockKeys.type: const Color(0xFF66599B),
+        _allBlocksValue: const Color(0xFF5465A1),
       };
     }
     return {
@@ -434,6 +465,7 @@ class AddBlockMenuItemBuilder {
       CalloutBlockKeys.type: const Color(0xFFCABDFF),
       CodeBlockKeys.type: const Color(0xFFCABDFF),
       MathEquationBlockKeys.type: const Color(0xFFCABDFF),
+      _allBlocksValue: const Color(0xFFBECCFF),
     };
   }
 
@@ -479,3 +511,5 @@ class AddBlockMenuItemBuilder {
     );
   }
 }
+
+const _allBlocksValue = 'all_blocks';

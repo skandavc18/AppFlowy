@@ -8,6 +8,8 @@ import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block_fullscreen.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/legible_color.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:flutter/material.dart';
 
 /// The kinds of link that play rather than read.
@@ -25,11 +27,20 @@ const _playableKinds = {
 };
 
 /// [color] shifted until it reads as text on the workspace's own background:
-/// a site's yellow or pink is a fine fill but a poor letter.
-Color webEmbedReadableColor(Color color, Brightness brightness) =>
-    brightness == Brightness.dark
+/// a site's yellow or pink is a fine fill but a poor letter. The softening is
+/// the look; the contrast floor is measured against the chrome of that
+/// brightness under the site's own tint, the darkest light surface and the
+/// lightest dark one, so it holds on every canvas.
+Color webEmbedReadableColor(Color color, Brightness brightness) {
+  final dark = brightness == Brightness.dark;
+  return LegibleColor.onWash(
+    dark ? PremiumTheme.darkChrome : PremiumTheme.lightChrome,
+    dark
         ? Color.lerp(color, Colors.white, 0.3)!
-        : Color.lerp(color, Colors.black, 0.18)!;
+        : Color.lerp(color, Colors.black, 0.18)!,
+    wash: dark ? 0.24 : 0.13,
+  );
+}
 
 /// The site's icon on a tint of its colour.
 class WebEmbedMark extends StatelessWidget {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' show Color, ColorFilter;
 
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
@@ -88,12 +89,19 @@ abstract class MapTileProvider {
   /// Servers identify callers by this; OpenStreetMap requires a real one.
   Map<String, String> get headers => const {};
 
+  /// How this provider's pictures are toned to suit [style], for a provider
+  /// with only one look of its own. Null draws them as they come.
+  ColorFilter? toneFor(MapStyleName style) => null;
+
   /// Does any handshake the service needs before it will serve tiles.
   Future<void> warmUp(MapStyleName style) async {}
 }
 
-/// OpenStreetMap's own tiles. Needs no key, so this is what a fresh
-/// installation draws.
+/// OpenStreetMap's own tiles. Needs no key, so this is what a map draws until
+/// a Google key is configured.
+///
+/// There is one street map, in full colour; the application's light, dark and
+/// paper looks are toned from it as it is drawn.
 class OpenStreetMapTileProvider extends MapTileProvider {
   const OpenStreetMapTileProvider();
 
@@ -107,12 +115,20 @@ class OpenStreetMapTileProvider extends MapTileProvider {
   int get maxZoom => 19;
 
   @override
-  bool supports(MapStyleName style) => style == MapStyleName.streets;
+  bool supports(MapStyleName style) => style != MapStyleName.satellite;
 
   @override
   Map<String, String> get headers => const {
         // Their policy requires an application that can be identified.
         'User-Agent': 'AppFlowy/0.11 (https://appflowy.io)',
+      };
+
+  @override
+  ColorFilter? toneFor(MapStyleName style) => switch (style) {
+        MapStyleName.light => _MapTones.light,
+        MapStyleName.dark => _MapTones.dark,
+        MapStyleName.paper => _MapTones.paper,
+        _ => null,
       };
 
   @override
@@ -124,8 +140,120 @@ class OpenStreetMapTileProvider extends MapTileProvider {
   }
 }
 
-/// CARTO's basemaps, which come in a light and a dark cut — the two the
-/// application's own appearances need. Also keyless.
+/// The application's looks, toned from a full-colour street map.
+abstract final class _MapTones {
+  /// Softened, so the map sits back behind what is pinned on it.
+  static final light = ColorFilter.matrix(
+    _mix(_saturate(0.55), _flat(const Color(0xFFFFFFFF)), 0.1),
+  );
+
+  /// Lightness turned over with the hues kept, settled onto the dark canvas
+  /// and quietened.
+  static final dark = ColorFilter.matrix(
+    _then(
+      _then(_then(_invert, _hueTurn), _scale(0.85, 22)),
+      _saturate(0.75),
+    ),
+  );
+
+  /// Warm and quiet: a sepia ramp from the paper's ink to its sheet, with a
+  /// little of the map's own colour left to tell water and parks apart.
+  static final paper = ColorFilter.matrix(
+    _mix(
+      _ramp(const Color(0xFF3B352E), const Color(0xFFFBF5E9)),
+      _identity,
+      0.28,
+    ),
+  );
+
+  static const _r = 0.2126;
+  static const _g = 0.7152;
+  static const _b = 0.0722;
+
+  static const _identity = <double>[
+    1, 0, 0, 0, 0, //
+    0, 1, 0, 0, 0, //
+    0, 0, 1, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ];
+
+  static const _invert = <double>[
+    -1, 0, 0, 0, 255, //
+    0, -1, 0, 0, 255, //
+    0, 0, -1, 0, 255, //
+    0, 0, 0, 1, 0, //
+  ];
+
+  /// Hues turned half way round, lightness kept.
+  static const _hueTurn = <double>[
+    -0.574, 1.43, 0.144, 0, 0, //
+    0.426, 0.43, 0.144, 0, 0, //
+    0.426, 1.43, -0.856, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ];
+
+  static List<double> _saturate(double s) => [
+        _r * (1 - s) + s, _g * (1 - s), _b * (1 - s), 0, 0, //
+        _r * (1 - s), _g * (1 - s) + s, _b * (1 - s), 0, 0, //
+        _r * (1 - s), _g * (1 - s), _b * (1 - s) + s, 0, 0, //
+        0, 0, 0, 1, 0, //
+      ];
+
+  static List<double> _scale(double factor, double offset) => [
+        factor, 0, 0, 0, offset, //
+        0, factor, 0, 0, offset, //
+        0, 0, factor, 0, offset, //
+        0, 0, 0, 1, 0, //
+      ];
+
+  /// Every colour drawn as [color].
+  static List<double> _flat(Color color) => [
+        0, 0, 0, 0, color.r * 255, //
+        0, 0, 0, 0, color.g * 255, //
+        0, 0, 0, 0, color.b * 255, //
+        0, 0, 0, 1, 0, //
+      ];
+
+  /// Lightness laid onto a ramp from [dark] to [light].
+  static List<double> _ramp(Color dark, Color light) => [
+        for (final (low, high) in [
+          (dark.r, light.r),
+          (dark.g, light.g),
+          (dark.b, light.b),
+        ]) ...[
+          (high - low) * _r,
+          (high - low) * _g,
+          (high - low) * _b,
+          0,
+          low * 255,
+        ],
+        0, 0, 0, 1, 0, //
+      ];
+
+  /// [a] and [b] blended, [t] of the way to [b].
+  static List<double> _mix(List<double> a, List<double> b, double t) => [
+        for (var i = 0; i < 20; i++) a[i] * (1 - t) + b[i] * t,
+      ];
+
+  /// [first], then [second].
+  static List<double> _then(List<double> first, List<double> second) {
+    double at(List<double> m, int row, int column) =>
+        row == 4 ? (column == 4 ? 1 : 0) : m[row * 5 + column];
+    return [
+      for (var row = 0; row < 4; row++)
+        for (var column = 0; column < 5; column++)
+          [
+            for (var k = 0; k < 5; k++)
+              at(second, row, k) * at(first, k, column),
+          ].reduce((sum, value) => sum + value),
+    ];
+  }
+}
+
+/// CARTO's basemaps, which come in a light and a dark cut.
+///
+/// CARTO now answers every tile asked for without an API key with a notice
+/// instead of the map, so it is only used when asked for by name.
 class CartoTileProvider extends MapTileProvider {
   const CartoTileProvider();
 
@@ -201,9 +329,7 @@ class GoogleTileProvider extends MapTileProvider {
   }
 
   static MapTileProvider _fallbackFor(MapStyleName style) =>
-      const CartoTileProvider().supports(style)
-          ? const CartoTileProvider()
-          : const OpenStreetMapTileProvider();
+      const OpenStreetMapTileProvider();
 
   @override
   MapProviderKind get kind =>
@@ -219,6 +345,10 @@ class GoogleTileProvider extends MapTileProvider {
   @override
   Map<String, String> get headers =>
       _usingFallback ? _fallbackFor(_lastStyle).headers : const {};
+
+  @override
+  ColorFilter? toneFor(MapStyleName style) =>
+      _usingFallback ? _fallbackFor(style).toneFor(style) : null;
 
   @override
   bool supports(MapStyleName style) => apiKey.isNotEmpty;
@@ -294,8 +424,9 @@ class GoogleTileProvider extends MapTileProvider {
 
 /// Picks the provider that can actually draw the wanted look.
 ///
-/// Google is the default and is used whenever a key is configured; the keyless
-/// providers keep the map working out of the box.
+/// Google is the default and is used whenever a key is configured; without
+/// one OpenStreetMap keeps the map working out of the box. CARTO is only used
+/// when asked for by name.
 MapTileProvider resolveMapProvider({
   required MapProviderKind preferred,
   required MapStyleName style,
@@ -304,11 +435,8 @@ MapTileProvider resolveMapProvider({
   if (preferred == MapProviderKind.google && apiKey.isNotEmpty) {
     return GoogleTileProvider(apiKey: apiKey);
   }
-  if (preferred == MapProviderKind.openStreetMap &&
-      const OpenStreetMapTileProvider().supports(style)) {
-    return const OpenStreetMapTileProvider();
-  }
-  if (const CartoTileProvider().supports(style)) {
+  if (preferred == MapProviderKind.carto &&
+      const CartoTileProvider().supports(style)) {
     return const CartoTileProvider();
   }
   return const OpenStreetMapTileProvider();

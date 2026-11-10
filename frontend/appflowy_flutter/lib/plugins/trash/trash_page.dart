@@ -37,19 +37,26 @@ class _TrashPageState extends State<TrashPage> {
 
   @override
   Widget build(BuildContext context) {
-    const horizontalPadding = 80.0;
     return BlocProvider(
       create: (context) => getIt<TrashBloc>()..add(const TrashEvent.initial()),
       child: BlocBuilder<TrashBloc, TrashState>(
         builder: (context, state) {
-          return SizedBox.expand(
-            child: Column(
-              children: [
-                _renderTopBar(context, state),
-                const VSpace(32),
-                _renderTrashList(context, state),
-              ],
-            ).padding(horizontal: horizontalPadding, vertical: 48),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              // A phone cannot spare the desktop's 80 a side: the title was
+              // squeezed to an ellipsis beside the two buttons.
+              final horizontalPadding =
+                  constraints.maxWidth < 600 ? 16.0 : 80.0;
+              return SizedBox.expand(
+                child: Column(
+                  children: [
+                    _renderTopBar(context, state),
+                    const VSpace(32),
+                    _renderTrashList(context, state),
+                  ],
+                ).padding(horizontal: horizontalPadding, vertical: 48),
+              );
+            },
           );
         },
       ),
@@ -94,12 +101,19 @@ class _TrashPageState extends State<TrashPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FlowyText.semibold(
-            LocaleKeys.trash_text.tr(),
-            fontSize: FontSizes.s16,
-            color: Theme.of(context).colorScheme.tertiary,
+          // On a narrow row the title gives way to the actions rather than
+          // pushing them past the edge.
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.topStart,
+              child: FlowyText.semibold(
+                LocaleKeys.trash_text.tr(),
+                fontSize: FontSizes.s16,
+                color: Theme.of(context).colorScheme.tertiary,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ),
-          const Spacer(),
           IntrinsicWidth(
             child: FlowyButton(
               text: FlowyText.medium(

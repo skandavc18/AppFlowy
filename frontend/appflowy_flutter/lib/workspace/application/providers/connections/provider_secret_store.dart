@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:appflowy/core/config/kv.dart';
+import 'package:appflowy/shared/linux_keyring.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:ffi/ffi.dart';
@@ -14,28 +15,43 @@ import 'package:ffi/ffi.dart';
 /// written to [KeyValueStorage] in the clear — that is a plain file. On Windows
 /// the token is sealed with DPAPI first, which binds the stored blob to the
 /// signed-in Windows account: it is useless to another user and useless on
-/// another machine. Anywhere else the token is held for the session only, and
-/// the interface says so rather than pretending the connection is permanent.
+/// another machine. On Linux it goes into the desktop keyring, which the
+/// person's login encrypts and unlocks in the same way. Anywhere else, or when
+/// there is no keyring, the token is held for the session only, and the
+/// interface says so rather than pretending the connection is permanent.
 ///
 /// A provider *password* is never stored at all, for any service: the
 /// connection dialogs only ever ask for a token the service itself issued, and
 /// OAuth never sees one.
 class ProviderSecretStore {
-  ProviderSecretStore({KeyValueStorage? storage}) : _storage = storage;
+  ProviderSecretStore({KeyValueStorage? storage, DesktopKeyring? keyring})
+      : _storage = storage,
+        _keyring = keyring ?? LinuxKeyring.instance;
 
   static const _prefix = 'appflowy_provider_secret_';
+  static const _keyringScope = 'provider';
 
   final KeyValueStorage? _storage;
-  final Map<String, String> _session = <String, String>{};
+  final DesktopKeyring _keyring;
+
+  // One cache for every store over the same storage: a token written through
+  // one of them — by sync, say — is the one all the others read.
+  static final Expando<Map<String, String>> _sessions = Expando();
+  static final Object _defaultOwner = Object();
+  static final KeyValueStorage _nullStorage = _NullStorage();
+
+  Map<String, String> get _session =>
+      _sessions[_storage ?? _defaultOwner] ??= <String, String>{};
 
   KeyValueStorage get _kv =>
       _storage ??
       (getIt.isRegistered<KeyValueStorage>()
           ? getIt<KeyValueStorage>()
-          : _NullStorage());
+          : _nullStorage);
 
   /// Whether a token survives closing the application on this machine.
-  bool get canPersist => Platform.isWindows && _dpapi.isAvailable;
+  bool get canPersist =>
+      (Platform.isWindows && _dpapi.isAvailable) || _keyring.isAvailable;
 
   bool get isSessionOnly => !canPersist;
 
@@ -43,6 +59,26 @@ class ProviderSecretStore {
   /// between sessions too.
   Future<void> write(String connectionId, String secret) async {
     _session[connectionId] = secret;
+    if (_keyring.isAvailable) {
+      try {
+        if (secret.isEmpty) {
+          await _keyring.clear(scope: _keyringScope, id: connectionId);
+        } else {
+          await _keyring.store(
+            scope: _keyringScope,
+            id: connectionId,
+            label: 'AppFlowy: $connectionId',
+            secret: secret,
+          );
+        }
+      } on KeyringError catch (error) {
+        Log.warn(
+          'The desktop keyring did not keep a provider token, so it is held '
+          'for this session only: ${error.detail}',
+        );
+      }
+      return;
+    }
     if (!canPersist) {
       Log.info(
         'Provider tokens are held for this session only on this platform.',
@@ -69,6 +105,9 @@ class ProviderSecretStore {
     final live = _session[connectionId];
     if (live != null) {
       return live;
+    }
+    if (_keyring.isAvailable) {
+      return _readKeyring(connectionId);
     }
     if (!canPersist) {
       return null;
@@ -100,9 +139,43 @@ class ProviderSecretStore {
   Future<bool> has(String connectionId) async =>
       (await read(connectionId))?.isNotEmpty ?? false;
 
+  Future<String?> _readKeyring(String connectionId) async {
+    try {
+      final secret = await _keyring.lookup(
+        scope: _keyringScope,
+        id: connectionId,
+      );
+      // A write made while this read was out wins over what it found.
+      final written = _session[connectionId];
+      if (written != null) {
+        return written;
+      }
+      if (secret != null) {
+        _session[connectionId] = secret;
+      }
+      return secret;
+    } on KeyringError catch (error) {
+      Log.warn(
+        'A provider token could not be read from the desktop keyring: '
+        '${error.detail}',
+      );
+      return _session[connectionId];
+    }
+  }
+
   /// Drops the token everywhere. This is what disconnecting a service means.
   Future<void> forget(String connectionId) async {
     _session.remove(connectionId);
+    if (_keyring.isAvailable) {
+      try {
+        await _keyring.clear(scope: _keyringScope, id: connectionId);
+      } on KeyringError catch (error) {
+        Log.warn(
+          'A provider token could not be removed from the desktop keyring: '
+          '${error.detail}',
+        );
+      }
+    }
     await _kv.remove('$_prefix$connectionId');
   }
 }

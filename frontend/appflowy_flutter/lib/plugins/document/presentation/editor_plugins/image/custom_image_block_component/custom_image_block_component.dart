@@ -17,6 +17,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resi
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/custom_image_cache_manager.dart';
 import 'package:appflowy/shared/permission/permission_checker.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
@@ -619,9 +620,11 @@ bool isValidImageBlockSource(dynamic source) {
         uri.userInfo.isEmpty;
   }
   try {
-    final file =
-        uri?.isScheme('file') == true ? File.fromUri(uri!) : File(source);
-    return file.existsSync();
+    final file = uri?.isScheme('file') == true
+        ? File.fromUri(uri!)
+        : File(resolveWorkspaceFilePath(source));
+    return file.existsSync() ||
+        File(resolveWorkspaceFilePath(file.path)).existsSync();
   } on ArgumentError {
     return false;
   } on FileSystemException {

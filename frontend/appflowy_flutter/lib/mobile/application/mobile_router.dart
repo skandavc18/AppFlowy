@@ -5,13 +5,72 @@ import 'package:appflowy/mobile/presentation/chat/mobile_chat_screen.dart';
 import 'package:appflowy/mobile/presentation/database/board/mobile_board_screen.dart';
 import 'package:appflowy/mobile/presentation/database/mobile_calendar_screen.dart';
 import 'package:appflowy/mobile/presentation/database/mobile_grid_screen.dart';
+import 'package:appflowy/mobile/presentation/plugin/mobile_plugin_screen.dart';
 import 'package:appflowy/mobile/presentation/presentation.dart';
+import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/startup/tasks/app_widget.dart';
 import 'package:appflowy/workspace/application/recent/cached_recent_service.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+/// Plugins that are workspace pages, which mobile opens through their view's
+/// own route so the page gets its app bar, sharing and more menu.
+const _pagePluginTypes = {
+  PluginType.document,
+  PluginType.grid,
+  PluginType.board,
+  PluginType.calendar,
+  PluginType.chat,
+};
+
+({String id, DateTime at})? _lastMobileOpen;
+
+/// Lets go of a plugin this never opened. Only its notifier exists before
+/// [Plugin.init]; a page plugin's own dispose also closes the blocs init
+/// creates, and throws on one that was never initialised — which used to stop
+/// the page from opening at all.
+void _release(Plugin plugin) => plugin.notifier?.dispose();
+
+/// Opens [plugin] on mobile, where pages are routes rather than tabs.
+///
+/// Installed as [TabsBloc.mobileOpener], so every feature that opens a page
+/// through the tabs on desktop opens it on mobile too.
+Future<void> openPluginOnMobile(Plugin plugin, ViewPB? view) async {
+  if (plugin.pluginType == PluginType.blank) return;
+  final id = view?.id ?? plugin.id;
+  final now = DateTime.now();
+  final last = _lastMobileOpen;
+  // Several desktop paths open the same page twice in quick succession.
+  if (last != null &&
+      last.id == id &&
+      now.difference(last.at) < const Duration(milliseconds: 500)) {
+    _release(plugin);
+    return;
+  }
+  _lastMobileOpen = (id: id, at: now);
+
+  final context = AppGlobals.rootNavKey.currentContext;
+  if (context == null) {
+    _release(plugin);
+    return;
+  }
+  if (!_pagePluginTypes.contains(plugin.pluginType)) {
+    await context.push(
+      MobilePluginScreen.location(plugin.pluginType),
+      extra: plugin,
+    );
+    return;
+  }
+  // The page's route builds its own plugin from the view.
+  _release(plugin);
+  final target = view ?? (await ViewBackendService.getView(id)).toNullable();
+  if (target == null || !context.mounted) return;
+  await context.pushView(target);
+}
 
 extension MobileRouter on BuildContext {
   Future<void> pushView(

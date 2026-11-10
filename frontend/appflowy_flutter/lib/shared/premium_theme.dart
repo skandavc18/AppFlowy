@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -257,9 +258,10 @@ abstract final class PremiumTheme {
     const neutralSidebar = lightChrome;
     const textPrimary = Color(0xFF252522);
     const lightOnAccent = Color(0xFFFAFAF6);
-    final onAccent = _contrastRatio(lightOnAccent, accent) >= 4.5
-        ? lightOnAccent
-        : textPrimary;
+    final onAccent =
+        LegibleColor.contrast(lightOnAccent, accent) >= LegibleColor.text
+            ? lightOnAccent
+            : textPrimary;
     final sidebar = preserveThemeCharacter
         ? Color.alphaBlend(
             legacy.sidebarBg.withValues(alpha: 0.22),
@@ -1090,17 +1092,5 @@ abstract final class PremiumTheme {
     return hsl
         .withLightness((hsl.lightness + amount).clamp(0.0, 1.0))
         .toColor();
-  }
-
-  static double _contrastRatio(Color foreground, Color background) {
-    final foregroundLuminance = foreground.computeLuminance();
-    final backgroundLuminance = background.computeLuminance();
-    final lighter = foregroundLuminance > backgroundLuminance
-        ? foregroundLuminance
-        : backgroundLuminance;
-    final darker = foregroundLuminance > backgroundLuminance
-        ? backgroundLuminance
-        : foregroundLuminance;
-    return (lighter + 0.05) / (darker + 0.05);
   }
 }

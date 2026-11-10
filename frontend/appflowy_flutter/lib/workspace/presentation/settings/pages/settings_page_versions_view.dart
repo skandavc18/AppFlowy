@@ -523,14 +523,16 @@ class _Usage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Row(
+        // Wraps rather than running the second button off a phone's edge.
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
           children: [
             OutlinedButton.icon(
               onPressed: sweeping ? null : () => unawaited(onSweep()),
               icon: const Icon(Icons.cleaning_services_rounded, size: 15),
               label: Text(LocaleKeys.pageVersions_settingsSweepNow.tr()),
             ),
-            const SizedBox(width: 10),
             TextButton(
               onPressed: measured == null || measured.isEmpty
                   ? null

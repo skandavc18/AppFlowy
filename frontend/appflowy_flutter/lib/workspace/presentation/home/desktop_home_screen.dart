@@ -43,6 +43,7 @@ import 'external_file_open_host.dart';
 import 'home_stack.dart';
 import 'menu/sidebar/slider_menu_hover_trigger.dart';
 import 'startup_home.dart';
+import 'workspace_sync_host.dart';
 
 class DesktopHomeScreen extends StatelessWidget {
   const DesktopHomeScreen({super.key});
@@ -145,19 +146,24 @@ class DesktopHomeScreen extends StatelessWidget {
                         selector: (state) =>
                             state.currentWorkspace?.workspaceId ??
                             workspaceLatest.workspaceId,
-                        builder: (context, workspaceId) => StartupHome(
+                        builder: (context, workspaceId) => WorkspaceSyncHost(
+                          userProfile: userProfile,
                           workspaceId: workspaceId,
-                          child: ExternalFileOpenHost(
-                            child: HomeHotKeys(
-                              userProfile: userProfile,
-                              child: FlowyContainer(
-                                Theme.of(context).colorScheme.surface,
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) => _buildBody(
-                                    context,
-                                    userProfile,
-                                    workspaceLatest,
-                                    constraints,
+                          child: StartupHome(
+                            workspaceId: workspaceId,
+                            child: ExternalFileOpenHost(
+                              child: HomeHotKeys(
+                                userProfile: userProfile,
+                                child: FlowyContainer(
+                                  Theme.of(context).colorScheme.surface,
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) =>
+                                        _buildBody(
+                                      context,
+                                      userProfile,
+                                      workspaceLatest,
+                                      constraints,
+                                    ),
                                   ),
                                 ),
                               ),

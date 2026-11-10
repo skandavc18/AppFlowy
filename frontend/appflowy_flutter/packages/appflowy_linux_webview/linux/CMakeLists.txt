@@ -8,6 +8,9 @@ set(PLUGIN_NAME "appflowy_linux_webview_plugin")
 
 # WebKitGTK is loaded at runtime (see the .cc file), so neither its headers
 # nor its library are needed to build, and AppFlowy still starts without it.
+# Frames go to Flutter as GL textures, through libepoxy as Flutter's own are.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
 add_library(${PLUGIN_NAME} SHARED
   "appflowy_linux_webview_plugin.cc"
 )
@@ -19,6 +22,7 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
+target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::EPOXY)
 target_link_libraries(${PLUGIN_NAME} PRIVATE ${CMAKE_DL_LIBS})
 
 set(appflowy_linux_webview_bundled_libraries

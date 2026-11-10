@@ -62,6 +62,7 @@ class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
             _Status(
               configured: configured,
               unlocked: _vault.isUnlocked,
+              usesAppPassword: policy.usesAppPassword,
             ),
             const SizedBox(height: 14),
             if (!configured)
@@ -105,7 +106,9 @@ class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
               const SizedBox(height: 12),
               _Action(
                 label: LocaleKeys.encryption_changeTitle.tr(),
-                description: LocaleKeys.encryption_changeBody.tr(),
+                description: policy.usesAppPassword
+                    ? LocaleKeys.encryption_changeBodyApp.tr()
+                    : LocaleKeys.encryption_changeBody.tr(),
                 icon: Icons.password_rounded,
                 onPressed: () async {
                   final done =
@@ -205,10 +208,15 @@ class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
 }
 
 class _Status extends StatelessWidget {
-  const _Status({required this.configured, required this.unlocked});
+  const _Status({
+    required this.configured,
+    required this.unlocked,
+    required this.usesAppPassword,
+  });
 
   final bool configured;
   final bool unlocked;
+  final bool usesAppPassword;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +249,18 @@ class _Status extends StatelessWidget {
             color: premium.textPrimary,
           ),
         ),
+        if (configured) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              usesAppPassword
+                  ? LocaleKeys.encryption_stateUsesApp.tr()
+                  : LocaleKeys.encryption_stateUsesOwn.tr(),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12.5, color: premium.textSecondary),
+            ),
+          ),
+        ],
       ],
     );
   }

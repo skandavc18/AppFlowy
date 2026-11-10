@@ -10,6 +10,7 @@ export 'hot_key.dart';
 export 'load_plugin.dart';
 export 'localization.dart';
 export 'memory_leak_detector.dart';
+export 'office_editor_warm_up_task.dart';
 export 'platform_error_catcher.dart';
 export 'platform_service.dart';
 export 'recent_service_task.dart';

@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
@@ -332,7 +333,11 @@ class _ExternalEmbedBlockComponentState
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Icon(info.icon, size: 14, color: info.accent),
+            Icon(
+              info.icon,
+              size: 14,
+              color: LegibleColor.on(palette.surface, info.accent),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

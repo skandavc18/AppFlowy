@@ -18,6 +18,7 @@ import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_optical_size.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy/shared/page_icon.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -1080,6 +1081,8 @@ class _SourceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final info = source.info;
     final remote = source.isRemote;
+    final accent =
+        remote ? LegibleColor.on(palette.background, info.accent) : null;
     return Tooltip(
       message: LocaleKeys.providers_changeSource.tr(),
       child: TextButton(
@@ -1093,7 +1096,7 @@ class _SourceButton extends StatelessWidget {
         },
         style: WorkspaceChrome.controlStyle(
           context,
-          accent: remote ? info.accent : null,
+          accent: accent,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1101,7 +1104,7 @@ class _SourceButton extends StatelessWidget {
             WorkspaceGlyph(
               remote ? info.icon : Icons.cloud_sync_rounded,
               size: 15,
-              color: remote ? info.accent : palette.textSecondary,
+              color: accent ?? palette.textSecondary,
             ),
             const SizedBox(width: 6),
             Flexible(

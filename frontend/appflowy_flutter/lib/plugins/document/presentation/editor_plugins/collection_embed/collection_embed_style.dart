@@ -488,7 +488,7 @@ class CollectionEmbedEmpty extends StatelessWidget {
               Icon(
                 icon ?? theme.icon,
                 size: compact ? 20 : 26,
-                color: theme.textFaint.withValues(alpha: 0.6),
+                color: theme.textFaint,
               ),
               SizedBox(height: compact ? 7 : 10),
               Text(

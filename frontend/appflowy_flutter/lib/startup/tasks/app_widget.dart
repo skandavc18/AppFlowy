@@ -59,7 +59,10 @@ import 'prelude.dart';
 
 /// Opens what [action] points at once the current frame has finished.
 @visibleForTesting
-void scheduleNavigationAction(NavigationAction? action) {
+void scheduleNavigationAction(
+  NavigationAction? action, {
+  List<NavigationAction> nextActions = const [],
+}) {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (action?.type == ActionType.openView && UniversalPlatform.isDesktop) {
       final view = action!.arguments?[ActionArgumentKeys.view] as ViewPB?;
@@ -72,6 +75,18 @@ void scheduleNavigationAction(NavigationAction? action) {
             PluginArgumentKeys.selection: nodePath,
             PluginArgumentKeys.blockId: blockId,
           },
+        );
+      }
+    } else if (action?.type == ActionType.openView &&
+        UniversalPlatform.isMobile &&
+        // A row that follows opens its database page itself.
+        !nextActions.any((next) => next.type == ActionType.openRow)) {
+      final view = action!.arguments?[ActionArgumentKeys.view] as ViewPB?;
+      final blockId = action.arguments?[ActionArgumentKeys.blockId];
+      if (view != null) {
+        AppGlobals.rootNavKey.currentContext?.pushView(
+          view,
+          blockId: blockId is String ? blockId : null,
         );
       }
     } else if (action?.type == ActionType.openRow &&
@@ -269,10 +284,17 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
           ),
           BlocProvider.value(value: getIt<RenameViewBloc>()),
           BlocProvider.value(value: getIt<ActionNavigationBloc>()),
+          // Desktop provides the tabs inside its home screen. Mobile pages are
+          // routes, so shared page widgets find the same bloc here.
+          if (UniversalPlatform.isMobile)
+            BlocProvider<TabsBloc>.value(value: getIt<TabsBloc>()),
         ],
         child: BlocListener<ActionNavigationBloc, ActionNavigationState>(
           listenWhen: (_, curr) => curr.action != null,
-          listener: (context, state) => scheduleNavigationAction(state.action),
+          listener: (context, state) => scheduleNavigationAction(
+            state.action,
+            nextActions: state.nextActions,
+          ),
           child: BlocBuilder<AppearanceSettingsCubit, AppearanceSettingsState>(
             builder: (context, state) {
               _setSystemOverlayStyle(state);

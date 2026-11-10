@@ -8,9 +8,12 @@
 // starts.
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/backup/backup_crypto.dart';
+import 'package:appflowy/workspace/application/backup/backup_manifest.dart';
 import 'package:appflowy/workspace/application/backup/backup_policy.dart';
 import 'package:appflowy/workspace/application/backup/backup_target.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_secret_store.dart';
@@ -159,6 +162,46 @@ class BackupSettings extends ChangeNotifier {
     }
   }
 
+  /// The backup settings as they follow the workspace to other computers:
+  /// not when or how this computer last took a copy, and no folder that is
+  /// only a path on this computer.
+  Future<Map<String, Object?>> syncedPolicy() async {
+    await ensureLoaded();
+    final json = _policy.toJson()..remove('local_copy_path');
+    if (_policy.destination.kind == BackupDestinationKind.folder) {
+      json.remove('destination');
+    }
+    return json;
+  }
+
+  /// Takes backup settings that arrived from another computer, keeping this
+  /// computer's own folders.
+  Future<void> adoptSyncedPolicy(Map<String, Object?> synced) async {
+    await ensureLoaded();
+    final local = _policy.toJson();
+    final incoming = synced['destination'];
+    final keepDestination = incoming is! Map ||
+        BackupDestinationKind.fromValue(incoming['kind']) ==
+            BackupDestinationKind.folder;
+    final next = BackupPolicy.fromJson({
+      ...local,
+      ...synced,
+      'local_copy_path': local['local_copy_path'],
+      if (keepDestination) 'destination': local['destination'],
+    });
+    if (next.salt != _policy.salt || next.verifier != _policy.verifier) {
+      _wipeKey();
+    }
+    await update(next);
+  }
+
+  /// Puts away the key made from the remembered passphrase, after a new one
+  /// arrived from another computer; the next copy makes it again.
+  void forgetKeyInMemory() {
+    _wipeKey();
+    notifyListeners();
+  }
+
   Future<void> update(BackupPolicy policy) async {
     await ensureLoaded();
     if (policy == _policy) {
@@ -240,6 +283,91 @@ class BackupSettings extends ChangeNotifier {
   }
 
   // --- The passphrase ---------------------------------------------------------
+
+  /// Seals copies with the AppFlowy password [password] from now on — and,
+  /// with [turnOn], starts sealing them. Copies already taken keep needing
+  /// what they were sealed with; each one's manifest says how to try.
+  Future<void> useAppPassword(String password, {bool turnOn = false}) async {
+    await ensureLoaded();
+    if (!_policy.encrypt && !turnOn) {
+      return;
+    }
+    final iterations = _policy.iterations;
+    final sealed = await _sealWith(password, iterations);
+    if (sealed == null) {
+      throw StateError('The backup key did not verify against itself.');
+    }
+    await update(
+      _policy.copyWith(
+        encrypt: true,
+        salt: sealed.salt,
+        verifier: sealed.verifier,
+        hint: '',
+      ),
+    );
+    unlockWith(sealed.key);
+    // A passphrase kept from before copies used the AppFlowy password is not
+    // needed any more.
+    await forgetRememberedPassphrase();
+  }
+
+  /// The key [password] opens [manifest]'s copy with, or null when the copy
+  /// was sealed with another password.
+  static Future<Uint8List?> keyForCopy(
+    String password,
+    BackupManifest manifest,
+  ) =>
+      _open(password, manifest.salt, manifest.verifier, manifest.iterations);
+
+  /// The key [password] opens copies sealed under this policy with, or null
+  /// when the policy was made from another password.
+  Future<Uint8List?> keyFromAppPassword(String password) async {
+    await ensureLoaded();
+    final policy = _policy;
+    if (!policy.encrypt) {
+      return null;
+    }
+    return _open(password, policy.salt, policy.verifier, policy.iterations);
+  }
+
+  // Static, so each thread is handed nothing but what it works on.
+  static Future<({String salt, String verifier, Uint8List key})?> _sealWith(
+    String password,
+    int iterations,
+  ) =>
+      Isolate.run(() {
+        final made = newBackupPassphrase(
+          passphrase: password,
+          verifierPhrase: BackupPolicy.verifierPhrase,
+          iterations: iterations,
+        );
+        final key = unlockBackupKey(
+          passphrase: password,
+          salt: made.salt,
+          verifier: made.verifier,
+          verifierPhrase: BackupPolicy.verifierPhrase,
+          iterations: iterations,
+        );
+        return key == null
+            ? null
+            : (salt: made.salt, verifier: made.verifier, key: key);
+      });
+
+  static Future<Uint8List?> _open(
+    String password,
+    String salt,
+    String verifier,
+    int iterations,
+  ) =>
+      Isolate.run(
+        () => unlockBackupKey(
+          passphrase: password,
+          salt: salt,
+          verifier: verifier,
+          verifierPhrase: BackupPolicy.verifierPhrase,
+          iterations: iterations,
+        ),
+      );
 
   /// Holds the derived key for this session.
   void unlockWith(Uint8List key) {

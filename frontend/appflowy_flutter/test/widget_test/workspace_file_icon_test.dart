@@ -15,6 +15,8 @@ import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
+import 'package:appflowy/workspace/application/workspace_item/blank_file_content.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -22,6 +24,7 @@ import 'package:appflowy_result/appflowy_result.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -529,6 +532,77 @@ void main() {
       await _unmount(tester);
     }
   });
+
+  for (final appearance in vividIconTestAppearances) {
+    _test('$appearance: an office file keeps its header above its editor',
+        (tester) async {
+      final document = File('${temporary.path}/Report.docx')
+        ..writeAsBytesSync(blankFileContent(WorkspaceFileKind.word));
+      final backend =
+          _IdentityBackend(_view('office', 'Report.docx', document.path));
+      final io = _Files(document);
+      try {
+        await _mount(
+          tester,
+          WorkspaceFileView(
+            view: backend.stored,
+            resolveStorageUrl: io.resolve,
+            materializeFile: io.load,
+            iconListenerFactory: backend.listen,
+          ),
+          appearance: appearance,
+        );
+        // Renderers here spin while they load, so the page never settles.
+        await _frames(tester);
+        expect(io.loads, 1);
+        expect(
+          find.byKey(const ValueKey('workspace-file-page-pinned')),
+          findsOneWidget,
+        );
+        expect(find.byType(NestedScrollView), findsNothing);
+        final header = tester.getTopLeft(find.byKey(_identity));
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: tester.getCenter(find.byType(WorkspaceFileView)),
+            scrollDelta: const Offset(0, 240),
+          ),
+        );
+        await _frames(tester);
+        expect(tester.getTopLeft(find.byKey(_identity)), header);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await _unmount(tester);
+      }
+    });
+  }
+
+  _test('other files still scroll their header away', (tester) async {
+    final backend = _IdentityBackend(_view('notes', 'notes.txt', text.path));
+    final io = _Files(text);
+    try {
+      await _mount(
+        tester,
+        WorkspaceFileView(
+          view: backend.stored,
+          resolveStorageUrl: io.resolve,
+          materializeFile: io.load,
+          iconListenerFactory: backend.listen,
+        ),
+      );
+      await _frames(tester);
+      expect(io.loads, 1);
+      expect(
+        find.byKey(const ValueKey('workspace-file-page-scroll')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('workspace-file-page-pinned')),
+        findsNothing,
+      );
+    } finally {
+      await _unmount(tester);
+    }
+  });
 }
 
 void _test(String description, Future<void> Function(WidgetTester) body) =>
@@ -751,6 +825,12 @@ Future<void> _mount(
     ),
   );
   await tester.pump();
+}
+
+Future<void> _frames(WidgetTester tester) async {
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
 }
 
 Future<void> _waitFor(WidgetTester tester, bool Function() ready) async {

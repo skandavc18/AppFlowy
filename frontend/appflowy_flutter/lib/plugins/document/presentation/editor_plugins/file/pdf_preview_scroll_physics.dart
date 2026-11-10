@@ -191,8 +191,8 @@ class _PdfTrackpadPanZoomGestureRecognizer
 
 /// Vsynced wheel and precision-trackpad momentum for the pdfrx 1.x matrix.
 ///
-/// Wheel impulses and trackpad release velocity share AppFlowy's global
-/// exponential decay model. Pointer movement remains direct while fingers are
+/// Wheel impulses decay like every embedded viewer's, and a trackpad release
+/// coasts like every page. Pointer movement remains direct while fingers are
 /// down, then continues naturally after release.
 class PdfPreviewScrollPhysics {
   PdfPreviewScrollPhysics({

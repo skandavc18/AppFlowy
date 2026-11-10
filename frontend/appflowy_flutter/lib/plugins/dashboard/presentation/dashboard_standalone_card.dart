@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -118,7 +119,10 @@ class DashboardStandaloneCard extends StatelessWidget {
                                   size: 14,
                                   color: appearance.onColour
                                       ? tone.label
-                                      : tone.strong.withValues(alpha: 0.85),
+                                      : tone.strongInk(
+                                          0,
+                                          minimum: LegibleColor.glyph,
+                                        ),
                                 ),
                                 const SizedBox(width: 7),
                               ],

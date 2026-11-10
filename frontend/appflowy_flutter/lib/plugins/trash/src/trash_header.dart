@@ -63,7 +63,7 @@ class TrashHeader extends StatelessWidget {
           width: item.width,
           child: FlowyText(
             item.title,
-            color: Theme.of(context).disabledColor,
+            color: Theme.of(context).hintColor,
           ),
         ),
       );

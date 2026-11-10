@@ -6,6 +6,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/page_cover.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -126,7 +127,9 @@ class ViewCoverImage extends StatelessWidget {
   ) {
     if (cover.value.isEmpty) return fallback;
     final uri = Uri.tryParse(cover.value);
-    final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(cover.value);
+    final file = uri?.scheme == 'file'
+        ? File.fromUri(uri!)
+        : File(resolveWorkspaceFilePath(cover.value));
     // FileImage handles missing files asynchronously; do not stat every cover
     // synchronously during layout/resize.
     return _buildImage(FileImage(file), fallback, fit, alignment, decode);

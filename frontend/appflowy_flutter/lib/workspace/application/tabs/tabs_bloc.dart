@@ -67,8 +67,28 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   DateTime? _lastOpenTime;
   static const _deduplicationWindow = Duration(milliseconds: 500);
 
+  /// Mobile has no tab stack: pages open as routes. The mobile shell installs
+  /// this to receive every request to open a page or plugin, so features that
+  /// navigate through the tabs (templates, dashboards, collections, workflows,
+  /// extensions...) open their page on mobile too.
+  static void Function(Plugin plugin, ViewPB? view)? mobileOpener;
+
   @override
   void add(TabsEvent event) {
+    final opener = mobileOpener;
+    if (opener != null) {
+      final request = event.maybeWhen<(Plugin, ViewPB?)?>(
+        openTab: (plugin, view) => (plugin, view),
+        openPlugin: (plugin, view, _) => (plugin, view),
+        openStandaloneTab: (plugin) => (plugin, null),
+        openSecondaryPlugin: (plugin, view) => (plugin, view),
+        orElse: () => null,
+      );
+      if (request != null) {
+        opener(request.$1, request.$2);
+        return;
+      }
+    }
     // Invalidate at dispatch, not later when the event is handled: a queued
     // deep link/click must also beat an asynchronous Home lookup.
     _homeRequest++;

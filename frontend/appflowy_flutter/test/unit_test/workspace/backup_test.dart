@@ -321,6 +321,23 @@ void main() {
       expect(read.omissions.single.names, ['files/holiday.mov']);
     });
 
+    test('whether a copy can be restored in place is written down', () {
+      final copy = sample().copyWith(
+        hasWorkspaceSnapshot: true,
+        workspaceId: 'w-1',
+        reason: BackupReason.beforeRestore,
+      );
+      final read = BackupManifest.tryParse(copy.encode())!;
+      expect(read.hasWorkspaceSnapshot, isTrue);
+      expect(read.workspaceId, 'w-1');
+      expect(read.reason, BackupReason.beforeRestore);
+      expect(read.reason.isSafetyCopy, isTrue);
+
+      final older = BackupManifest.tryParse(sample().encode())!;
+      expect(older.hasWorkspaceSnapshot, isFalse);
+      expect(older.reason, BackupReason.copy);
+    });
+
     test('a sealed copy has nothing beside it that names a file', () {
       final redacted = sample().copyWith(encrypted: true).redacted();
       expect(redacted.omissions.single.count, 1);
@@ -736,6 +753,36 @@ void main() {
       expect(parts, contains(BackupPart.workspace));
       expect(parts, contains(BackupPart.pageVersions));
       expect(parts, isNot(contains(BackupPart.attachments)));
+    });
+
+    test('the workspace snapshot goes in as it is, under its own name',
+        () async {
+      final snapshot = File(p.join(root.path, 'workspace.afws'))
+        ..writeAsBytesSync(List.filled(3000, 70));
+      final archive = File(p.join(out.path, 's.zip'));
+      await writeBackupArchive(
+        dataPath: data.path,
+        destination: archive,
+        parts: const {BackupPart.attachments},
+        compression: BackupCompression.fast,
+        extraFiles: {backupSnapshotEntry: snapshot.path},
+      );
+
+      final names = await namesIn(archive);
+      expect(names, contains(backupSnapshotEntry));
+      expect(
+        await readBackupArchiveParts(archive),
+        contains(BackupPart.workspace),
+      );
+
+      final restored = Directory(p.join(root.path, 'with-snapshot'));
+      await extractBackupArchive(source: archive, target: restored);
+      expect(
+        File(
+          p.joinAll([restored.path, ...p.posix.split(backupSnapshotEntry)]),
+        ).readAsBytesSync(),
+        snapshot.readAsBytesSync(),
+      );
     });
 
     test('a name that tries to climb out of the folder is not written',

@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/providers/provider_state.dart';
@@ -105,7 +106,11 @@ class ProviderBadge extends StatelessWidget {
     final badge = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(info.icon, size: compact ? 11 : 13, color: info.accent),
+        Icon(
+          info.icon,
+          size: compact ? 11 : 13,
+          color: LegibleColor.on(palette.background, info.accent),
+        ),
         const SizedBox(width: 5),
         Flexible(
           child: Text(
@@ -273,6 +278,11 @@ class ProviderStateView extends StatelessWidget {
         ? _lapsedSelectionCopy()
         : providerStateCopy(status, info);
     final wait = retryAfter;
+    final accent = LegibleColor.onWash(
+      palette.background,
+      info.accent,
+      wash: 0.12,
+    );
     return _Centred(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 380),
@@ -283,10 +293,10 @@ class ProviderStateView extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: info.accent.withValues(alpha: 0.12),
+                color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(copy.icon, size: 22, color: info.accent),
+              child: Icon(copy.icon, size: 22, color: accent),
             ),
             const SizedBox(height: 16),
             Text(

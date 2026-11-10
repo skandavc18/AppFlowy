@@ -90,6 +90,7 @@ class MobileSpace extends StatelessWidget {
       showCloseButton: true,
       useRootNavigator: true,
       showDivider: false,
+      enableScrollable: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (sheetContext) {
         return AddNewPageWidgetBottomSheet(

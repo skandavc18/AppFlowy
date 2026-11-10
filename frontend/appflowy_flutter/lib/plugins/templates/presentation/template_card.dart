@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_preview.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/templates/built_in/built_in_templates.dart';
 import 'package:appflowy/workspace/application/templates/workspace_template.dart';
@@ -102,7 +103,11 @@ class _TemplateCardState extends State<TemplateCard> {
                       color: tone.wash(0.18),
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(template.icon, size: 19, color: tone.strong),
+                    child: Icon(
+                      template.icon,
+                      size: 19,
+                      color: tone.strongInk(0.18, minimum: LegibleColor.glyph),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -123,8 +128,10 @@ class _TemplateCardState extends State<TemplateCard> {
                           template.description(),
                           maxLines: widget.compact ? 1 : 2,
                           overflow: TextOverflow.ellipsis,
-                          style: DashboardType.caption(palette)
-                              .copyWith(fontSize: 12, height: 1.35),
+                          style: DashboardType.caption(
+                            palette,
+                            color: palette.mutedOn(tone.surface),
+                          ).copyWith(fontSize: 12, height: 1.35),
                         ),
                       ],
                     ),
@@ -143,7 +150,11 @@ class _TemplateCardState extends State<TemplateCard> {
                   onTurnOn: () => _turnOn(missing),
                 )
               else
-                _Footprint(template: template, palette: palette),
+                _Footprint(
+                  template: template,
+                  palette: palette,
+                  ink: palette.mutedOn(tone.surface),
+                ),
             ],
           ),
         ),
@@ -230,7 +241,7 @@ class _PictureState extends State<_Picture> {
                 child: Icon(
                   widget.template.icon,
                   size: 34,
-                  color: tone.strong.withValues(alpha: 0.7),
+                  color: tone.strongInk(0.14, minimum: LegibleColor.glyph),
                 ),
               ),
         ),
@@ -309,37 +320,43 @@ class _TableArt extends StatelessWidget {
 
 /// What the template will make, so nobody presses it blind.
 class _Footprint extends StatelessWidget {
-  const _Footprint({required this.template, required this.palette});
+  const _Footprint({
+    required this.template,
+    required this.palette,
+    required this.ink,
+  });
 
   final WorkspaceTemplate template;
   final DashboardPalette palette;
+
+  /// The quiet ink, settled on the card's tint.
+  final Color ink;
 
   @override
   Widget build(BuildContext context) {
     final kind = template.kind;
     final parts = template.parts.length;
+    final style =
+        DashboardType.caption(palette, color: ink).copyWith(fontSize: 11.5);
     return Row(
       children: [
-        Icon(kind.icon, size: 13, color: palette.textMuted),
+        Icon(kind.icon, size: 13, color: ink),
         const SizedBox(width: 5),
         Flexible(
           child: Text(
             kind.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: DashboardType.caption(palette).copyWith(fontSize: 11.5),
+            style: style,
           ),
         ),
         if (parts > 1) ...[
           const SizedBox(width: 6),
-          Text(
-            '·',
-            style: DashboardType.caption(palette).copyWith(fontSize: 11.5),
-          ),
+          Text('·', style: style),
           const SizedBox(width: 6),
           Text(
             LocaleKeys.templates_parts.tr(args: ['$parts']),
-            style: DashboardType.caption(palette).copyWith(fontSize: 11.5),
+            style: style,
           ),
         ],
       ],
@@ -366,9 +383,10 @@ class _NeedsExtension extends StatelessWidget {
     final label = names.length == 1
         ? LocaleKeys.templates_needsExtension.tr(args: [names.single])
         : LocaleKeys.templates_needsExtensions.tr(args: [names.join(', ')]);
+    final ink = tone.strongInk(0);
     return Row(
       children: [
-        Icon(Icons.extension_rounded, size: 13, color: tone.strong),
+        Icon(Icons.extension_rounded, size: 13, color: ink),
         const SizedBox(width: 5),
         Expanded(
           child: Text(
@@ -376,7 +394,7 @@ class _NeedsExtension extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: DashboardType.caption(palette)
-                .copyWith(fontSize: 11.5, color: tone.strong),
+                .copyWith(fontSize: 11.5, color: ink),
           ),
         ),
         const SizedBox(width: 6),
@@ -429,7 +447,7 @@ class _TinyButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: tone.strong,
+                color: tone.strongInk(0.18),
               ),
             ),
           ),

@@ -511,7 +511,7 @@ class _SlideCardState extends State<SlideCard> {
           '—',
           style: TextStyle(
             fontSize: 18,
-            color: palette.textMuted.withValues(alpha: 0.6),
+            color: palette.textMuted,
           ),
         ),
       );

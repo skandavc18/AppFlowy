@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/offic
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_server_settings.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_office_view.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
@@ -438,6 +439,162 @@ void main() {
       expect(source, contains('settings.scrollerHoverColor'));
     });
 
+    test('opens documents without the loading box, keeping later ones', () {
+      final source = buildOfficeEditorChromeScript(
+        documentServerOrigin: 'http://localhost:8080',
+        typography: const OfficeEditorTypography(family: 'DM Sans'),
+      );
+      final css = officeEditorChromeCss(
+        const OfficeEditorTypography(family: 'DM Sans'),
+      );
+
+      // Only while the document opens, and only the box: the transparent
+      // mask still holds clicks off a half-loaded editor.
+      expect(
+        css,
+        contains(
+          'html.$officeOpeningClass .asc-loadmask-body'
+          '{display:none!important}',
+        ),
+      );
+      expect(css, isNot(contains('.asc-loadmask{')));
+      expect(source, contains("root.classList.add('$officeOpeningClass')"));
+      expect(source, contains('api.isDocumentLoadComplete'));
+      expect(
+        source,
+        contains("root.classList.remove('$officeOpeningClass')"),
+      );
+    });
+
+    test('repaints the document on every frame, as the mobile editors do', () {
+      final source = buildOfficeEditorChromeScript(
+        documentServerOrigin: 'http://localhost:8080',
+        typography: const OfficeEditorTypography(family: 'DM Sans'),
+      );
+
+      expect(source, contains('common.PaintMessageLoop'));
+      expect(source, contains('proto.Start = function'));
+      expect(source, contains('this.isUseInterval = false;'));
+      expect(source, contains('this.isUseRequestAnimationFrame = true;'));
+      // A loop that has no animation frames keeps its timer.
+      expect(source, contains('if (this.requestAnimationFrame) {'));
+      expect(source, contains('return start.apply(this, arguments);'));
+    });
+
+    test('keeps the pictures of pages beside the view, within a budget', () {
+      final source = buildOfficeEditorChromeScript(
+        documentServerOrigin: 'http://localhost:8080',
+        typography: const OfficeEditorTypography(family: 'DM Sans'),
+      );
+
+      expect(source, contains('pages.StopRenderingPage = function (index)'));
+      // Only pages outside the view, and never in a document renderer.
+      expect(source, contains('(index < first || index > last)'));
+      expect(source, contains('!this.m_oDocumentRenderer'));
+      expect(
+        source,
+        contains(
+          'Math.min($officeKeptPagesPerSide, Math.max(1,\n'
+          '          Math.floor($officeKeptPagePixels / '
+          '(2 * picture.width * picture.height))))',
+        ),
+      );
+      expect(source, contains('if (distance <= reach) return;'));
+      expect(source, contains('return stop.apply(this, arguments);'));
+      // Only the document editor draws pages this way.
+      expect(
+        source,
+        contains(
+          r"if (/\/apps\/documenteditor\/main\//.test(window.location.pathname)) {"
+          '\n    pending.push([keepNearbyPages, 120000]);',
+        ),
+      );
+      // About three HiDPI A4 pages a side; at least one, at most four.
+      const hiDpiA4 = 1588 * 2246;
+      expect(officeKeptPagePixels ~/ (2 * hiDpiA4), 3);
+      expect(officeKeptPagesPerSide, 4);
+    });
+
+    test('draws the document editor off-page canvases in memory when asked',
+        () {
+      String build({required bool inMemory}) => buildOfficeEditorChromeScript(
+            documentServerOrigin: 'http://localhost:8080',
+            typography: const OfficeEditorTypography(family: 'DM Sans'),
+            offscreenCanvasesInMemory: inMemory,
+          );
+      final source = build(inMemory: true);
+
+      expect(source, contains('canvas.getContext = function (type, options)'));
+      // Only 2D canvases that are not on the page, keeping what was asked.
+      expect(source, contains("if (type === '2d' && !this.isConnected) {"));
+      expect(
+        source,
+        contains(
+          'getContext.call(this, type, Object.assign({}, options, '
+          '{ willReadFrequently: true }))',
+        ),
+      );
+      expect(source, contains('return getContext.apply(this, arguments);'));
+      // Only in the document editor, and before ONLYOFFICE makes a canvas.
+      expect(
+        source,
+        contains(
+          r"if (/\/apps\/documenteditor\/main\//.test(window.location.pathname)) {"
+          '\n    const canvas = window.HTMLCanvasElement',
+        ),
+      );
+      expect(
+        source.indexOf('willReadFrequently'),
+        lessThan(source.indexOf('const css =')),
+      );
+      // Elsewhere, canvases stay where the web view puts them.
+      for (final other in [
+        build(inMemory: false),
+        buildOfficeEditorChromeUserScript(
+          documentServerUrl: 'http://localhost:8080',
+          typography: const OfficeEditorTypography(family: 'DM Sans'),
+        ).source,
+      ]) {
+        expect(other, isNot(contains('HTMLCanvasElement')));
+        expect(other, isNot(contains('moveImageDataSafari')));
+      }
+    });
+
+    test('shifts the spreadsheet shapes layer on the GPU when asked', () {
+      final source = buildOfficeEditorChromeScript(
+        documentServerOrigin: 'http://localhost:8080',
+        typography: const OfficeEditorTypography(family: 'DM Sans'),
+        offscreenCanvasesInMemory: true,
+      );
+
+      // Only in the spreadsheet editor, once its drawing context exists.
+      expect(
+        source,
+        contains(
+          r"if (/\/apps\/spreadsheeteditor\/main\//.test(window.location.pathname)) {"
+          '\n    const gpuShift = () => {',
+        ),
+      );
+      expect(
+        source,
+        contains('const context = window.Asc && window.Asc.DrawingContext;'),
+      );
+      expect(
+        source,
+        contains(
+          "if (!proto || typeof proto.moveImageData !== 'function') "
+          'return false;',
+        ),
+      );
+      // Safari's read-back path takes the copy every other browser gets.
+      expect(source, contains('proto.moveImageDataSafari = function () {'));
+      expect(
+        source,
+        contains('return this.moveImageData.apply(this, arguments);'),
+      );
+      expect(source, contains('Date.now() - started > 60000'));
+    });
+
     test('asks for an installed downloaded family before the bundled face', () {
       final css = officeEditorChromeCss(
         const OfficeEditorTypography(
@@ -548,7 +705,14 @@ void main() {
         allOf(
           contains('rate: ${config.wheelSmoothingRate}'),
           contains('speed: ${config.maxWheelScrollVelocity}'),
-          contains('friction: ${config.desktopCoastFriction}'),
+          // Release flings coast on the same curve as every page.
+          contains(
+            buildPremiumCoastJavaScript(
+              friction: config.desktopCoastFriction,
+              deceleration: config.desktopCoastDeceleration,
+            ),
+          ),
+          contains('const step = coastStep(speed, seconds);'),
           contains("{ capture: true, passive: false }"),
           // The embedded editor sits a frame below the page that relays its
           // messages, so it talks to the top page rather than its parent.

@@ -7,6 +7,7 @@ import 'package:appflowy/shared/appflowy_network_svg.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_optical_size.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -198,7 +199,7 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
               child: child,
             );
           }
-          final imageFile = File(url);
+          final imageFile = File(resolveWorkspaceFilePath(url));
           if (!imageFile.existsSync()) {
             throw PathNotFoundException(url, const OSError());
           }
@@ -206,7 +207,7 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
             dimension: size,
             child: isSvg
                 ? SvgPicture.file(
-                    File(url),
+                    imageFile,
                     width: size,
                     height: size,
                   )

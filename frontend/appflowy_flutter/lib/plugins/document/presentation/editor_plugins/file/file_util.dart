@@ -5,6 +5,7 @@ import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/shared/custom_image_cache_manager.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/util/xfile_ext.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
@@ -76,6 +77,11 @@ Future<String?> resolveLocalStorageFilePath(String source) async {
 
   if (File(path).existsSync()) {
     return path;
+  }
+
+  final rebased = resolveWorkspaceFilePath(path);
+  if (rebased != path && File(rebased).existsSync()) {
+    return rebased;
   }
 
   if (!getIt.isRegistered<ApplicationDataStorage>()) {

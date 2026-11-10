@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/mobile/presentation/database/card/card_detail/mobile_card_detail_screen.dart';
 import 'package:appflowy/plugins/database/grid/application/grid_bloc.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -37,7 +38,7 @@ Widget getGridFabs(BuildContext context) {
       const HSpace(16),
       MobileGridFab(
         backgroundColor: Theme.of(context).primaryColor,
-        foregroundColor: Colors.white,
+        foregroundColor: _inkOn(context, Theme.of(context).primaryColor),
         onTap: () {
           context
               .read<GridBloc>()
@@ -54,6 +55,19 @@ Widget getGridFabs(BuildContext context) {
         iconSize: const Size.square(24),
       ),
     ],
+  );
+}
+
+/// White on the accent where it reads; the dark theme's accent is a pale sage
+/// that white sat on at about 2:1, so there it takes the theme's own ink.
+Color _inkOn(BuildContext context, Color fill) {
+  if (LegibleColor.contrast(Colors.white, fill) >= LegibleColor.glyph) {
+    return Colors.white;
+  }
+  return LegibleColor.on(
+    fill,
+    Theme.of(context).colorScheme.onPrimary,
+    minimum: LegibleColor.glyph,
   );
 }
 

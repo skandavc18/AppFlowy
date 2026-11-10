@@ -1,7 +1,6 @@
 import 'package:appflowy/ai/ai.dart';
 import 'package:appflowy/ai/widgets/prompt_input/mentioned_page_text_span.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_input_control_cubit.dart';
-import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:extended_text_field/extended_text_field.dart';
@@ -320,10 +319,10 @@ class _MobileChatInputState extends State<MobileChatInput> {
   }
 
   TextStyle? inputHintTextStyle(BuildContext context) {
+    // The theme's hint ink: the fixed greys this used were barely 1.7:1 on
+    // every canvas, light, dark and paper alike.
     return Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).isLightMode
-              ? const Color(0xFFBDC2C8)
-              : const Color(0xFF3C3E51),
+          color: Theme.of(context).hintColor,
         );
   }
 

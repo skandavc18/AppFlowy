@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup on Android 11 and older. Everything is backed up as before,
+  except the office editor unpacked from the APK (about 400 MB), which the
+  app recreates on its own.
+-->
+<full-backup-content>
+    <exclude domain="file" path="office_editor" />
+</full-backup-content>

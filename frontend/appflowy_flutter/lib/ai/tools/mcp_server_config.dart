@@ -244,6 +244,15 @@ class McpServerStore extends ChangeNotifier {
     }
   }
 
+  /// Reads the servers again, after they arrived from another computer.
+  Future<void> reload() async {
+    await _loading;
+    _servers.clear();
+    _loaded = false;
+    await ensureLoaded();
+    notifyListeners();
+  }
+
   McpServerConfig? serverFor(String id) {
     for (final server in _servers) {
       if (server.id == id) {

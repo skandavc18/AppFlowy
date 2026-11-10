@@ -24,6 +24,7 @@ import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_action_row.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
@@ -1049,11 +1050,11 @@ class DocumentCoverState extends State<DocumentCover> {
                 const SizedBox.shrink(),
           );
         }
-        final imageFile = File(detail);
+        final imageFile = File(resolveWorkspaceFilePath(detail));
+        // ⚠️ A missing file is not a reason to take the cover off the page.
+        // With sync, the picture may simply not have arrived on this computer
+        // yet — and a cover removed here would be removed on every computer.
         if (!imageFile.existsSync()) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            widget.onChangeCover(CoverType.none, null);
-          });
           return const SizedBox.shrink();
         }
         return Image.file(

@@ -88,10 +88,11 @@ android {
         }
     }
 
-    // only support arm64-v8a
+    // Only arm64-v8a by default. x86_64 emulators and Waydroid can opt in with
+    // `flutter build apk --target-platform android-x64 -P abi-filters=x86_64`.
     defaultConfig {
         ndk {
-            abiFilters "arm64-v8a"
+            abiFilters(*(project.findProperty("abi-filters") ?: "arm64-v8a").toString().split(",")*.trim())
         }
     }
 }
@@ -103,4 +104,62 @@ flutter {
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
     implementation "com.android.support:multidex:2.0.1"
+}
+
+// --- Built-in office editor -------------------------------------------------
+//
+// `dart run tool/office_editor/fetch_office_editor.dart` (run in
+// frontend/appflowy_flutter) unpacks the editor into ../office_editor. The APK
+// carries it as assets/office_editor/**, and OfficeEditorBundle.kt copies it
+// into app storage the first time a document opens.
+def officeEditorSource = rootProject.file('../office_editor')
+def officeEditorAssets = layout.buildDirectory.dir('generated/office_editor_assets').get().asFile
+// The fetch tool writes APPFLOWY_BUNDLE.json last, so without it the folder
+// is missing or incomplete, and the app would not use it anyway.
+def officeEditorComplete = new File(officeEditorSource, 'APPFLOWY_BUNDLE.json').isFile()
+
+if (!officeEditorComplete) {
+    // QUIET, like the Flutter plugin's own warnings: `flutter build` runs
+    // Gradle with -q, which hides WARN.
+    logger.quiet(
+        "Warning: ${officeEditorSource} is ${officeEditorSource.isDirectory() ? 'incomplete' : 'missing'}, " +
+            "so this APK will not include the built-in office editor. Run " +
+            "`dart run tool/office_editor/fetch_office_editor.dart` in frontend/appflowy_flutter first."
+    )
+}
+
+def stageOfficeEditorAssets = tasks.register('stageOfficeEditorAssets', Sync) {
+    description = 'Stages the built-in office editor as assets/office_editor/**.'
+    // Without a source the task has nothing to copy, and Gradle deletes what
+    // an earlier build staged, so a stale editor is never packaged.
+    if (officeEditorComplete) {
+        from(officeEditorSource)
+    }
+    into(new File(officeEditorAssets, 'office_editor'))
+    // AAPT leaves dot-files out of the APK anyway (.vite/manifest.json is a
+    // build record the editor never loads).
+    exclude('**/.*', '**/.*/**')
+}
+
+android {
+    sourceSets {
+        main.assets.srcDir(officeEditorAssets)
+    }
+    androidResources {
+        // Formats that are compressed already are stored, so unpacking them
+        // is a plain copy: x2t.wasm.br holds gzip bytes, .woff2 is Brotli and
+        // .pptx a zip (PNG is stored by default). Everything else stays
+        // deflated: scripts and JSON shrink 4-5x, WASM 2.4x and the fonts
+        // 1.7x, so the editor takes ~183 MB of the APK instead of ~413 MB, and
+        // inflating it costs a few seconds once per editor version.
+        noCompress '.br', '.woff2', '.pptx'
+    }
+}
+
+// Merging reads the assets source folders, and lint fingerprints them, so
+// both have to run after the editor is staged.
+tasks.configureEach { task ->
+    if (task.name ==~ /merge\w*Assets/ || task.name.toLowerCase(Locale.ROOT).contains('lint')) {
+        task.dependsOn(stageOfficeEditorAssets)
+    }
 }

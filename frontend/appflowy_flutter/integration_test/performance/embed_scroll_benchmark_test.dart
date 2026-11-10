@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_block/custom_page_block_component.dart';
 import 'package:appflowy/shared/scrolling/deferred_page_embed.dart';
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/scrolling/scroll_gesture_gate.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -597,11 +598,16 @@ Future<Map<String, dynamic>> _checkNativeCoast(
   final expectedVelocity = delta /
       (_panInterval.inMicroseconds / Duration.microsecondsPerSecond) *
       config.desktopDirectManipulationScale;
+  final coastDistance = premiumCoastDistance(
+    expectedVelocity,
+    friction: config.desktopCoastFriction,
+    deceleration: config.desktopCoastDeceleration,
+  );
   final result = <String, dynamic>{
     'expected_release_velocity': expectedVelocity,
     'expected_direct_distance':
         updates * delta * config.desktopDirectManipulationScale,
-    'maximum_coast_distance': expectedVelocity / config.desktopCoastFriction,
+    'maximum_coast_distance': coastDistance,
     'timing_scope':
         'Input and coasting plus recorder delivery/idle load frames; '
             'not a guarantee of native frame rate on every user document.',
@@ -636,7 +642,7 @@ Future<Map<String, dynamic>> _checkNativeCoast(
         );
         expect(
           position.maxScrollExtent - releasedAt,
-          greaterThan(expectedVelocity / config.desktopCoastFriction + 100),
+          greaterThan(coastDistance + 100),
           reason: 'Measure free coasting, not a boundary spring.',
         );
         await tester.sendEventToBinding(
@@ -677,9 +683,7 @@ Future<Map<String, dynamic>> _checkNativeCoast(
         expect(distance, greaterThan(100));
         expect(
           distance,
-          lessThanOrEqualTo(
-            expectedVelocity / config.desktopCoastFriction + 0.1,
-          ),
+          lessThanOrEqualTo(coastDistance + 0.1),
         );
         expect(counts.totalMounts, mounts);
         result

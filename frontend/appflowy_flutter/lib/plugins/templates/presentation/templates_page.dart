@@ -171,43 +171,56 @@ class _TemplatesPageState extends State<TemplatesPage> {
     final palette = DashboardPalette.of(context);
     final templates = _shown;
 
+    // A phone cannot spare the desktop gutter.
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final side = compact ? 16.0 : 40.0;
+    Widget shelves(Axis axis) => _Shelves(
+          palette: palette,
+          selected: _category,
+          searching: _search.text.trim().isNotEmpty,
+          axis: axis,
+          onChosen: (category) => setState(() {
+            _category = category;
+            _search.clear();
+          }),
+        );
+    final grid = templates.isEmpty
+        ? _Nothing(palette: palette)
+        : _Grid(
+            palette: palette,
+            templates: templates,
+            busy: _busy,
+            onChosen: (template) => unawaited(_use(template)),
+          );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 26, 40, 20),
+      padding: EdgeInsets.fromLTRB(side, 26, side, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Header(palette: palette, search: _search, onChanged: _refresh),
-          const SizedBox(height: 22),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 178,
-                  child: _Shelves(
-                    palette: palette,
-                    selected: _category,
-                    searching: _search.text.trim().isNotEmpty,
-                    onChosen: (category) => setState(() {
-                      _category = category;
-                      _search.clear();
-                    }),
-                  ),
-                ),
-                const SizedBox(width: 26),
-                Expanded(
-                  child: templates.isEmpty
-                      ? _Nothing(palette: palette)
-                      : _Grid(
-                          palette: palette,
-                          templates: templates,
-                          busy: _busy,
-                          onChosen: (template) => unawaited(_use(template)),
-                        ),
-                ),
-              ],
-            ),
+          _Header(
+            palette: palette,
+            search: _search,
+            onChanged: _refresh,
+            compact: compact,
           ),
+          SizedBox(height: compact ? 16 : 22),
+          if (compact) ...[
+            // A phone has no room beside the grid, so the shelves scroll
+            // sideways above it.
+            shelves(Axis.horizontal),
+            const SizedBox(height: 14),
+            Expanded(child: grid),
+          ] else
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 178, child: shelves(Axis.vertical)),
+                  const SizedBox(width: 26),
+                  Expanded(child: grid),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -219,43 +232,52 @@ class _Header extends StatelessWidget {
     required this.palette,
     required this.search,
     required this.onChanged,
+    this.compact = false,
   });
 
   final DashboardPalette palette;
   final TextEditingController search;
   final VoidCallback onChanged;
 
+  /// Stacks the search under the title, at full width.
+  final bool compact;
+
   @override
-  Widget build(BuildContext context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  LocaleKeys.templates_title.tr(),
-                  style: DashboardType.title(palette),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  LocaleKeys.templates_body.tr(),
-                  style: DashboardType.caption(palette).copyWith(fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 24),
-          SizedBox(
-            width: 246,
-            child: TemplateSearchField(
-              palette: palette,
-              controller: search,
-              onChanged: onChanged,
-            ),
-          ),
-        ],
+  Widget build(BuildContext context) {
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          LocaleKeys.templates_title.tr(),
+          style: DashboardType.title(palette),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          LocaleKeys.templates_body.tr(),
+          style: DashboardType.caption(palette).copyWith(fontSize: 13),
+        ),
+      ],
+    );
+    final field = TemplateSearchField(
+      palette: palette,
+      controller: search,
+      onChanged: onChanged,
+    );
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [title, const SizedBox(height: 12), field],
       );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: title),
+        const SizedBox(width: 24),
+        SizedBox(width: 246, child: field),
+      ],
+    );
+  }
 }
 
 /// The one field on the page, so it carries the editing keys itself.
@@ -323,35 +345,55 @@ class _Shelves extends StatelessWidget {
     required this.selected,
     required this.searching,
     required this.onChosen,
+    this.axis = Axis.vertical,
   });
 
   final DashboardPalette palette;
   final TemplateCategory? selected;
   final bool searching;
   final ValueChanged<TemplateCategory?> onChosen;
+  final Axis axis;
 
   @override
-  Widget build(BuildContext context) => ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          _ShelfRow(
-            palette: palette,
-            icon: Icons.auto_awesome_rounded,
-            label: LocaleKeys.templates_featured.tr(),
-            selected: !searching && selected == null,
-            onTap: () => onChosen(null),
-          ),
-          const SizedBox(height: 10),
-          for (final category in TemplateCategory.values)
-            _ShelfRow(
-              palette: palette,
-              icon: category.icon,
-              label: category.label,
-              selected: !searching && selected == category,
-              onTap: () => onChosen(category),
-            ),
-        ],
+  Widget build(BuildContext context) {
+    final inline = axis == Axis.horizontal;
+    final featured = _ShelfRow(
+      palette: palette,
+      icon: Icons.auto_awesome_rounded,
+      label: LocaleKeys.templates_featured.tr(),
+      selected: !searching && selected == null,
+      inline: inline,
+      onTap: () => onChosen(null),
+    );
+    final categories = [
+      for (final category in TemplateCategory.values)
+        _ShelfRow(
+          palette: palette,
+          icon: category.icon,
+          label: category.label,
+          selected: !searching && selected == category,
+          inline: inline,
+          onTap: () => onChosen(category),
+        ),
+    ];
+    if (inline) {
+      final shelves = [featured, ...categories];
+      return SizedBox(
+        height: 34,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.zero,
+          itemCount: shelves.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (_, index) => shelves[index],
+        ),
       );
+    }
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [featured, const SizedBox(height: 10), ...categories],
+    );
+  }
 }
 
 class _ShelfRow extends StatefulWidget {
@@ -361,6 +403,7 @@ class _ShelfRow extends StatefulWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.inline = false,
   });
 
   final DashboardPalette palette;
@@ -368,6 +411,10 @@ class _ShelfRow extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Sized to its label, as a chip in a sideways row, rather than filling a
+  /// column.
+  final bool inline;
 
   @override
   State<_ShelfRow> createState() => _ShelfRowState();
@@ -402,10 +449,12 @@ class _ShelfRowState extends State<_ShelfRow> {
             borderRadius: BorderRadius.circular(9),
           ),
           child: Row(
+            mainAxisSize: widget.inline ? MainAxisSize.min : MainAxisSize.max,
             children: [
               Icon(widget.icon, size: 16, color: ink),
               const SizedBox(width: 10),
-              Expanded(
+              Flexible(
+                fit: widget.inline ? FlexFit.loose : FlexFit.tight,
                 child: Text(
                   widget.label,
                   maxLines: 1,

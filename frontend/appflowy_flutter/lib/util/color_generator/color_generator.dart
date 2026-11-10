@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:flutter/material.dart';
 
 // the color set generated from AI
@@ -23,6 +24,8 @@ extension type ColorGenerator(String value) {
   (Color, Color) randomColor() {
     final hash = value.codeUnits.fold(0, (int acc, int unit) => acc + unit);
     final index = hash % _builtInColorSet.length;
-    return _builtInColorSet[index];
+    final (foreground, background) = _builtInColorSet[index];
+    // The initial is read on its pastel, so its hue deepens until it does.
+    return (LegibleColor.on(background, foreground), background);
   }
 }

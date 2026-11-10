@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/mult
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -108,7 +109,13 @@ class _ImageBrowserLayoutState extends State<ImageBrowserLayout> {
                                     decoration: BoxDecoration(
                                       image: image.type == CustomImageType.local
                                           ? DecorationImage(
-                                              image: FileImage(File(image.url)),
+                                              image: FileImage(
+                                                File(
+                                                  resolveWorkspaceFilePath(
+                                                    image.url,
+                                                  ),
+                                                ),
+                                              ),
                                               fit: BoxFit.cover,
                                               opacity: 0.5,
                                             )

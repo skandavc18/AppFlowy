@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_editor_scroll.dart';
 import 'package:appflowy/shared/document_viewer/native_file_page_scroll.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/scrolling/scroll_gesture_gate.dart';
 import 'package:flutter/foundation.dart';
@@ -467,9 +468,11 @@ void main() {
           } else {
             expect(outer.offset, closeTo(100, 0.01));
             expect(flings().single['vx'], 0.0);
+            // The speed left once the 60px header has been coasted through.
+            final coast = PremiumCoastSimulation(position: 0, velocity: 1000);
             expect(
               flings().single['vy']! as double,
-              inExclusiveRange(0, 1000 - 4.4 * 60 + 1),
+              inExclusiveRange(0, coast.dx(coast.timeAtX(60)) + 1),
             );
           }
           // At the document's top, upward inertia brings the header back.

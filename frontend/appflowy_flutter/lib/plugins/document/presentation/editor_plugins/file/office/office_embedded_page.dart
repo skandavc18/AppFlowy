@@ -45,6 +45,29 @@ class OfficeEmbeddedTheme {
         'background': background,
       };
 
+  /// The theme [toJson] described, or null for anything else.
+  static OfficeEmbeddedTheme? fromJson(Object? json) {
+    if (json is! Map) {
+      return null;
+    }
+    final isDark = json['dark'];
+    final themeId = json['id'];
+    final storedTheme = json['stored'];
+    final background = json['background'];
+    if (isDark is! bool ||
+        themeId is! String ||
+        storedTheme is! String ||
+        background is! String) {
+      return null;
+    }
+    return OfficeEmbeddedTheme(
+      isDark: isDark,
+      themeId: themeId,
+      storedTheme: storedTheme,
+      background: background,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       other is OfficeEmbeddedTheme &&
@@ -285,6 +308,27 @@ $relay
       });
     });
   }
+  // The bundled editor reports a document opened as soon as it takes the
+  // file; ONLYOFFICE then loads and draws it. AppFlowy hears when that is
+  // done, too.
+  var loadWatch = 0;
+  function watchLoaded() {
+    var watch = ++loadWatch;
+    var started = Date.now();
+    (function poll() {
+      if (watch !== loadWatch) return;
+      var loaded = false;
+      try {
+        var frames = frame.contentWindow ? frame.contentWindow.frames : [];
+        for (var i = 0; i < frames.length && !loaded; i++) {
+          var api = frames[i].editor || (frames[i].Asc && frames[i].Asc.editor);
+          loaded = !!(api && api.isDocumentLoadComplete);
+        }
+      } catch (e) {}
+      if (loaded) report({ type: 'loaded' });
+      else if (Date.now() - started < 120000) setTimeout(poll, 100);
+    })();
+  }
   function save() {
     clearTimeout(timer);
     timer = null;
@@ -339,6 +383,7 @@ $relay
         state.opening = false;
         state.opened = true;
         report({ type: 'opened' });
+        watchLoaded();
         if (config.editable) prepareConverter();
         break;
       case 'document:dirty-changed':

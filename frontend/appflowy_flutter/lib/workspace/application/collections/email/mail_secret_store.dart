@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:appflowy/core/config/kv.dart';
+import 'package:appflowy/shared/linux_keyring.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:ffi/ffi.dart';
 
@@ -13,25 +14,40 @@ import 'package:ffi/ffi.dart';
 /// preferences, which is a plain file on disk — so a mail password must not
 /// simply be written there. On Windows the secret is sealed with DPAPI first,
 /// which ties it to the signed-in Windows account: the stored blob is useless
-/// to another user and useless on another machine. Anywhere else the secret is
-/// held for the session only and the interface says so, because a password
-/// written down in the clear is worse than one typed again.
+/// to another user and useless on another machine. On Linux it goes into the
+/// desktop keyring, which the person's login encrypts and unlocks in the same
+/// way. Anywhere else the secret is held for the session only and the
+/// interface says so, because a password written down in the clear is worse
+/// than one typed again.
 class MailSecretStore {
-  MailSecretStore({KeyValueStorage? storage}) : _storage = storage;
+  MailSecretStore({KeyValueStorage? storage, DesktopKeyring? keyring})
+      : _storage = storage,
+        _keyring = keyring ?? LinuxKeyring.instance;
 
   static const _prefix = 'appflowy_mail_secret_';
+  static const _keyringScope = 'mail';
 
   final KeyValueStorage? _storage;
-  final Map<String, String> _session = <String, String>{};
+  final DesktopKeyring _keyring;
+
+  // One cache for every store over the same storage: a password written
+  // through one of them — by sync, say — is the one all the others read.
+  static final Expando<Map<String, String>> _sessions = Expando();
+  static final Object _defaultOwner = Object();
+  static final KeyValueStorage _nullStorage = _NullStorage();
+
+  Map<String, String> get _session =>
+      _sessions[_storage ?? _defaultOwner] ??= <String, String>{};
 
   KeyValueStorage get _kv =>
       _storage ??
       (getIt.isRegistered<KeyValueStorage>()
           ? getIt<KeyValueStorage>()
-          : _NullStorage());
+          : _nullStorage);
 
   /// Whether a secret can be kept between sessions on this machine.
-  bool get canPersist => Platform.isWindows && _dpapi.isAvailable;
+  bool get canPersist =>
+      (Platform.isWindows && _dpapi.isAvailable) || _keyring.isAvailable;
 
   /// Why it cannot, for the interface to repeat.
   bool get isSessionOnly => !canPersist;
@@ -46,6 +62,21 @@ class MailSecretStore {
     _session[accountId] = secret;
     if (!remember || !canPersist) {
       await forgetStored(accountId);
+      return;
+    }
+
+    if (_keyring.isAvailable) {
+      try {
+        await _keyring.store(
+          scope: _keyringScope,
+          id: accountId,
+          label: 'AppFlowy mailbox: $accountId',
+          secret: secret,
+        );
+      } on KeyringError {
+        // Held for this session; the interface already says it may be asked
+        // for again.
+      }
       return;
     }
 
@@ -65,8 +96,25 @@ class MailSecretStore {
     if (live != null) {
       return live;
     }
+    final stored = await readStored(accountId);
+    if (stored != null) {
+      _session[accountId] = stored;
+    }
+    return stored;
+  }
+
+  /// The secret for [accountId] as it is kept between sessions: null when it
+  /// was only ever typed for this one.
+  Future<String?> readStored(String accountId) async {
     if (!canPersist) {
       return null;
+    }
+    if (_keyring.isAvailable) {
+      try {
+        return await _keyring.lookup(scope: _keyringScope, id: accountId);
+      } on KeyringError {
+        return null;
+      }
     }
 
     final stored = await _kv.get('$_prefix$accountId');
@@ -82,9 +130,7 @@ class MailSecretStore {
       if (opened == null) {
         return null;
       }
-      final secret = utf8.decode(opened, allowMalformed: true);
-      _session[accountId] = secret;
-      return secret;
+      return utf8.decode(opened, allowMalformed: true);
     } catch (_) {
       return null;
     }
@@ -99,8 +145,16 @@ class MailSecretStore {
     await forgetStored(accountId);
   }
 
-  Future<void> forgetStored(String accountId) =>
-      _kv.remove('$_prefix$accountId');
+  Future<void> forgetStored(String accountId) async {
+    if (_keyring.isAvailable) {
+      try {
+        await _keyring.clear(scope: _keyringScope, id: accountId);
+      } on KeyringError {
+        // Nothing more can be done from here.
+      }
+    }
+    await _kv.remove('$_prefix$accountId');
+  }
 }
 
 /// Windows' own secret sealing, reached straight through FFI so no package is

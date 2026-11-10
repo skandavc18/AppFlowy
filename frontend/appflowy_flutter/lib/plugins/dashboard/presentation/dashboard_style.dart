@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
@@ -102,6 +103,15 @@ class DashboardPalette {
   Color get hoverBase => hover.withValues(alpha: 0);
 
   Color get accentSoft => accent.withValues(alpha: isDark ? 0.22 : 0.11);
+
+  /// [textMuted] on an opaque [background] such as a tinted card, kept at
+  /// least as readable as it is on the page: a pastel otherwise drops the
+  /// quiet words below 3:1.
+  Color mutedOn(Color background) => LegibleColor.on(
+        background,
+        textMuted,
+        minimum: LegibleColor.contrast(textMuted, canvas),
+      );
 
   /// The card shadow.
   ///
@@ -488,6 +498,16 @@ class DashboardTone {
   final List<Color> gradient;
 
   Color wash(double alpha) => strong.withValues(alpha: alpha);
+
+  /// [strong] for a glyph or word laid on [wash] of itself over [surface]:
+  /// the same hue, deepened (or lifted) only as far as it needs to read.
+  /// Amber on a pale amber tile, as published, all but disappears.
+  Color strongInk(double alpha, {double minimum = LegibleColor.text}) =>
+      LegibleColor.on(
+        Color.alphaBlend(wash(alpha), surface),
+        strong,
+        minimum: minimum,
+      );
 
   DashboardTone copyWith({Color? surface}) => DashboardTone(
         surface: surface ?? this.surface,

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
@@ -7,6 +10,7 @@ import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -46,7 +50,7 @@ class MobileSectionFolder extends StatelessWidget {
                   onPressed: () => context
                       .read<FolderBloc>()
                       .add(const FolderEvent.expandOrUnExpand()),
-                  onAdded: () => _createNewPage(context),
+                  onAdded: () => _showCreatePageMenu(context),
                   isWorkspaceRoot: isWorkspaceRoot,
                 ),
               ),
@@ -65,6 +69,63 @@ class MobileSectionFolder extends StatelessWidget {
         },
       ),
     );
+  }
+
+  /// Offers every kind of page desktop makes, as a space's "+" does.
+  void _showCreatePageMenu(BuildContext context) {
+    final workspaceId =
+        context.read<UserWorkspaceBloc>().state.currentWorkspace?.workspaceId;
+    if (workspaceId == null || workspaceId.isEmpty) {
+      _createNewPage(context);
+      return;
+    }
+    final section = spaceType.toViewSectionPB;
+    showMobileBottomSheet(
+      context,
+      showHeader: true,
+      title: title,
+      showDragHandle: true,
+      showCloseButton: true,
+      useRootNavigator: true,
+      showDivider: false,
+      enableScrollable: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (sheetContext) => AddNewPageWidgetBottomSheet(
+        // The workspace itself is the parent of a section's top-level pages.
+        view: ViewPB(id: workspaceId, name: title),
+        section: section,
+        onAction: (layout) {
+          Navigator.of(sheetContext).pop();
+          if (layout == ViewLayoutPB.Document) {
+            _createNewPage(context);
+          } else {
+            unawaited(_createRootPage(context, workspaceId, section, layout));
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _createRootPage(
+    BuildContext context,
+    String workspaceId,
+    ViewSectionPB section,
+    ViewLayoutPB layout,
+  ) async {
+    final result = await ViewBackendService.createView(
+      layoutType: layout,
+      parentViewId: workspaceId,
+      name: layout == ViewLayoutPB.Chat
+          ? ''
+          : LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+      section: section,
+    );
+    final view = result.toNullable();
+    if (view == null || !context.mounted) return;
+    context.read<FolderBloc>().add(
+          const FolderEvent.expandOrUnExpand(isExpanded: true),
+        );
+    await context.pushView(view);
   }
 
   void _createNewPage(BuildContext context) {

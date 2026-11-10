@@ -134,7 +134,12 @@ class _MobileViewPageState extends State<MobileViewPage> {
                   create: (_) => DocumentPageStyleBloc(view: view)
                     ..add(const DocumentPageStyleEvent.initial()),
                 ),
-              if (view.layout.isDocumentView || view.layout.isDatabaseView)
+              // The app bar reads the page's access level for every page; a
+              // chat is neither a document nor a table, and without this its
+              // page failed to build at all.
+              if (view.layout.isDocumentView ||
+                  view.layout.isDatabaseView ||
+                  view.layout == ViewLayoutPB.Chat)
                 BlocProvider(
                   create: (_) => PageAccessLevelBloc(view: view)
                     ..add(const PageAccessLevelEvent.initial()),
@@ -157,7 +162,9 @@ class _MobileViewPageState extends State<MobileViewPage> {
     ViewPB? view,
     Widget child,
   ) {
-    final isDocument = view?.layout.isDocumentView ?? false;
+    // A dashboard, canvas or collection is stored as a document but drawn by
+    // its own view, which needs the plain app bar above it, not over it.
+    final isDocument = view != null && _isPlainDocument(view);
     final title = _buildTitle(context, view);
     final actions = _buildAppBarActions(context, view);
     final appBar = isDocument
@@ -241,8 +248,6 @@ class _MobileViewPageState extends State<MobileViewPage> {
       return [];
     }
 
-    final isImmersiveMode =
-        context.read<MobileViewPageBloc>().state.isImmersiveMode;
     final isLocked =
         context.read<PageAccessLevelBloc?>()?.state.isLocked ?? false;
     final accessLevel = context.read<PageAccessLevelBloc>().state.accessLevel;
@@ -250,7 +255,7 @@ class _MobileViewPageState extends State<MobileViewPage> {
 
     if (FeatureFlag.syncDocument.isOn) {
       // only document supports displaying collaborators.
-      if (view.layout.isDocumentView) {
+      if (_isPlainDocument(view)) {
         actions.addAll([
           DocumentCollaborators(
             width: 60,
@@ -264,11 +269,10 @@ class _MobileViewPageState extends State<MobileViewPage> {
       }
     }
 
-    if (view.layout.isDocumentView && !isLocked) {
+    if (_isPlainDocument(view) && !isLocked) {
       actions.addAll([
         MobileViewPageLayoutButton(
           view: view,
-          isImmersiveMode: isImmersiveMode,
           appBarOpacity: _appBarOpacity,
           tabs: widget.tabs,
         ),
@@ -279,7 +283,6 @@ class _MobileViewPageState extends State<MobileViewPage> {
       actions.addAll([
         MobileViewPageMoreButton(
           view: view,
-          isImmersiveMode: isImmersiveMode,
           appBarOpacity: _appBarOpacity,
         ),
       ]);
@@ -291,6 +294,9 @@ class _MobileViewPageState extends State<MobileViewPage> {
 
     return actions;
   }
+
+  bool _isPlainDocument(ViewPB view) =>
+      view.layout.isDocumentView && !view.opensInOwnView;
 
   Widget _buildTitle(BuildContext context, ViewPB? view) {
     final icon = view?.icon;

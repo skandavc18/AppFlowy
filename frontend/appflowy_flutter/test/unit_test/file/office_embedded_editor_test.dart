@@ -263,6 +263,27 @@ void main() {
         contains('appflowyOfficeScroll'),
       );
     });
+
+    test('reports once the editor has drawn the document', () {
+      final page = buildOfficeEmbeddedPage(
+        fileName: 'a.docx',
+        editable: true,
+        theme: _theme,
+        origin: 'http://127.0.0.1:1234',
+      );
+      expect(page, contains('isDocumentLoadComplete'));
+      expect(page, contains("report({ type: 'loaded' })"));
+    });
+
+    test('a stored theme reads back as it was written', () {
+      expect(OfficeEmbeddedTheme.fromJson(_theme.toJson()), _theme);
+      expect(
+        OfficeEmbeddedTheme.fromJson(jsonDecode(jsonEncode(_theme.toJson()))),
+        _theme,
+      );
+      expect(OfficeEmbeddedTheme.fromJson({'dark': 'yes'}), isNull);
+      expect(OfficeEmbeddedTheme.fromJson(null), isNull);
+    });
   });
 
   group('EmbeddedOfficeHost', () {
@@ -317,6 +338,7 @@ void main() {
     });
 
     test('labels the gzip x2t build and the font catalog', () async {
+      host = EmbeddedOfficeHost(locate: () => bundle, cacheBundle: false);
       await open();
       final wasm = await _request(
         'GET',
@@ -330,6 +352,25 @@ void main() {
       final font = await _request('GET', host.origin.resolve('/fonts/050'));
       expect(font.headers.contentType?.mimeType, 'font/ttf');
       expect(font.headers.value('cache-control'), 'no-store');
+    });
+
+    test('lets in-memory web views keep the editor between documents',
+        () async {
+      host = EmbeddedOfficeHost(locate: () => bundle, cacheBundle: true);
+      await open();
+      final wasm = await _request(
+        'GET',
+        host.origin.resolve('/sdkjs/common/wasm/x2t/x2t.wasm.br'),
+      );
+      expect(
+        wasm.headers.value('cache-control'),
+        'private, max-age=31536000, immutable',
+      );
+      final font = await _request('GET', host.origin.resolve('/fonts/050'));
+      expect(font.headers.value('cache-control'), contains('immutable'));
+      // The page itself carries the shim and is always fetched afresh.
+      final page = await _request('GET', host.origin.resolve('/editor.html'));
+      expect(page.headers.value('cache-control'), isNot(contains('max-age')));
     });
 
     test('never serves files outside the bundle', () async {
@@ -435,6 +476,43 @@ void main() {
         body: utf8.encode('{"type":"clean"}'),
       );
       expect(foreign.status, HttpStatus.forbidden);
+    });
+
+    test('hears when the editor has drawn the document', () async {
+      final session = await open();
+      final events = session.pageUrl.resolve('events');
+      Future<int> post(Map<String, Object?> event) async => (await _request(
+            'POST',
+            events,
+            headers: {...origin(), 'Content-Type': 'application/json'},
+            body: utf8.encode(jsonEncode(event)),
+          ))
+              .status;
+
+      await post({'type': 'opened', 'seq': 1});
+      // Taking the file is not drawing it.
+      expect(session.loaded.value, isFalse);
+      expect(await post({'type': 'loaded'}), HttpStatus.noContent);
+      expect(session.loaded.value, isTrue);
+      // A new look reloads the editor, which then draws the document again.
+      await session.updateTheme(
+        const OfficeEmbeddedTheme(
+          isDark: true,
+          themeId: 'theme-night',
+          storedTheme: '{"id":"theme-night"}',
+          background: '#000000',
+        ),
+      );
+      expect(session.loaded.value, isFalse);
+    });
+
+    test('serves an empty page of its own origin for idle views', () async {
+      await open();
+      expect(host.idleUrl.origin, host.origin.origin);
+      final idle = await _request('GET', host.idleUrl);
+      expect(idle.status, HttpStatus.ok);
+      expect(idle.headers.contentType?.mimeType, 'text/html');
+      expect(idle.text, contains('<body></body>'));
     });
 
     test('asks the page to save and waits until the file has the edits',

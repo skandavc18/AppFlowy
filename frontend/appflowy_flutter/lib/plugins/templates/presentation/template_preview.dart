@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_canvas.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_guide.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_sample_tables.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_canvas.dart';
 import 'package:appflowy/shared/markdown_to_document.dart';
 import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
@@ -193,7 +194,11 @@ class _Header extends StatelessWidget {
                 color: tone.wash(0.18),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(template.icon, size: 21, color: tone.strong),
+              child: Icon(
+                template.icon,
+                size: 21,
+                color: tone.strongInk(0.18, minimum: LegibleColor.glyph),
+              ),
             ),
             const SizedBox(width: 13),
             Expanded(
@@ -265,14 +270,14 @@ class _Pill extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.add_rounded, size: 15, color: tone.strong),
+                Icon(Icons.add_rounded, size: 15, color: tone.strongInk(0.2)),
                 const SizedBox(width: 6),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: tone.strong,
+                    color: tone.strongInk(0.2),
                   ),
                 ),
               ],

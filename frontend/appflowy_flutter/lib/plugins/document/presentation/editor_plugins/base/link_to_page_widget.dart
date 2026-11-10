@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/mobile/presentation/inline_actions/mobile_inline_actions_menu.dart';
 import 'package:appflowy/plugins/inline_actions/handlers/inline_page_reference.dart';
 import 'package:appflowy/plugins/inline_actions/inline_actions_menu.dart';
 import 'package:appflowy/plugins/inline_actions/inline_actions_result.dart';
@@ -7,6 +8,7 @@ import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:universal_platform/universal_platform.dart';
 
 InlineActionsMenuService? _actionsMenuService;
 
@@ -60,18 +62,30 @@ Future<void> showLinkToPageMenu(
   }
 
   if (rootContext.mounted) {
-    _actionsMenuService = InlineActionsMenu(
-      context: rootContext,
-      editorState: editorState,
-      service: service,
-      initialResults: initialResults,
-      style: Theme.of(editorState.document.root.context!).brightness ==
-              Brightness.light
-          ? const InlineActionsMenuStyle.light()
-          : const InlineActionsMenuStyle.dark(),
-      startCharAmount: 0,
-      anchorRect: resolvedAnchorRect,
-    );
+    final style = Theme.of(editorState.document.root.context!).brightness ==
+            Brightness.light
+        ? const InlineActionsMenuStyle.light()
+        : const InlineActionsMenuStyle.dark();
+    // The desktop menu is anchored as a popover; a phone shows the same
+    // results in the list it uses for `@` and `+`.
+    _actionsMenuService = UniversalPlatform.isMobile
+        ? MobileInlineActionsMenu(
+            context: rootContext,
+            editorState: editorState,
+            service: service,
+            initialResults: initialResults,
+            style: style,
+            startCharAmount: 0,
+          )
+        : InlineActionsMenu(
+            context: rootContext,
+            editorState: editorState,
+            service: service,
+            initialResults: initialResults,
+            style: style,
+            startCharAmount: 0,
+            anchorRect: resolvedAnchorRect,
+          );
 
     await _actionsMenuService?.show();
   }

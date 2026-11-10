@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:flutter/material.dart';
 
@@ -110,13 +111,19 @@ extension CalendarPaletteX on CalendarPalette {
       ? sunken.withValues(alpha: 0.32)
       : sunken.withValues(alpha: isDark ? 0.22 : 0.36);
 
-  /// A day belonging to the month either side.
-  Color get outsideMonthText => textMuted.withValues(alpha: 0.62);
+  /// A day belonging to the month either side: quieter than the month's own
+  /// days, which are [textPrimary], but still a number one can read.
+  Color get outsideMonthText => textMuted;
 
   /// Today's date number sits in this.
   Color get todayBadge => accent;
 
-  Color get todayBadgeText => Colors.white;
+  /// White where it reads on the accent; on dark themes the accent is a light
+  /// tint, so the number takes the canvas colour instead.
+  Color get todayBadgeText =>
+      LegibleColor.contrast(Colors.white, todayBadge) >= LegibleColor.text
+          ? Colors.white
+          : LegibleColor.on(todayBadge, canvas);
 
   /// A very light wash over the whole of today's column or cell.
   Color get todayWash => accent.withValues(alpha: isDark ? 0.10 : 0.055);

@@ -60,13 +60,28 @@ final _textToolbarItems = [
 ///
 /// Selecting a list:
 ///   Add, Aa, Indent, Outdent, Bulleted List, Numbered List, Todo List B, I, U, S
+///
+/// [showAllBlocks] opens the editor's `/` menu; the add-block sheet offers it
+/// so every block `/` has is a tap away from the toolbar too.
 List<AppFlowyMobileToolbarItem> buildMobileToolbarItems(
   EditorState editorState,
-  Selection? selection,
-) {
+  Selection? selection, {
+  Future<void> Function()? showAllBlocks,
+}) {
   if (selection == null) {
     return [];
   }
+  List<AppFlowyMobileToolbarItem> withAddBlock(
+    List<AppFlowyMobileToolbarItem> items,
+  ) =>
+      showAllBlocks == null
+          ? items
+          : [
+              for (final item in items)
+                identical(item, addBlockToolbarItem)
+                    ? buildAddBlockToolbarItem(showAllBlocks: showAllBlocks)
+                    : item,
+            ];
 
   if (!selection.isCollapsed) {
     final items = List.of(_textToolbarItems);
@@ -80,8 +95,8 @@ List<AppFlowyMobileToolbarItem> buildMobileToolbarItems(
       .getSelectedNodes(selection: selection)
       .every((node) => _listBlockTypes.contains(node.type));
   if (allSelectedAreListType) {
-    return _listToolbarItems;
+    return withAddBlock(_listToolbarItems);
   }
 
-  return _defaultToolbarItems;
+  return withAddBlock(_defaultToolbarItems);
 }

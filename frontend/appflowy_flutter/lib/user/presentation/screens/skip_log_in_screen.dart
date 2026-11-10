@@ -6,6 +6,7 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/anon_user_bloc.dart';
 import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/presentation/router.dart';
+import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/first_run_sync_options.dart';
 import 'package:appflowy/user/presentation/widgets/widgets.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy_backend/log.dart';
@@ -39,21 +40,47 @@ class _SkipLogInScreenState extends State<SkipLogInScreen> {
 
   Widget _renderBody(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    // Scrolls when the window is too short for everything; centred when it
+    // is not.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: _column(context, size),
+        ),
+      ),
+    );
+  }
+
+  Widget _column(BuildContext context, Size size) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Spacer(),
+        const VSpace(32),
         FlowyLogoTitle(
           title: LocaleKeys.welcomeText.tr(),
           logoSize: Size.square(UniversalPlatform.isMobile ? 80 : 40),
         ),
         const VSpace(32),
+        if (UniversalPlatform.isDesktop) ...[
+          FirstRunSyncOptions(
+            showLocalOption: false,
+            startLocal: () => _autoRegister(context),
+          ),
+          const VSpace(20),
+        ],
         GoButton(
-          onPressed: () {
+          onPressed: () async {
+            if (UniversalPlatform.isDesktop) {
+              await offerAppPassword(context);
+              if (!context.mounted) {
+                return;
+              }
+            }
             if (_didCustomizeFolder) {
-              _relaunchAppAndAutoRegister();
+              await _relaunchAppAndAutoRegister();
             } else {
-              _autoRegister(context);
+              await _autoRegister(context);
             }
           },
         ),
@@ -71,7 +98,7 @@ class _SkipLogInScreenState extends State<SkipLogInScreen> {
             createFolderCallback: () async => _didCustomizeFolder = true,
           ),
         ),
-        const Spacer(),
+        const VSpace(32),
         const SkipLoginPageFooter(),
         const VSpace(20),
       ],

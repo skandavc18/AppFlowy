@@ -46,9 +46,14 @@ void main() {
         expect(
           physics.applyPhysicsToUserOffset(
             nested.innerController.position,
-            100,
+            -100,
           ),
-          closeTo(60, 0.001),
+          closeTo(
+            -100 *
+                const PremiumScrollPhysicsConfig()
+                    .desktopDirectManipulationScale,
+            0.001,
+          ),
           reason:
               'Coordinated wheel smoothing must not replace trackpad physics.',
         );

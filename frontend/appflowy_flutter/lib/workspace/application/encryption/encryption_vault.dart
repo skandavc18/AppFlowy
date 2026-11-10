@@ -86,6 +86,19 @@ class EncryptionVault extends ChangeNotifier {
 
   Future<void> ensureLoaded() => _loading ??= _load();
 
+  /// Reads the settings again, after they arrived from another computer. A
+  /// key made from another passphrase is put away.
+  Future<void> reload() async {
+    final before = _policy;
+    _loading = null;
+    _loaded = false;
+    await ensureLoaded();
+    if (_policy.salt != before.salt || _policy.verifier != before.verifier) {
+      lock();
+    }
+    notifyListeners();
+  }
+
   Future<void> _load() async {
     final storage = _kv;
     if (storage == null) {
@@ -121,6 +134,7 @@ class EncryptionVault extends ChangeNotifier {
     required String passphrase,
     String hint = '',
     bool gateWholeWorkspace = false,
+    bool usesAppPassword = false,
   }) async {
     await ensureLoaded();
     if (passphrase.length < minimumPassphraseLength) {
@@ -129,9 +143,12 @@ class EncryptionVault extends ChangeNotifier {
 
     final next = newEncryptionPolicy(
       passphrase: passphrase,
-      hint: hint,
+      hint: usesAppPassword ? '' : hint,
       previous: _policy,
-    ).copyWith(gateWholeWorkspace: gateWholeWorkspace);
+    ).copyWith(
+      gateWholeWorkspace: gateWholeWorkspace,
+      usesAppPassword: usesAppPassword,
+    );
     final key = unlockEncryptionKey(policy: next, passphrase: passphrase);
     if (key == null) {
       // Cannot happen unless the policy and the derivation disagree, and if
@@ -179,11 +196,15 @@ class EncryptionVault extends ChangeNotifier {
   /// Anything already sealed was sealed with the OLD key, so callers must
   /// re-seal it. [reseal] is handed the two keys in order and runs before the
   /// new policy is written down, so a failure leaves the old passphrase working.
+  ///
+  /// [usesAppPassword] says whether [next] is the AppFlowy password; left
+  /// out, the key keeps following whatever it followed before.
   Future<bool> changePassphrase({
     required String current,
     required String next,
     String? hint,
     Future<bool> Function(Uint8List from, Uint8List to)? reseal,
+    bool? usesAppPassword,
   }) async {
     await ensureLoaded();
     if (next.length < minimumPassphraseLength) {
@@ -194,11 +215,12 @@ class EncryptionVault extends ChangeNotifier {
       return false;
     }
 
+    final following = usesAppPassword ?? _policy.usesAppPassword;
     final nextPolicy = newEncryptionPolicy(
       passphrase: next,
-      hint: hint ?? _policy.hint,
+      hint: following ? '' : (hint ?? _policy.hint),
       previous: _policy,
-    );
+    ).copyWith(usesAppPassword: following);
     final newKey = unlockEncryptionKey(policy: nextPolicy, passphrase: next);
     if (newKey == null) {
       return false;

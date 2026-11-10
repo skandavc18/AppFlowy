@@ -5,7 +5,10 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/notifications/mobile_notifications_screen.dart';
 import 'package:appflowy/mobile/presentation/widgets/navigation_bar_button.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/popup_menu/appflowy_popup_menu.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
 import 'package:appflowy/util/theme_extension.dart';
@@ -385,16 +388,16 @@ class _NotificationNavigationBar extends StatelessWidget {
 
 extension on BuildContext {
   Color get backgroundColor {
-    return Theme.of(this).isLightMode
-        ? Colors.white.withValues(alpha: 0.95)
-        : const Color(0xFF23262B).withValues(alpha: 0.95);
+    // Paper and dark wear the navigation chrome the desktop sidebar does; a
+    // white or cool-grey bar sat apart from their warm pages.
+    final color = Theme.of(this).isLightMode && !PaperTheme.isEnabled(this)
+        ? Colors.white
+        : EditorSurfaceStyle.chromeBackground(this);
+    return color.withValues(alpha: 0.95);
   }
 
-  Color get borderColor {
-    return Theme.of(this).isLightMode
-        ? const Color(0x141F2329)
-        : const Color(0xFF23262B).withValues(alpha: 0.5);
-  }
+  Color get borderColor =>
+      PremiumThemeExtension.maybeOf(this)?.border ?? const Color(0x141F2329);
 
   Border? get border {
     return Theme.of(this).isLightMode

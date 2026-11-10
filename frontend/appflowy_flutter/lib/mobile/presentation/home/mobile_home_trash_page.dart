@@ -196,6 +196,9 @@ class _DeletedFilesListView extends StatelessWidget {
       child: ListView.builder(
         itemBuilder: (context, index) {
           final deletedFile = state.objects[index];
+          final name = deletedFile.name.isEmpty
+              ? LocaleKeys.menuAppHeader_defaultNewPageName.tr()
+              : deletedFile.name;
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -207,7 +210,7 @@ class _DeletedFilesListView extends StatelessWidget {
                 color: theme.colorScheme.onSurface,
               ),
               title: Text(
-                deletedFile.name,
+                name,
                 style: theme.textTheme.labelMedium
                     ?.copyWith(color: theme.colorScheme.onSurface),
               ),
@@ -232,7 +235,7 @@ class _DeletedFilesListView extends StatelessWidget {
                           .add(TrashEvent.putback(deletedFile.id));
                       Fluttertoast.showToast(
                         msg:
-                            '${deletedFile.name} ${LocaleKeys.trash_mobile_isRestored.tr()}',
+                            '$name ${LocaleKeys.trash_mobile_isRestored.tr()}',
                         gravity: ToastGravity.BOTTOM,
                       );
                     },
@@ -250,7 +253,7 @@ class _DeletedFilesListView extends StatelessWidget {
                           .add(TrashEvent.delete(deletedFile));
                       Fluttertoast.showToast(
                         msg:
-                            '${deletedFile.name} ${LocaleKeys.trash_mobile_isDeleted.tr()}',
+                            '$name ${LocaleKeys.trash_mobile_isDeleted.tr()}',
                         gravity: ToastGravity.BOTTOM,
                       );
                     },

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_document.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/table_views/row_media.dart';
 import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
@@ -717,8 +718,7 @@ class _MailboxRowState extends State<_MailboxRow> {
                   ),
                 ),
                 Padding(
-                  padding:
-                      const EdgeInsets.only(left: TableViewMetrics.space2),
+                  padding: const EdgeInsets.only(left: TableViewMetrics.space2),
                   child: Text(
                     mailboxDateLabel(widget.when),
                     style: TextStyle(
@@ -1055,23 +1055,30 @@ class _Avatar extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: colour.withValues(alpha: 0.22),
-          borderRadius: BorderRadius.circular(size / 2),
+  Widget build(BuildContext context) {
+    final ink = LegibleColor.onWash(
+      tableViewPaletteOf(context).surface,
+      colour,
+      wash: 0.22,
+    );
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: ink.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(size / 2),
+      ),
+      child: Text(
+        isEmoji ? label : tableInitialsOf(label),
+        style: TextStyle(
+          fontSize: isEmoji ? size * 0.5 : size * 0.38,
+          fontWeight: FontWeight.w600,
+          color: ink,
         ),
-        child: Text(
-          isEmoji ? label : tableInitialsOf(label),
-          style: TextStyle(
-            fontSize: isEmoji ? size * 0.5 : size * 0.38,
-            fontWeight: FontWeight.w600,
-            color: colour,
-          ),
-        ),
-      );
+      ),
+    );
+  }
 }
 
 /// A date the way a mailbox writes it: a time today, a weekday this week, a

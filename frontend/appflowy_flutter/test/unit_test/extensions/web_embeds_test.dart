@@ -1,9 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:appflowy/extensions/dart/built_in/web_embeds/document_embeds.dart';
+import 'package:appflowy/extensions/dart/built_in/web_embeds/google_maps_page.dart';
+import 'package:appflowy/extensions/dart/built_in/web_embeds/google_maps_view.dart';
+import 'package:appflowy/extensions/dart/built_in/web_embeds/google_maps_web_view.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/reading_embeds.dart';
+import 'package:appflowy/extensions/dart/built_in/web_embeds/web_embed_fetch.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/web_embed_sites.dart';
 import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
+import 'package:appflowy/shared/maps/map_geo.dart';
+import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +74,33 @@ String _googleNewsToken(String address) => base64Url.encode([
       0x01,
       0x00,
     ]).replaceAll('=', '');
+
+/// A network on which no address answers, like one whose resolver points a
+/// short link's host somewhere that never replies.
+class _Unreachable extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) =>
+      super.createHttpClient(context)
+        ..connectionFactory = (uri, proxyHost, proxyPort) =>
+            Future.error(const SocketException('Connection timed out'));
+}
+
+/// The map's colours in the app's light, dark or paper look.
+MapPalette _mapPalette({bool dark = false, bool paper = false}) => MapPalette(
+      canvas: paper
+          ? const Color(0xFFFBF5E9)
+          : (dark ? const Color(0xFF1F1C19) : const Color(0xFFFFFCF6)),
+      surface: const Color(0xFFF8F5EE),
+      floating: paper ? const Color(0xFFFFFAF0) : const Color(0xFFFFFDF8),
+      hover: const Color(0x0F675443),
+      border: const Color(0x24675443),
+      textPrimary: const Color(0xFF252522),
+      textMuted: const Color(0xFF918577),
+      accent: const Color(0xFF715438),
+      shadow: Colors.black,
+      isDark: dark,
+      isPaper: paper,
+    );
 
 /// A site whose pattern is broken.
 class _BrokenSite extends WebEmbedProvider {
@@ -319,6 +355,293 @@ void main() {
         kind: 'Place',
         needsResolution: true,
       );
+    });
+
+    test('a shared place carries its pin, name and view', () {
+      // The shape a share link lands on: the view's centre is beside the pin.
+      final link = _read(
+        'https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2919064,17z/data=!3m1!4b1!4m6!3m5!1s0x47e66e2964e34e2d:0x8ddca9ee380ef7e0!8m2!3d48.8583701!4d2.2944813!16s%2Fm%2F02j81?entry=tts&g_ep=EgoyMDI2MTAwNC4wIPu8ASoASAFQAw%3D%3D&skid=f81bac6b-5e71-4241-ac6d-be7798d2c2f2',
+      );
+      expect(link.url, isNot(contains('g_ep=')));
+      expect(link.url, isNot(contains('skid=')));
+      final target = GoogleMapsTarget.of(link)!;
+      expect(target.stops, const [
+        GoogleMapsStop(
+          name: 'Eiffel Tower',
+          point: LatLng(48.8583701, 2.2944813),
+        ),
+      ]);
+      expect(target.centre, const LatLng(48.8583701, 2.2919064));
+      expect(target.zoom, 17);
+
+      final point = _read('https://www.google.com/maps?q=48.8584,2.2945');
+      expect(GoogleMapsTarget.of(point)!.stops, const [
+        GoogleMapsStop(point: LatLng(48.8584, 2.2945)),
+      ]);
+    });
+
+    test('a route carries its ends, placed where the link says they are', () {
+      final placed = GoogleMapsTarget.of(
+        _read(
+          'https://www.google.com/maps/dir/Paris/Lyon/@46.3,3.5,7z/data=!3m1!4b1!4m14!4m13!1m5!1m1!1s0x47e66e1f06e2b70f:0x40b82c3688c9460!2m2!1d2.3522219!2d48.856614!1m5!1m1!1s0x47f4ea516ae88797:0x408ab2ae4bb21f0!2m2!1d4.835659!2d45.764043!3e0',
+        ),
+      )!;
+      expect(placed.stops, const [
+        GoogleMapsStop(name: 'Paris', point: LatLng(48.856614, 2.3522219)),
+        GoogleMapsStop(name: 'Lyon', point: LatLng(45.764043, 4.835659)),
+      ]);
+      expect(placed.centre, const LatLng(46.3, 3.5));
+      expect(placed.zoom, 7);
+
+      List<GoogleMapsStop> stopsOf(String url) =>
+          GoogleMapsTarget.of(_read(url))!.stops;
+      expect(stopsOf('https://www.google.com/maps/dir/Paris/Lyon/'), const [
+        GoogleMapsStop(name: 'Paris'),
+        GoogleMapsStop(name: 'Lyon'),
+      ]);
+      // The reader's own location is not a stop anything can be drawn at.
+      expect(stopsOf('https://www.google.com/maps/dir//Lyon/'), const [
+        GoogleMapsStop(name: 'Lyon'),
+      ]);
+      expect(
+        stopsOf(
+          'https://www.google.com/maps/dir/?api=1&origin=48.8584,2.2945&destination=Lyon',
+        ),
+        const [
+          GoogleMapsStop(point: LatLng(48.8584, 2.2945)),
+          GoogleMapsStop(name: 'Lyon'),
+        ],
+      );
+    });
+
+    test('embed code is read for its camera and its place', () {
+      final link = _read(
+        webEmbedAddressFrom(
+          '<iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2624.991625695787!2d2.2919064!3d48.8583701!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47e66e2964e34e2d%3A0x8ddca9ee380ef7e0!2sEiffel%20Tower!5e0!3m2!1sen!2sfr!4v1700000000000!5m2!1sen!2sfr" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy"></iframe>',
+        )!,
+      );
+      final target = GoogleMapsTarget.of(link)!;
+      expect(target.stops, const [
+        GoogleMapsStop(
+          name: 'Eiffel Tower',
+          point: LatLng(48.8583701, 2.2919064),
+        ),
+      ]);
+      expect(target.zoom, closeTo(17, 0.5));
+
+      expect(
+        GoogleMapsTarget.of(
+          _read(
+            'https://www.google.com/maps/embed/v1/place?key=KEY&q=Eiffel+Tower,Paris',
+          ),
+        )!
+            .stops,
+        const [GoogleMapsStop(name: 'Eiffel Tower,Paris')],
+      );
+    });
+
+    test('My Maps and unfollowed short links have nothing to place', () {
+      expect(
+        GoogleMapsTarget.of(
+          _read('https://www.google.com/maps/d/viewer?mid=1AbCdEfGh'),
+        ),
+        isNull,
+      );
+      expect(
+        GoogleMapsTarget.of(_read('https://maps.app.goo.gl/AbCdEf123')),
+        isNull,
+      );
+    });
+
+    group('a short link that cannot be followed', () {
+      tearDown(() => debugCanShowWebEmbedPagesOverride = null);
+
+      test('is a failure to retry where no page can be shown', () async {
+        await HttpOverrides.runWithHttpOverrides(
+          () async {
+            final link = _read('https://maps.app.goo.gl/AbCdEf123');
+            debugCanShowWebEmbedPagesOverride = false;
+            expect(await link.provider.resolve(link), isNull);
+          },
+          _Unreachable(),
+        );
+      });
+
+      test('is Google\'s own page where one can be shown', () async {
+        await HttpOverrides.runWithHttpOverrides(
+          () async {
+            final link = _read('https://maps.app.goo.gl/AbCdEf123');
+            debugCanShowWebEmbedPagesOverride = true;
+            final page = await link.provider.resolve(link);
+            expect(page?.showsWholePage, isTrue);
+            expect(page?.embedUrl, link.url);
+          },
+          _Unreachable(),
+        );
+      });
+    });
+
+    group('a Google short link the network cannot reach', () {
+      const place =
+          'https://www.google.com/maps/place/Akshaya+Hall/@12.9329292,77.5688711,17z/data=!3m1!4b1!4m6!3m5!1s0x3bae158f91e68a6f:0xff1b8c4025545c1a!8m2!3d12.9329292!4d77.5714514';
+      late HttpServer google;
+      late List<String?> asked;
+      late List<String> lookedUp;
+
+      setUp(() async {
+        asked = [];
+        lookedUp = [];
+        // Plays Google's short-link server at the address Google Public DNS
+        // gives.
+        google = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        google.listen((request) {
+          asked.add(request.headers.value(HttpHeaders.hostHeader));
+          request.response
+            ..statusCode = HttpStatus.found
+            ..headers.set(HttpHeaders.locationHeader, place);
+          unawaited(request.response.close());
+        });
+        debugWebEmbedPublicLookup = (host) async {
+          lookedUp.add(host);
+          return InternetAddress.loopbackIPv4;
+        };
+      });
+
+      tearDown(() async {
+        debugWebEmbedPublicLookup = null;
+        debugForgetWebEmbedReroutes();
+        await google.close(force: true);
+      });
+
+      // The network's own address for every host never answers.
+      Future<Uri?> follow(String host) => HttpOverrides.runWithHttpOverrides(
+            () => followWebEmbedRedirects(
+              Uri.parse('http://$host:${google.port}/GdHPiQnZB4RbYVGg7'),
+              stopAt: (uri) => uri.host == 'www.google.com',
+            ),
+            _Unreachable(),
+          );
+
+      test("is asked at Google Public DNS's address, by its own name",
+          () async {
+        expect(await follow('maps.app.goo.gl'), Uri.parse(place));
+        expect(lookedUp, ['maps.app.goo.gl']);
+        expect(asked, ['maps.app.goo.gl:${google.port}']);
+
+        // Known now: the next one goes straight there.
+        expect(await follow('maps.app.goo.gl'), Uri.parse(place));
+        expect(lookedUp, hasLength(1));
+        expect(asked, hasLength(2));
+      });
+
+      test('is the only kind of link rerouted', () async {
+        expect(await follow('example.com'), isNull);
+        expect(lookedUp, isEmpty);
+        expect(asked, isEmpty);
+      });
+
+      test("Google Public DNS's answer is read past aliases", () {
+        const answer = '{"Status":0,"Answer":['
+            '{"name":"maps.app.goo.gl.","type":5,"data":"alias.example."},'
+            '{"name":"alias.example.","type":1,"data":"172.217.24.110"}]}';
+        expect(
+          webEmbedPublicDnsAddress(answer, type: 1),
+          InternetAddress('172.217.24.110'),
+        );
+        expect(webEmbedPublicDnsAddress(answer, type: 28), isNull);
+        expect(webEmbedPublicDnsAddress('{"Status":3}', type: 1), isNull);
+        expect(webEmbedPublicDnsAddress('not an answer', type: 1), isNull);
+      });
+    });
+
+    group("Google's own map, drawn where no page can be shown", () {
+      const walking =
+          'https://www.google.com/maps/dir/Paris/Lyon/data=!4m2!4m1!3e2';
+
+      test('a route carries how it is travelled', () {
+        GoogleMapsTarget target(String url) => GoogleMapsTarget.of(_read(url))!;
+        expect(target(walking).travelMode, 'w');
+        expect(
+          target(
+            'https://www.google.com/maps/dir/?api=1&origin=Paris&destination=Lyon&travelmode=bicycling',
+          ).travelMode,
+          'b',
+        );
+        expect(
+          target('https://www.google.com/maps/dir/Paris/Lyon/').travelMode,
+          isNull,
+        );
+      });
+
+      test('the page is told the key, the stops and how their pins look', () {
+        final config = googleMapsPageConfig(
+          apiKey: 'demo-key',
+          target: GoogleMapsTarget.of(_read(walking))!,
+          palette: _mapPalette(),
+          language: 'en',
+        );
+        expect(config['key'], 'demo-key');
+        expect(config['language'], 'en');
+        final target = config['target']! as Map<String, Object?>;
+        expect(target['mode'], 'w');
+        final stops = [
+          for (final stop in target['stops']! as List)
+            stop as Map<String, Object?>,
+        ];
+        expect(stops.map((stop) => stop['name']), ['Paris', 'Lyon']);
+        // A route's ends are coloured as the app's own map colours them.
+        expect(stops.map((stop) => stop['fill']), ['#10b981', '#ef4444']);
+        expect(stops.map((stop) => stop['initial']), ['P', 'L']);
+        expect(
+          googleMapsStartScript(config),
+          'window.appflowyMap && window.appflowyMap.start(${jsonEncode(config)});',
+        );
+        // The page served on the loopback port holds no key of its own.
+        expect(googleMapsPageHtml, isNot(contains('AIza')));
+      });
+
+      test("the map follows the app's look, with no pure white on paper", () {
+        final light = googleMapsPageLook(_mapPalette());
+        final dark = googleMapsPageLook(_mapPalette(dark: true));
+        final paper = googleMapsPageLook(_mapPalette(paper: true));
+        final looks = [light, dark, paper].map((look) => look['name']);
+        expect(looks, ['light', 'dark', 'paper']);
+        expect(light['styles'], isEmpty);
+        expect(dark['styles'], isNotEmpty);
+        expect(paper['styles'], isNotEmpty);
+        expect(paper['background'], '#fbf5e9');
+        expect(jsonEncode(paper).toLowerCase(), isNot(contains('#ffffff')));
+      });
+
+      test('the page is served only at its own address, to its own host',
+          () async {
+        final url = await GoogleMapsPageHost.instance.url;
+        expect(url.host, '127.0.0.1');
+        final client = HttpClient();
+        Future<int> status(Uri uri, {String? host}) async {
+          final request = await client.getUrl(uri);
+          if (host != null) {
+            request.headers.host = host;
+          }
+          final response = await request.close();
+          await response.drain<void>();
+          return response.statusCode;
+        }
+
+        try {
+          final response = await (await client.getUrl(url)).close();
+          expect(response.statusCode, 200);
+          expect(
+            await response.transform(utf8.decoder).join(),
+            googleMapsPageHtml,
+          );
+          expect(await status(url.replace(path: '/elsewhere/map.html')), 404);
+          // A page that names another host, as a rebinding attack would.
+          expect(await status(url, host: 'rebound.example'), 404);
+        } finally {
+          client.close(force: true);
+        }
+      });
     });
   });
 

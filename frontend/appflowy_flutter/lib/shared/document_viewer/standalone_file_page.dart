@@ -16,6 +16,7 @@ class StandaloneFilePage extends StatefulWidget {
     required this.header,
     required this.body,
     this.nativeBodyGestures = false,
+    this.pinHeader = false,
   });
 
   final Widget header;
@@ -24,6 +25,11 @@ class StandaloneFilePage extends StatefulWidget {
   /// Matrix-owned photos keep their scale recognizer, including zoomed pans.
   /// The outer drag must not win at a smaller slop than that native recognizer.
   final bool nativeBodyGestures;
+
+  /// Keeps the header in place and gives the body the rest of the page, for
+  /// a renderer that scrolls itself. An embedded editor's own scroller then
+  /// owns every scroll: nothing splits the motion between it and the page.
+  final bool pinHeader;
 
   @override
   State<StandaloneFilePage> createState() => _StandaloneFilePageState();
@@ -39,46 +45,58 @@ class _StandaloneFilePageState extends State<StandaloneFilePage> {
   }
 
   @override
-  Widget build(BuildContext context) => PremiumCoordinatedScrollScope(
-        child: NestedScrollView(
-          key: const ValueKey('workspace-file-page-scroll'),
-          controller: _outer,
-          scrollBehavior: widget.nativeBodyGestures
-              ? ScrollConfiguration.of(context).copyWith(
-                  scrollbars: false,
-                  dragDevices: ScrollConfiguration.of(context)
-                      .dragDevices
-                      .difference({PointerDeviceKind.trackpad}),
-                )
-              : null,
-          headerSliverBuilder: (context, _) => [
-            SliverToBoxAdapter(
-              child: StandaloneFilePageScroll(
-                outer: _outer,
-                inner: _outer,
-                chrome: StandaloneFileScope.maybeOf(context)?.chrome,
-                child: StandaloneFileScrollRegion(
-                  enabled: widget.nativeBodyGestures,
-                  consumeBody: (_) => 0,
-                  child: widget.header,
-                ),
-              ),
-            ),
-          ],
-          body: Builder(
-            builder: (context) => StandaloneFilePageScroll(
+  Widget build(BuildContext context) {
+    if (widget.pinHeader) {
+      return Column(
+        key: const ValueKey('workspace-file-page-pinned'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          widget.header,
+          Expanded(child: widget.body),
+        ],
+      );
+    }
+    return PremiumCoordinatedScrollScope(
+      child: NestedScrollView(
+        key: const ValueKey('workspace-file-page-scroll'),
+        controller: _outer,
+        scrollBehavior: widget.nativeBodyGestures
+            ? ScrollConfiguration.of(context).copyWith(
+                scrollbars: false,
+                dragDevices: ScrollConfiguration.of(context)
+                    .dragDevices
+                    .difference({PointerDeviceKind.trackpad}),
+              )
+            : null,
+        headerSliverBuilder: (context, _) => [
+          SliverToBoxAdapter(
+            child: StandaloneFilePageScroll(
               outer: _outer,
-              inner: PrimaryScrollController.of(context),
+              inner: _outer,
               chrome: StandaloneFileScope.maybeOf(context)?.chrome,
-              child: PrimaryScrollController(
-                controller: PrimaryScrollController.of(context),
-                automaticallyInheritForPlatforms: const <TargetPlatform>{},
-                child: widget.body,
+              child: StandaloneFileScrollRegion(
+                enabled: widget.nativeBodyGestures,
+                consumeBody: (_) => 0,
+                child: widget.header,
               ),
             ),
           ),
+        ],
+        body: Builder(
+          builder: (context) => StandaloneFilePageScroll(
+            outer: _outer,
+            inner: PrimaryScrollController.of(context),
+            chrome: StandaloneFileScope.maybeOf(context)?.chrome,
+            child: PrimaryScrollController(
+              controller: PrimaryScrollController.of(context),
+              automaticallyInheritForPlatforms: const <TargetPlatform>{},
+              child: widget.body,
+            ),
+          ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// Positive deltas move down the page. A delegate returns ACTUAL consumption,

@@ -50,7 +50,7 @@ List<PageBlockEntry> pageBlockCatalog() {
   final entries = <PageBlockEntry>[];
   // Without a page there is nothing to create views beneath, so the entries
   // that would (a new grid, a new canvas) are simply not built.
-  for (final item in slashMenuItemsBuilder()) {
+  for (final item in slashMenuEntries()) {
     final metadata = slashMenuMetadataFor(item);
     if (metadata == null ||
         metadata.pageOnly ||

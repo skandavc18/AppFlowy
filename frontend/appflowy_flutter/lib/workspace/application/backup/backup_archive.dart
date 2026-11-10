@@ -26,6 +26,18 @@ const String backupWorkspaceFolder = 'workspace';
 /// Where this computer's settings sit inside the archive.
 const String backupPreferencesFolder = 'preferences';
 
+/// Where the workspace snapshot sits inside the archive: every page, table
+/// and folder, as the backend exports them, consistent even while AppFlowy is
+/// running and ready to be restored in place.
+const String backupSnapshotFolder = 'workspace_snapshot';
+
+/// The snapshot's name inside [backupSnapshotFolder].
+const String backupSnapshotFileName = 'workspace.afws';
+
+/// The snapshot's full name inside the archive.
+const String backupSnapshotEntry =
+    '$backupSnapshotFolder/$backupSnapshotFileName';
+
 /// What one archive turned out to be.
 @immutable
 class BackupArchiveResult {
@@ -50,6 +62,9 @@ class BackupArchiveResult {
 typedef BackupArchiveProgress = void Function(int done, int total);
 
 /// Writes every chosen part of [dataPath] into [destination].
+///
+/// [extraFiles] maps names inside the archive to files on disk that go in as
+/// they are, whatever part they would otherwise belong to.
 Future<BackupArchiveResult> writeBackupArchive({
   required String dataPath,
   required File destination,
@@ -57,6 +72,7 @@ Future<BackupArchiveResult> writeBackupArchive({
   required BackupCompression compression,
   String preferencesPath = '',
   int maximumFileBytes = BackupPolicy.anySize,
+  Map<String, String> extraFiles = const {},
   BackupArchiveProgress? onProgress,
 }) async {
   await destination.parent.create(recursive: true);
@@ -70,6 +86,7 @@ Future<BackupArchiveResult> writeBackupArchive({
       'store': !compression.compresses,
       'preferences': preferencesPath,
       'maximum_file_bytes': maximumFileBytes,
+      'extra_files': extraFiles,
     },
     onProgress,
   );
@@ -126,6 +143,8 @@ Future<Set<BackupPart>> readBackupArchiveParts(File source) async {
       }
       if (segments.first == backupPreferencesFolder) {
         parts.add(BackupPart.preferences);
+      } else if (segments.first == backupSnapshotFolder) {
+        parts.add(BackupPart.workspace);
       } else if (segments.first == backupWorkspaceFolder &&
           segments.length > 1) {
         parts.add(backupPartOfFolder(segments[1]));
@@ -153,6 +172,9 @@ Map<String, Object?> _writeArchive(
   final store = request['store']! as bool;
   final preferencesPath = request['preferences']! as String;
   final maximumFileBytes = request['maximum_file_bytes']! as int;
+  final extraFiles = Map<String, String>.from(
+    (request['extra_files'] as Map?) ?? const {},
+  );
   final parts = <BackupPart>{
     for (final name in request['parts']! as List)
       if (BackupPart.fromValue(name) != null) BackupPart.fromValue(name)!,
@@ -224,6 +246,15 @@ Map<String, Object?> _writeArchive(
           ),
           length: preferences.lengthSync(),
         ),
+      );
+    }
+  }
+
+  for (final extra in extraFiles.entries) {
+    final file = File(extra.value);
+    if (file.existsSync()) {
+      chosen.add(
+        _Candidate(file: file, name: extra.key, length: file.lengthSync()),
       );
     }
   }

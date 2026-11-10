@@ -1,18 +1,25 @@
-// Settings ▸ Backup.
+// Settings ▸ Backup & sync.
 //
-// Where copies go, when they are taken, what goes in them, how hard they are
-// squeezed — separately for the copy that stays here and the copy that is sent
-// away — and whether they are sealed before they leave.
+// Keeping the workspace the same on several computers, and then where copies
+// go, when they are taken, what goes in them, how hard they are squeezed —
+// separately for the copy that stays here and the copy that is sent away —
+// whether they are sealed before they leave, and putting one back.
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup.dart';
+import 'package:appflowy/workspace/presentation/app_password/app_password_dialogs.dart';
+import 'package:appflowy/workspace/presentation/app_password/app_password_section.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/backup/backup_dialogs.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_dialogs.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_section.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_dropdown.dart';
@@ -35,7 +42,9 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
   BackupPolicy get _policy => _settings.policy;
 
   List<BackupCopy>? _copies;
+  List<BackupCopy> _localCopies = const [];
   String? _listingFailure;
+  bool _listingNeedsSignIn = false;
   bool _listing = false;
 
   @override
@@ -62,11 +71,13 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
   Future<void> _apply(BackupPolicy policy) => _settings.update(policy);
 
   Future<void> _refresh() async {
+    unawaited(_refreshLocal());
     if (!_policy.destination.isReady) {
       if (mounted) {
         setState(() {
           _copies = const [];
           _listingFailure = null;
+          _listingNeedsSignIn = false;
         });
       }
       return;
@@ -75,6 +86,7 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
       setState(() {
         _listing = true;
         _listingFailure = null;
+        _listingNeedsSignIn = false;
       });
     }
     try {
@@ -89,12 +101,26 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
       if (mounted) {
         setState(() {
           _listing = false;
-          _listingFailure = error is BackupTargetError
-              ? error.detail
-              : error is BackupError
-                  ? error.detail
-                  : error.toString();
+          _listingFailure = describeBackupFailure(error);
+          _listingNeedsSignIn = backupFailureNeedsSignIn(error) &&
+              _policy.destination.kind.needsConnection;
         });
+      }
+    }
+  }
+
+  /// The copies kept on this computer, including the safety copies taken
+  /// before a restore. Never fails loudly: they are a convenience beside the
+  /// destination's own list.
+  Future<void> _refreshLocal() async {
+    try {
+      final copies = await _service.listLocalCopies();
+      if (mounted) {
+        setState(() => _localCopies = copies);
+      }
+    } on Object {
+      if (mounted) {
+        setState(() => _localCopies = const []);
       }
     }
   }
@@ -108,6 +134,8 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
       title: LocaleKeys.backup_settingsTitle.tr(),
       description: LocaleKeys.backup_settingsDescription.tr(),
       children: [
+        const AppPasswordSettingsSection(),
+        const SyncSettingsSection(),
         SettingsCategory(
           title: LocaleKeys.backup_whereTitle.tr(),
           description: LocaleKeys.backup_whereDescription.tr(),
@@ -230,27 +258,19 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
               value: policy.encrypt,
               onChanged: (value) async {
                 if (!value) {
-                  await showRemoveBackupPassphraseDialog(context);
+                  await _settings.update(_policy.withoutPassphrase());
                   return;
                 }
-                if (!context.mounted) {
+                final password = await ensureAppPassword(context);
+                if (password == null) {
                   return;
                 }
-                await showSetBackupPassphraseDialog(context);
+                await _settings.useAppPassword(password, turnOn: true);
               },
             ),
             if (policy.encrypt) ...[
               const SizedBox(height: 12),
-              _SealState(
-                unlocked: _settings.isUnlocked,
-                onUnlock: () async {
-                  await showUnlockBackupDialog(context);
-                },
-                onLock: _settings.lock,
-                onChange: () async {
-                  await showChangeBackupPassphraseDialog(context);
-                },
-              ),
+              const _SealState(),
             ],
           ],
         ),
@@ -327,12 +347,36 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
               copies: _copies,
               listing: _listing,
               failure: _listingFailure,
+              onSignIn: _listingNeedsSignIn
+                  ? () async {
+                      if (await signInAgainForDestination(
+                            context,
+                            _policy.destination,
+                          ) &&
+                          mounted) {
+                        await _refresh();
+                      }
+                    }
+                  : null,
               onRefresh: _refresh,
               onRestore: _restore,
               onRemove: _remove,
             ),
           ],
         ),
+        if (_localCopies.isNotEmpty)
+          SettingsCategory(
+            title: LocaleKeys.backup_localCopiesTitle.tr(),
+            description: LocaleKeys.backup_localCopiesDescription.tr(),
+            children: [
+              for (final copy in _localCopies)
+                _CopyRow(
+                  copy: copy,
+                  onRestore: () => unawaited(_restore(copy, local: true)),
+                  onRemove: () => unawaited(_removeLocal(copy)),
+                ),
+            ],
+          ),
       ],
     );
   }
@@ -357,8 +401,8 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
         return;
       }
       if (error.needsPassphrase) {
-        final unlocked = await showUnlockBackupDialog(context);
-        if (unlocked && mounted) {
+        final password = await ensureAppPassword(context);
+        if (password != null && mounted) {
           await _runNow();
         }
         return;
@@ -379,7 +423,35 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
     }
   }
 
-  Future<void> _restore(BackupCopy copy) async {
+  /// Restores [copy] — in place, or by unpacking it into a folder.
+  ///
+  /// [local] says the copy is one kept on this computer rather than one at
+  /// the destination.
+  Future<void> _restore(BackupCopy copy, {bool local = false}) async {
+    final choice = await chooseBackupRestore(context, copy: copy);
+    if (choice == null || !mounted) {
+      return;
+    }
+    final from = local ? await _service.openLocalTarget() : null;
+    if (!mounted) {
+      return;
+    }
+    if (choice == BackupRestoreChoice.inPlace) {
+      Uint8List? key;
+      final manifest = copy.manifest;
+      if (manifest != null && manifest.encrypted) {
+        key = await askForBackupPassphrase(context, manifest: manifest);
+        if (key == null || !mounted) {
+          return;
+        }
+      }
+      await runBackupRestoreInPlace(context, copy: copy, key: key, from: from);
+      return;
+    }
+    await _restoreIntoFolder(copy, from: from);
+  }
+
+  Future<void> _restoreIntoFolder(BackupCopy copy, {BackupTarget? from}) async {
     final folder = await getIt<FilePickerService>().getDirectoryPath();
     if (folder == null || folder.isEmpty || !mounted) {
       return;
@@ -399,6 +471,7 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
         copy: copy,
         into: Directory(folder),
         key: key,
+        from: from,
       );
       if (!mounted) {
         return;
@@ -416,6 +489,22 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
           context: context,
           succeeded: false,
           message: error is BackupError ? error.detail : error.toString(),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeLocal(BackupCopy copy) async {
+    try {
+      final local = await _service.openLocalTarget();
+      await local.remove(copy);
+      await _refreshLocal();
+    } on Object catch (error) {
+      if (mounted) {
+        reportBackupOutcome(
+          context: context,
+          succeeded: false,
+          message: error.toString(),
         );
       }
     }
@@ -491,7 +580,11 @@ class _DestinationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final premium = PremiumThemeExtension.of(context);
-    final accent = backupDestinationAccent(destination.kind);
+    final accent = LegibleColor.onWash(
+      premium.hover,
+      backupDestinationAccent(destination.kind),
+      wash: 0.12,
+    );
     final where = switch (destination.kind) {
       BackupDestinationKind.none => LocaleKeys.backup_destinationNoneHint.tr(),
       BackupDestinationKind.folder => destination.localPath,
@@ -572,55 +665,55 @@ class _DestinationCard extends StatelessWidget {
   }
 }
 
+/// How copies are sealed: with the AppFlowy password, which this computer
+/// may still have to be told.
 class _SealState extends StatelessWidget {
-  const _SealState({
-    required this.unlocked,
-    required this.onUnlock,
-    required this.onLock,
-    required this.onChange,
-  });
-
-  final bool unlocked;
-  final Future<void> Function() onUnlock;
-  final VoidCallback onLock;
-  final Future<void> Function() onChange;
+  const _SealState();
 
   @override
   Widget build(BuildContext context) {
     final premium = PremiumThemeExtension.of(context);
-    return Row(
-      children: [
-        Icon(
-          unlocked ? Icons.lock_open_rounded : Icons.lock_rounded,
-          size: 16,
-          color: premium.textSecondary,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            unlocked
-                ? LocaleKeys.backup_sealUnlocked.tr()
-                : LocaleKeys.backup_sealLocked.tr(),
-            style: TextStyle(
-              fontSize: 12.5,
-              height: 1.35,
+    return ListenableBuilder(
+      listenable: AppPassword.instance,
+      builder: (context, _) {
+        final known = AppPassword.instance.isKnown;
+        return Row(
+          children: [
+            Icon(
+              known ? Icons.lock_rounded : Icons.lock_clock_rounded,
+              size: 16,
               color: premium.textSecondary,
             ),
-          ),
-        ),
-        TextButton(
-          onPressed: unlocked ? onLock : () => unawaited(onUnlock()),
-          child: Text(
-            unlocked
-                ? LocaleKeys.backup_lockNow.tr()
-                : LocaleKeys.backup_unlockConfirm.tr(),
-          ),
-        ),
-        TextButton(
-          onPressed: () => unawaited(onChange()),
-          child: Text(LocaleKeys.backup_changePassphrase.tr()),
-        ),
-      ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                known
+                    ? LocaleKeys.backup_sealedWithAppPassword.tr()
+                    : LocaleKeys.backup_sealNeedsAppPassword.tr(),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.35,
+                  color: premium.textSecondary,
+                ),
+              ),
+            ),
+            if (!known)
+              TextButton(
+                onPressed: () => unawaited(ensureAppPassword(context)),
+                child: Text(
+                  AppPassword.instance.isSet
+                      ? LocaleKeys.appPassword_type.tr()
+                      : LocaleKeys.appPassword_set.tr(),
+                ),
+              )
+            else
+              TextButton(
+                onPressed: () => unawaited(showChangeAppPasswordDialog(context)),
+                child: Text(LocaleKeys.appPassword_change.tr()),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -716,11 +809,15 @@ class _CopiesList extends StatelessWidget {
     required this.onRefresh,
     required this.onRestore,
     required this.onRemove,
+    this.onSignIn,
   });
 
   final List<BackupCopy>? copies;
   final bool listing;
   final String? failure;
+
+  /// Offered when the failure is cured by signing in to the account again.
+  final Future<void> Function()? onSignIn;
   final Future<void> Function() onRefresh;
   final Future<void> Function(BackupCopy) onRestore;
   final Future<void> Function(BackupCopy) onRemove;
@@ -753,6 +850,11 @@ class _CopiesList extends StatelessWidget {
                 ),
               ),
             ),
+            if (onSignIn != null && !listing)
+              TextButton(
+                onPressed: () => unawaited(onSignIn!()),
+                child: Text(LocaleKeys.backup_signInAgain.tr()),
+              ),
             TextButton(
               onPressed: listing ? null : () => unawaited(onRefresh()),
               child: Text(LocaleKeys.backup_refresh.tr()),
@@ -789,10 +891,18 @@ class _CopyRow extends StatelessWidget {
     final premium = PremiumThemeExtension.of(context);
     final manifest = copy.manifest;
     final facts = <String>[
+      if (manifest?.reason == BackupReason.beforeRestore)
+        LocaleKeys.backup_copySafetyRestore.tr(),
+      if (manifest?.reason == BackupReason.beforeJoin)
+        LocaleKeys.backup_copySafetyJoin.tr(),
       backupSizeLabel(copy.bytes),
       if (manifest != null)
         LocaleKeys.backup_copyFiles.tr(args: ['${manifest.fileCount}']),
       if (copy.isSealed) LocaleKeys.backup_copySealed.tr(),
+      if (manifest != null &&
+          !manifest.hasWorkspaceSnapshot &&
+          !manifest.encrypted)
+        LocaleKeys.backup_copyNoSnapshot.tr(),
     ];
 
     return Padding(

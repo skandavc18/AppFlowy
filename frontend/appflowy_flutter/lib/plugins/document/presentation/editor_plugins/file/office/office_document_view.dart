@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/mobile/presentation/setting/settings_page/mobile_settings_page_screen.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -19,6 +20,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 
 import 'office_document_bridge.dart';
@@ -29,6 +31,7 @@ import 'office_editor_skin.dart';
 import 'office_embedded_host.dart';
 import 'office_embedded_view.dart';
 import 'office_panel.dart';
+import 'office_platform.dart';
 import 'office_server_settings.dart';
 import 'office_server_settings_form.dart';
 
@@ -40,9 +43,10 @@ const kOfficeEditorScrollExclusionKey =
 
 /// Opens a Word, Excel or PowerPoint document.
 ///
-/// On Windows, macOS and Linux the document opens in the editor bundled with
-/// AppFlowy, so no document server is needed. Files kept in AppFlowy Cloud
-/// still use the Cloud's managed editor, which saves back to cloud storage.
+/// On Windows, macOS, Linux and Android the document opens in the editor
+/// bundled with AppFlowy, so no document server is needed (Android unpacks
+/// it from the APK the first time). Files kept in AppFlowy Cloud still use
+/// the Cloud's managed editor, which saves back to cloud storage.
 /// Elsewhere, or when the bundle is missing, cloud accounts receive a managed
 /// editor session and local accounts can connect a self-hosted ONLYOFFICE
 /// Docs instance instead.
@@ -70,7 +74,7 @@ class OfficeDocumentView extends StatefulWidget {
   final OfficeCloudSessionService cloudService;
   final OfficeServerProbe probe;
 
-  /// The bundled editor; desktop builds default to the shared instance.
+  /// The bundled editor; defaults to the one for this platform.
   final EmbeddedOfficeEditor? embeddedEditor;
 
   /// What to show instead of the "no server" panel.
@@ -114,7 +118,7 @@ enum OfficeEditorRoute {
   local,
 }
 
-/// Desktop builds open files on this machine in the bundled editor. A file in
+/// Builds with the bundled editor open files on this device in it. A file in
 /// cloud storage keeps the managed editor, which writes back to the cloud,
 /// and without an account it is shown read only, because saving would only
 /// change a downloaded copy.
@@ -529,6 +533,19 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
   }
 
   void _openDocumentSettings() {
+    // Mobile shows the same settings page full screen instead of a dialog.
+    if (officeRunsOnMobile) {
+      final location =
+          MobileSettingsPageScreen.location(SettingsPage.documentEditing);
+      unawaited(
+        context.push(location).whenComplete(() {
+          if (mounted) {
+            unawaited(_load());
+          }
+        }),
+      );
+      return;
+    }
     final userWorkspaceBloc = context.read<UserWorkspaceBloc>();
     sidebar_settings.showSettingsDialog(
       context,

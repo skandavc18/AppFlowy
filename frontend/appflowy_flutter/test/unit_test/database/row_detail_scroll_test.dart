@@ -170,6 +170,8 @@ void main() {
           final headerElement = headerKey.currentContext;
           final fieldState = tester.state(find.byType(TextField));
           final top = tester.getTopLeft(find.byType(RowDetailScrollSurface)).dy;
+          final gain =
+              const PremiumScrollPhysicsConfig().desktopDirectManipulationScale;
           final pan =
               await tester.createGesture(kind: PointerDeviceKind.trackpad);
           const point = Offset(240, 400);
@@ -183,7 +185,11 @@ void main() {
             );
             await tester.pump(const Duration(milliseconds: 16));
             expect(position.pixels, greaterThanOrEqualTo(previous));
-            expect(position.pixels - previous, lessThanOrEqualTo(18.01));
+            // Never faster than the fingers.
+            expect(
+              position.pixels - previous,
+              lessThanOrEqualTo(30 * gain + 0.01),
+            );
             previous = position.pixels;
           }
           await pan.panZoomEnd(timeStamp: const Duration(seconds: 3));

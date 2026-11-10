@@ -61,6 +61,31 @@ class NotificationSettingsCubit extends Cubit<NotificationSettingsState> {
     );
   }
 
+  /// Takes notification settings that arrived from another computer.
+  Future<void> adoptSynced(NotificationSettingsPB settings) async {
+    await _initCompleter.future;
+    _notificationSettings.notificationsEnabled = settings.notificationsEnabled;
+    final result = await UserSettingsBackendService()
+        .setNotificationSettings(_notificationSettings);
+    result.fold((_) => null, (error) => Log.error(error));
+    if (!isClosed) {
+      emit(
+        state.copyWith(isNotificationsEnabled: settings.notificationsEnabled),
+      );
+    }
+  }
+
+  /// Reads again whether the notification icon shows, after the setting
+  /// arrived from another computer.
+  Future<void> reloadShowNotificationIcon() async {
+    await _initCompleter.future;
+    final show = await getIt<KeyValueStorage>()
+        .getWithFormat(KVKeys.showNotificationIcon, (v) => bool.parse(v));
+    if (!isClosed) {
+      emit(state.copyWith(isShowNotificationsIconEnabled: show ?? true));
+    }
+  }
+
   Future<void> _saveNotificationSettings() async {
     await _initCompleter.future;
 

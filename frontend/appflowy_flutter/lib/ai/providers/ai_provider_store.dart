@@ -68,6 +68,17 @@ class CustomAIProviderStore extends ChangeNotifier {
     return _loading ??= _load();
   }
 
+  /// Reads the providers and the chosen model again, after they arrived from
+  /// another computer.
+  Future<void> reload() async {
+    await _loading;
+    _providers.clear();
+    _selectedModel = null;
+    _loaded = false;
+    await ensureLoaded();
+    notifyListeners();
+  }
+
   Future<void> _load() async {
     try {
       final raw = await _kv?.get(providersKey);

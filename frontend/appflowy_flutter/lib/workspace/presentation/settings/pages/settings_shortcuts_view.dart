@@ -440,12 +440,13 @@ class KeyBadge extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final theme = AFThemeExtension.of(context);
     return Container(
       height: 24,
       margin: const EdgeInsets.only(right: 4),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: AFThemeExtension.of(context).greySelect,
+        color: theme.greySelect,
         borderRadius: Corners.s4Border,
         boxShadow: [
           BoxShadow(
@@ -457,11 +458,11 @@ class KeyBadge extends StatelessWidget {
       ),
       child: Center(
         child: iconData != null
-            ? FlowySvg(iconData!, color: Colors.black)
+            ? FlowySvg(iconData!, color: theme.textColor)
             : FlowyText.medium(
                 keyLabel.toLowerCase(),
                 fontSize: 12,
-                color: Colors.black,
+                color: theme.textColor,
               ),
       ),
     );

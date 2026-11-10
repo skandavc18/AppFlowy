@@ -12,12 +12,14 @@ import 'package:appflowy/mobile/presentation/database/mobile_grid_screen.dart';
 import 'package:appflowy/mobile/presentation/favorite/mobile_favorite_page.dart';
 import 'package:appflowy/mobile/presentation/notifications/mobile_notifications_multiple_select_page.dart';
 import 'package:appflowy/mobile/presentation/notifications/mobile_notifications_screen.dart';
+import 'package:appflowy/mobile/presentation/plugin/mobile_plugin_screen.dart';
 import 'package:appflowy/mobile/presentation/presentation.dart';
 import 'package:appflowy/mobile/presentation/search/mobile_search_page.dart';
 import 'package:appflowy/mobile/presentation/setting/cloud/appflowy_cloud_page.dart';
 import 'package:appflowy/mobile/presentation/setting/font/font_picker_screen.dart';
 import 'package:appflowy/mobile/presentation/setting/language/language_picker_screen.dart';
 import 'package:appflowy/mobile/presentation/setting/launch_settings_page.dart';
+import 'package:appflowy/mobile/presentation/setting/settings_page/mobile_settings_page_screen.dart';
 import 'package:appflowy/mobile/presentation/setting/workspace/add_members_screen.dart';
 import 'package:appflowy/mobile/presentation/setting/workspace/invite_members_screen.dart';
 import 'package:appflowy/plugins/base/color/color_picker_screen.dart';
@@ -25,10 +27,14 @@ import 'package:appflowy/plugins/base/emoji/emoji_picker_screen.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/code_language_screen.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_picker_screen.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mobile_toolbar_item/mobile_block_settings_screen.dart';
+import 'package:appflowy/mobile/application/mobile_router.dart';
+import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/tasks/app_widget.dart';
 import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/presentation/presentation.dart';
+import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/desktop_home_screen.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/feature_flags/mobile_feature_flag_screen.dart';
 import 'package:appflowy_backend/log.dart';
@@ -44,6 +50,10 @@ import '../../shared/icon_emoji_picker/tab.dart';
 import 'af_navigator_observer.dart';
 
 GoRouter generateRouter(Widget child) {
+  if (UniversalPlatform.isMobile) {
+    // Mobile pages are routes, so a request to open one in a tab pushes it.
+    TabsBloc.mobileOpener = openPluginOnMobile;
+  }
   return GoRouter(
     navigatorKey: AppGlobals.rootNavKey,
     observers: [getIt.get<AFNavigatorObserver>()],
@@ -62,6 +72,7 @@ GoRouter generateRouter(Widget child) {
       if (UniversalPlatform.isMobile) ...[
         // settings
         _mobileHomeSettingPageRoute(),
+        _mobileSettingsPageScreenRoute(),
         _mobileCloudSettingAppFlowyCloudPageRoute(),
         _mobileLaunchSettingsPageRoute(),
         _mobileFeatureFlagPageRoute(),
@@ -84,6 +95,9 @@ GoRouter generateRouter(Widget child) {
 
         // trash
         _mobileHomeTrashPageRoute(),
+
+        // desktop plugins: templates, extensions, workflows, page library...
+        _mobilePluginScreenRoute(),
 
         // emoji picker
         _mobileEmojiPickerPageRoute(),
@@ -228,6 +242,23 @@ GoRoute _mobileHomeSettingPageRoute() {
   );
 }
 
+GoRoute _mobileSettingsPageScreenRoute() {
+  return GoRoute(
+    parentNavigatorKey: AppGlobals.rootNavKey,
+    path: MobileSettingsPageScreen.routeName,
+    pageBuilder: (context, state) {
+      final page = MobileSettingsPageScreen.pageFromName(
+            state.uri.queryParameters[MobileSettingsPageScreen.pageArgument],
+          ) ??
+          SettingsPage.account;
+      return MaterialExtendedPage(
+        child: MobileSettingsPageScreen(page: page),
+        name: MobileSettingsPageScreen.routeName,
+      );
+    },
+  );
+}
+
 GoRoute _mobileNotificationMultiSelectPageRoute() {
   return GoRoute(
     parentNavigatorKey: AppGlobals.rootNavKey,
@@ -301,6 +332,26 @@ GoRoute _mobileFeatureFlagPageRoute() {
       return const MaterialExtendedPage(
         child: FeatureFlagScreen(),
         name: FeatureFlagScreen.routeName,
+      );
+    },
+  );
+}
+
+GoRoute _mobilePluginScreenRoute() {
+  return GoRoute(
+    parentNavigatorKey: AppGlobals.rootNavKey,
+    path: MobilePluginScreen.routeName,
+    pageBuilder: (context, state) {
+      final extra = state.extra;
+      final plugin = extra is Plugin ? extra : null;
+      final type = plugin?.pluginType ??
+          MobilePluginScreen.typeFromName(
+            state.uri.queryParameters[MobilePluginScreen.typeArgument],
+          ) ??
+          PluginType.blank;
+      return MaterialExtendedPage(
+        child: MobilePluginScreen(pluginType: type, plugin: plugin),
+        name: MobilePluginScreen.routeName,
       );
     },
   );

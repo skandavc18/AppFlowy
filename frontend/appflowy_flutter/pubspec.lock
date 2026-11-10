@@ -97,11 +97,9 @@ packages:
   appflowy_editor:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "470c4e7"
-      resolved-ref: "470c4e77c71b63f693ce0923a927afcd667d6f3b"
-      url: "https://github.com/AppFlowy-IO/appflowy-editor.git"
-    source: git
+      path: "packages/appflowy_editor"
+      relative: true
+    source: path
     version: "5.2.0"
   appflowy_editor_plugins:
     dependency: "direct main"
@@ -1579,10 +1577,9 @@ packages:
   media_kit_video:
     dependency: "direct main"
     description:
-      name: media_kit_video
-      sha256: afaa509e7b7e0bf247557a3a740cde903a52c34ace9810f94500e127bd7b043d
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/media_kit_video"
+      relative: true
+    source: path
     version: "2.0.1"
   meta:
     dependency: transitive

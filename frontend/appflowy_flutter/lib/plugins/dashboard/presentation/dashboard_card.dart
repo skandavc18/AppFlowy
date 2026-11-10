@@ -15,6 +15,7 @@ import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -391,8 +392,10 @@ class _DashboardCardState extends State<DashboardCard> {
                                     size: 14,
                                     color: appearance.onColour
                                         ? appearance.tone.label
-                                        : appearance.tone.strong
-                                            .withValues(alpha: 0.85),
+                                        : appearance.tone.strongInk(
+                                            0,
+                                            minimum: LegibleColor.glyph,
+                                          ),
                                   ),
                                   const SizedBox(width: 7),
                                 ],

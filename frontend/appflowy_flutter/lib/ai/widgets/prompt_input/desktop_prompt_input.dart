@@ -4,7 +4,6 @@ import 'package:appflowy/plugins/ai_chat/application/chat_user_cubit.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/layout_define.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/startup/startup.dart';
-import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -632,10 +631,10 @@ class PromptInputTextField extends StatelessWidget {
   }
 
   TextStyle? inputHintTextStyle(BuildContext context) {
+    // The theme's hint ink: the fixed greys this used were barely 1.7:1 on
+    // every canvas, light, dark and paper alike.
     return AppFlowyTheme.of(context).textStyle.body.standard(
-          color: Theme.of(context).isLightMode
-              ? const Color(0xFFBDC2C8)
-              : const Color(0xFF3C3E51),
+          color: Theme.of(context).hintColor,
         );
   }
 }

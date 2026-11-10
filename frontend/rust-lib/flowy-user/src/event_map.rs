@@ -82,6 +82,13 @@ pub fn init(user_manager: Weak<UserManager>) -> AFPlugin {
     .event(UserEvent::GetWorkspaceSetting, get_workspace_setting_handler)
     .event(UserEvent::NotifyDidSwitchPlan, notify_did_switch_plan_handler)
     .event(UserEvent::PasscodeSignIn, sign_in_with_passcode_handler)
+    .event(UserEvent::ExportWorkspaceSnapshot, export_workspace_snapshot_handler)
+    .event(UserEvent::ExportWorkspaceChanges, export_workspace_changes_handler)
+    .event(UserEvent::ImportWorkspaceChanges, import_workspace_changes_handler)
+    .event(UserEvent::ScheduleWorkspaceRestore, schedule_workspace_restore_handler)
+    .event(UserEvent::TakeWorkspaceRestoreOutcome, take_workspace_restore_outcome_handler)
+    .event(UserEvent::GetCloudUserValue, get_cloud_user_value_handler)
+    .event(UserEvent::SetCloudUserValue, set_cloud_user_value_handler)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Display, Hash, ProtoBuf_Enum, Flowy_Event)]
@@ -278,6 +285,33 @@ pub enum UserEvent {
 
   #[event(input = "PasscodeSignInPB", output = "GotrueTokenResponsePB")]
   PasscodeSignIn = 65,
+
+  /// Writes every page, table and folder of the current workspace to one file.
+  #[event(input = "ExportWorkspaceSnapshotPB", output = "WorkspaceBundlePB")]
+  ExportWorkspaceSnapshot = 71,
+
+  /// Writes what changed in the current workspace since the last export.
+  #[event(input = "ExportWorkspaceChangesPB", output = "WorkspaceBundlePB")]
+  ExportWorkspaceChanges = 72,
+
+  /// Merges a bundle from another computer into the current workspace.
+  #[event(input = "ImportWorkspaceChangesPB", output = "WorkspaceImportPB")]
+  ImportWorkspaceChanges = 73,
+
+  /// Sets a snapshot aside to replace its workspace when AppFlowy next starts.
+  #[event(input = "ScheduleWorkspaceRestorePB", output = "ScheduledWorkspaceRestorePB")]
+  ScheduleWorkspaceRestore = 74,
+
+  /// How the last restore went, reported once.
+  #[event(output = "WorkspaceRestoreOutcomePB")]
+  TakeWorkspaceRestoreOutcome = 75,
+
+  /// A value sync keeps with the user's account on the server.
+  #[event(input = "CloudUserKeyPB", output = "CloudUserValuePB")]
+  GetCloudUserValue = 76,
+
+  #[event(input = "CloudUserValuePB")]
+  SetCloudUserValue = 77,
 }
 
 #[async_trait]

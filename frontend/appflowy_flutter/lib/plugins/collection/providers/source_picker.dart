@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/google_photos_picker.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
@@ -539,6 +540,11 @@ class _RowState extends State<_Row> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
+    final accent = LegibleColor.onWash(
+      palette.floatingSurface,
+      widget.accent,
+      wash: 0.12,
+    );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovered = true),
@@ -564,15 +570,13 @@ class _RowState extends State<_Row> {
                 width: 30,
                 height: 30,
                 decoration: BoxDecoration(
-                  color: widget.accent
-                      .withValues(alpha: widget.muted ? 0.07 : 0.12),
+                  color: accent.withValues(alpha: widget.muted ? 0.07 : 0.12),
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Icon(
                   widget.icon,
                   size: 16,
-                  color:
-                      widget.accent.withValues(alpha: widget.muted ? 0.75 : 1),
+                  color: accent.withValues(alpha: widget.muted ? 0.75 : 1),
                 ),
               ),
               const SizedBox(width: 11),

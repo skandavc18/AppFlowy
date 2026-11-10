@@ -35,8 +35,11 @@ class MobileInlineActionsMenu extends InlineActionsMenuService {
   @override
   void dismiss() {
     if (_menuEntry != null) {
-      editorState.service.keyboardService?.enable();
-      editorState.service.scrollService?.enable();
+      editorState.onDispose.removeListener(dismiss);
+      if (!editorState.isDisposed) {
+        editorState.service.keyboardService?.enable();
+        editorState.service.scrollService?.enable();
+      }
     }
 
     _menuEntry?.remove();
@@ -117,6 +120,10 @@ class MobileInlineActionsMenu extends InlineActionsMenuService {
     );
 
     Overlay.of(context).insert(_menuEntry!);
+    // The entry lives in the navigator's overlay, above every page, so a back
+    // gesture could close the page and leave the menu behind it, failing to
+    // build over whatever came next.
+    editorState.onDispose.addListener(dismiss);
 
     editorState.service.keyboardService?.disable(showCursor: true);
     editorState.service.scrollService?.disable();

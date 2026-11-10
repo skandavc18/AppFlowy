@@ -3,6 +3,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_templates.dart';
 import 'package:appflowy/plugins/templates/presentation/template_card.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/templates/template_registry.dart';
@@ -181,7 +182,13 @@ class _TemplateCardState extends State<_TemplateCard> {
     final template = widget.entry;
     final neutral = template.accent == DashboardAccent.neutral;
     final tone = palette.toneFor(template.accent);
-    final strong = neutral ? palette.accent : tone.strong;
+    // Drawn straight onto the card, so the template's own colour is deepened
+    // (or lifted) just enough to read there.
+    final strong = LegibleColor.on(
+      palette.surface,
+      neutral ? palette.accent : tone.strong,
+      minimum: LegibleColor.glyph,
+    );
     // The template's own colour, laid behind a small picture of its board.
     final backdrop = neutral || tone.gradient.length < 2
         ? null

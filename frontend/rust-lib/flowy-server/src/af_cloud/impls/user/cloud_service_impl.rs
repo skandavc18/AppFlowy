@@ -182,6 +182,35 @@ where
     Ok(())
   }
 
+  async fn get_user_value(&self, key: &str) -> Result<Option<String>, FlowyError> {
+    let client = self.server.try_get_client()?;
+    let profile = client.get_profile().await?;
+    Ok(
+      profile
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get(key))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string()),
+    )
+  }
+
+  async fn set_user_value(&self, key: &str, value: &str) -> Result<(), FlowyError> {
+    let client = self.server.try_get_client()?;
+    // The server merges metadata key by key, so the rest of it stays.
+    let mut metadata = client_api::entity::auth_dto::UserMetaData::new();
+    metadata.insert(key, value.to_string());
+    client
+      .update_user(client_api::entity::auth_dto::UpdateUserParams {
+        name: None,
+        email: None,
+        password: None,
+        metadata: Some(metadata),
+      })
+      .await?;
+    Ok(())
+  }
+
   #[instrument(level = "debug", skip_all)]
   async fn get_user_profile(
     &self,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_linux_webview/appflowy_linux_webview.dart';
 import 'package:flutter/foundation.dart';
@@ -121,7 +122,6 @@ String buildOfficeScrollRuntimeScript({
     notch: ${config.maxWheelDelta},
     stop: ${config.wheelStopDistance},
     precision: ${config.precisionDeltaThreshold},
-    friction: ${config.desktopCoastFriction},
     maxVelocity: ${config.maxVelocity},
     minVelocity: ${config.minimumVelocity},
     stopVelocity: ${config.stopVelocity},
@@ -129,6 +129,7 @@ String buildOfficeScrollRuntimeScript({
     // Milliseconds a release command waits for its gesture's last input.
     grace: 120,
   });
+  ${buildPremiumCoastJavaScript(friction: config.desktopCoastFriction, deceleration: config.desktopCoastDeceleration)}
   const state = {
     qx: 0, qy: 0, vx: 0, vy: 0, rx: 0, ry: 0,
     fling: false, flingAt: 0, frame: 0, last: 0, precise: 0, atTop: null, bound: null,
@@ -354,15 +355,17 @@ String buildOfficeScrollRuntimeScript({
     const seconds = Math.min(Math.max((time - state.last) / 1000, 0), C.frame);
     state.last = time;
     if (state.fling) {
-      const decay = Math.exp(-C.friction * seconds);
-      const stepX = state.vx / C.friction * (1 - decay);
-      const stepY = state.vy / C.friction * (1 - decay);
-      state.vx *= decay;
-      state.vy *= decay;
+      // Coasts like every page, along the release's direction.
+      const speed = Math.hypot(state.vx, state.vy);
+      const step = coastStep(speed, seconds);
+      const stepX = state.vx / speed * step.distance;
+      const stepY = state.vy / speed * step.distance;
+      state.vx = state.vx / speed * step.speed;
+      state.vy = state.vy / speed * step.speed;
       const result = apply(current, stepX, stepY);
       if (result.blockedX) state.vx = 0;
       if (result.blockedY) {
-        if (stepY < 0) overscroll(result.restY + state.vy / C.friction);
+        if (stepY < 0) overscroll(result.restY + coastDistance(step.speed) * state.vy / (step.speed || 1));
         state.vy = 0;
       }
       if (Math.hypot(state.vx, state.vy) < C.stopVelocity) {
@@ -790,13 +793,17 @@ class _OfficeEditorScrollState extends State<OfficeEditorScroll>
     if (_ticker.isActive) _ticker.stop();
   }
 
-  /// Coasts the header with the app's exponential release friction. Once it is
-  /// fully retired, the document takes over at the speed that is left.
+  /// Coasts the header like every page (see [PremiumCoastSimulation]). Once it
+  /// is fully retired, the document takes over at the speed that is left.
   void _coast(ScrollController outer, double seconds) {
-    final friction = _config.desktopCoastFriction;
-    final decay = math.exp(-friction * seconds);
-    final step = _headerCoast / friction * (1 - decay);
-    final velocity = _headerCoast * decay;
+    final coast = PremiumCoastSimulation(
+      position: 0,
+      velocity: _headerCoast,
+      friction: _config.desktopCoastFriction,
+      deceleration: _config.desktopCoastDeceleration,
+    );
+    final step = coast.x(seconds);
+    final velocity = coast.dx(seconds);
     _headerCoast = velocity;
     final moved = StandaloneFilePageScroll.move(outer, step);
     if ((moved - step).abs() > 0.5) {

@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:appflowy/shared/scrolling/frame_synced_scroll_pan.dart';
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 /// The single kinetic tuning every document renderer scrolls with.
@@ -16,11 +16,14 @@ import 'package:flutter/services.dart';
 /// travel the same distance and decay the same way in every viewer.
 const documentScrollConfig = PremiumScrollPhysicsConfig();
 
-/// Exponential fling decay in inverse seconds.
+/// Viscous share of the fling's deceleration, in inverse seconds.
 ///
-/// Lower coasts longer. This produces the long, calm tail of Preview and
-/// Safari without feeling sluggish at the start of a flick.
-const double documentFlingFriction = 2.8;
+/// Documents coast exactly like every other page (see
+/// [PremiumCoastSimulation]), as Preview and Safari share macOS momentum.
+const double documentFlingFriction = premiumCoastFriction;
+
+/// Constant share of the fling's deceleration, in logical pixels/second².
+const double documentFlingDeceleration = premiumCoastDeceleration;
 
 /// Critically damped: motion settles exactly and never overshoots.
 const SpringDescription documentSettleSpring = SpringDescription(
@@ -40,9 +43,12 @@ class DocumentScrollPhysics extends ScrollPhysics
   const DocumentScrollPhysics({
     super.parent,
     this.flingFriction = documentFlingFriction,
-  }) : assert(flingFriction > 0);
+    this.flingDeceleration = documentFlingDeceleration,
+  })  : assert(flingFriction > 0),
+        assert(flingDeceleration >= 0);
 
   final double flingFriction;
+  final double flingDeceleration;
 
   static ScrollPhysics platformBase([TargetPlatform? platform]) {
     return switch (platform ?? defaultTargetPlatform) {
@@ -66,6 +72,7 @@ class DocumentScrollPhysics extends ScrollPhysics
     return DocumentScrollPhysics(
       parent: buildParent(ancestor),
       flingFriction: flingFriction,
+      flingDeceleration: flingDeceleration,
     );
   }
 
@@ -98,7 +105,12 @@ class DocumentScrollPhysics extends ScrollPhysics
     // Trackpad motion not yet on screen when the fingers lifted is travelled
     // by this coast rather than jumped to.
     final release = FrameSyncedScrollPan.releaseOf(position);
-    final launch = release?.launch(velocity, flingFriction) ?? velocity;
+    final launch = release?.launch(
+          velocity,
+          friction: flingFriction,
+          deceleration: flingDeceleration,
+        ) ??
+        velocity;
     final tolerance = toleranceFor(position);
     if (position.outOfRange) {
       return ScrollSpringSimulation(
@@ -118,32 +130,30 @@ class DocumentScrollPhysics extends ScrollPhysics
     }
     FrameSyncedScrollPan.takeRelease(position);
 
-    final simulation = FrictionSimulation(
-      math.exp(-flingFriction),
-      position.pixels,
-      launch,
+    var coast = PremiumCoastSimulation(
+      position: position.pixels,
+      velocity: launch,
+      friction: flingFriction,
+      deceleration: flingDeceleration,
       tolerance: tolerance,
     );
 
-    // Land smoothly on the document edge rather than colliding with it.
-    final endpoint = simulation.finalX;
-    final Simulation coast;
-    if (endpoint > position.maxScrollExtent) {
-      coast = FrictionSimulation.through(
-        position.pixels,
-        position.maxScrollExtent,
-        launch,
-        tolerance.velocity,
+    // Land smoothly on the document edge rather than colliding with it:
+    // brake just hard enough to come to rest exactly there.
+    final edge =
+        launch > 0 ? position.maxScrollExtent : position.minScrollExtent;
+    if ((coast.finalX - edge) * launch.sign > 0) {
+      coast = PremiumCoastSimulation(
+        position: position.pixels,
+        velocity: launch,
+        friction: flingFriction,
+        deceleration: premiumCoastDecelerationToRest(
+          velocity: launch,
+          distance: (edge - position.pixels).abs(),
+          friction: flingFriction,
+        ),
+        tolerance: tolerance,
       );
-    } else if (endpoint < position.minScrollExtent) {
-      coast = FrictionSimulation.through(
-        position.pixels,
-        position.minScrollExtent,
-        launch,
-        -tolerance.velocity,
-      );
-    } else {
-      coast = simulation;
     }
     return release?.leading(coast) ?? coast;
   }
@@ -153,10 +163,11 @@ class DocumentScrollPhysics extends ScrollPhysics
       identical(this, other) ||
       other is DocumentScrollPhysics &&
           other.flingFriction == flingFriction &&
+          other.flingDeceleration == flingDeceleration &&
           other.parent == parent;
 
   @override
-  int get hashCode => Object.hash(flingFriction, parent);
+  int get hashCode => Object.hash(flingFriction, flingDeceleration, parent);
 }
 
 /// Applies the shared scrolling stack to every scrollable in a document.

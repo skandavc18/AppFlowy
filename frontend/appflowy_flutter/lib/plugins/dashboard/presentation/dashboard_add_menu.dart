@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/slash_menu
 import 'package:appflowy/plugins/document/presentation/embedded_blocks/page_block_catalog.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' show EditorState;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -438,9 +439,14 @@ class _WidgetTileState extends State<_WidgetTile> {
     final accent = definition.identity != DashboardAccent.neutral
         ? definition.identity
         : definition.defaultAccent;
-    final strong = accent == DashboardAccent.neutral
-        ? palette.accent
-        : palette.strongFor(accent);
+    final strong = LegibleColor.onWash(
+      palette.surface,
+      accent == DashboardAccent.neutral
+          ? palette.accent
+          : palette.strongFor(accent),
+      wash: palette.isDark ? 0.2 : 0.13,
+      minimum: LegibleColor.glyph,
+    );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -551,7 +557,12 @@ class _BlockTileState extends State<_BlockTile> {
     final palette = widget.palette;
     final entry = widget.entry;
     final active = (_hovered || widget.highlighted) && !widget.busy;
-    final strong = palette.strongFor(pageBlockAccent(entry));
+    final strong = LegibleColor.onWash(
+      palette.surface,
+      palette.strongFor(pageBlockAccent(entry)),
+      wash: palette.isDark ? 0.2 : 0.13,
+      minimum: LegibleColor.glyph,
+    );
     final description = entry.description;
     return MouseRegion(
       cursor: widget.busy ? MouseCursor.defer : SystemMouseCursors.click,

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
@@ -5,10 +7,13 @@ import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/unusable_page_title.dart';
 import 'package:flutter/material.dart';
 
+import 'google_maps_view.dart';
+import 'google_maps_web_view.dart';
 import 'web_embed_fetch.dart';
 import 'web_embed_site_base.dart';
 
-/// Places, directions and My Maps, shown as Google's own embedded map.
+/// Places, directions and My Maps, shown as Google's own embedded map, or
+/// drawn on the application's own map where no page can be shown.
 class GoogleMapsEmbeds extends FramedWebEmbedProvider {
   const GoogleMapsEmbeds();
 
@@ -23,7 +28,21 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
     r'^@(-?\d{1,3}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)(?:,(\d{1,2}(?:\.\d+)?)z)?',
   );
   static final _travelMode = RegExp(r'!3e(\d)');
-  static const _tracking = {'entry', 'g_ep', 'g_st', 'shorturl'};
+
+  /// Each named stop of a route, longitude first, in the order of the path.
+  static final _routeStop =
+      RegExp(r'!2m2!1d(-?\d{1,3}(?:\.\d+)?)!2d(-?\d{1,3}(?:\.\d+)?)');
+
+  /// An embed's camera: its height above the ground in metres, then where it
+  /// looks, longitude first.
+  static final _embedCamera = RegExp(
+    r'!1d(\d+(?:\.\d+)?)!2d(-?\d{1,3}(?:\.\d+)?)!3d(-?\d{1,3}(?:\.\d+)?)',
+  );
+
+  /// The place an embed is about, named after its feature id.
+  static final _embedPlace =
+      RegExp('!1s0x[0-9a-fA-F]+(?::|%3A)0x[0-9a-fA-F]+!2s([^!]+)');
+  static const _tracking = {'entry', 'g_ep', 'g_st', 'shorturl', 'skid'};
 
   @override
   String get id => 'google_maps';
@@ -90,7 +109,7 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
         .toString();
     if (rest.isNotEmpty && rest.first == 'embed') {
       // Already an embed, from Google's own "Embed a map".
-      return _link('Place', url, embed: url);
+      return _link('Place', url, embed: url, target: _embedTarget(uri, rest));
     }
     if (rest.isNotEmpty && rest.first == 'd') {
       final mid = uri.queryParameters['mid'];
@@ -111,6 +130,8 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
     final query = uri.queryParameters;
     String? origin;
     String? destination;
+    LatLng? originPoint;
+    LatLng? destinationPoint;
     if (rest.isNotEmpty && rest.first == 'dir') {
       if (query['api'] == '1') {
         origin = query['origin'];
@@ -134,6 +155,16 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
         }
         origin = stops.length > 1 ? stops.first : null;
         destination = stops.last;
+        // The data holds where each named stop is, in the path's order.
+        final points = [
+          for (final match in _routeStop.allMatches(uri.path))
+            _pointOf(match.group(2), match.group(1)),
+        ];
+        final named = stops.where((stop) => stop.isNotEmpty).length;
+        if (named > 0 && points.length == named && !points.contains(null)) {
+          originPoint = origin == null || origin.isEmpty ? null : points.first;
+          destinationPoint = points.last;
+        }
       }
     } else if (query.containsKey('daddr')) {
       origin = query['saddr'];
@@ -149,6 +180,7 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
     }
     final from = origin == null || origin.isEmpty ? null : origin;
     final mode = _travelModeOf(uri);
+    final (centre, zoom) = _viewIn(rest);
     return _link(
       'Directions',
       url,
@@ -160,6 +192,15 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
       }).toString(),
       title:
           from == null ? 'Directions to $destination' : '$from to $destination',
+      target: GoogleMapsTarget(
+        stops: [
+          if (from != null) _stopOf(from, originPoint),
+          _stopOf(destination, destinationPoint),
+        ].nonNulls.toList(),
+        centre: centre,
+        zoom: zoom,
+        travelMode: mode,
+      ),
     );
   }
 
@@ -188,20 +229,7 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
       name = null;
     }
 
-    LatLng? centre;
-    double? zoom;
-    for (final segment in rest) {
-      final match = _centre.firstMatch(segment);
-      if (match != null) {
-        final lat = double.tryParse(match.group(1)!);
-        final lng = double.tryParse(match.group(2)!);
-        if (lat != null && lng != null && lat.abs() <= 90 && lng.abs() <= 180) {
-          centre = LatLng(lat, lng);
-        }
-        zoom = double.tryParse(match.group(3) ?? '');
-        break;
-      }
-    }
+    var (centre, zoom) = _viewIn(rest);
     final ll = query['ll'] ?? query['center'];
     if (centre == null && ll != null) {
       centre = parseMapLocation(ll).point;
@@ -224,16 +252,116 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
         'output': 'embed',
       }).toString(),
       title: name ?? (pin == null ? null : _coordinates(pin)),
+      target: GoogleMapsTarget(
+        stops: [
+          if (name != null || pin != null)
+            GoogleMapsStop(name: name, point: pin),
+        ],
+        centre: centre,
+        zoom: zoom,
+      ),
     );
+  }
+
+  /// Where a shared view was looking, from its `@lat,lng,17z` segment.
+  static (LatLng?, double?) _viewIn(List<String> rest) {
+    for (final segment in rest) {
+      final match = _centre.firstMatch(segment);
+      if (match != null) {
+        return (
+          _pointOf(match.group(1), match.group(2)),
+          double.tryParse(match.group(3) ?? ''),
+        );
+      }
+    }
+    return (null, null);
+  }
+
+  /// A stop a link names, at [point] when the link also says where it is.
+  ///
+  /// A name that is only coordinates is a point, not a place, and a place id
+  /// names nothing that can be looked up without Google.
+  static GoogleMapsStop? _stopOf(String text, [LatLng? point]) {
+    final name = text.replaceAll('+', ' ').trim();
+    if (name.isEmpty) {
+      return null;
+    }
+    final location = parseMapLocation(name);
+    if (location.point != null && !name.contains(RegExp('[A-Za-z]{2}'))) {
+      return GoogleMapsStop(point: point ?? location.point);
+    }
+    if (point != null) {
+      return GoogleMapsStop(name: name, point: point);
+    }
+    return location.placeId == null ? GoogleMapsStop(name: name) : null;
+  }
+
+  /// What an embed's own address says it shows: the camera and the place of
+  /// "Embed a map" code, or the parameters of the Embed API.
+  static GoogleMapsTarget? _embedTarget(Uri uri, List<String> rest) {
+    final query = uri.queryParameters;
+    final pb = query['pb'];
+    if (pb != null) {
+      final camera = _embedCamera.firstMatch(pb);
+      final centre =
+          camera == null ? null : _pointOf(camera.group(3), camera.group(2));
+      if (camera == null || centre == null) {
+        return null;
+      }
+      final name = _embedPlace.firstMatch(pb)?.group(1)?.trim() ?? '';
+      return GoogleMapsTarget(
+        stops: [
+          if (name.isNotEmpty) GoogleMapsStop(name: name, point: centre),
+        ],
+        centre: centre,
+        zoom: _embedZoom(pb, double.parse(camera.group(1)!), centre),
+      );
+    }
+    final stops = switch (rest.length > 2 && rest[1] == 'v1' ? rest[2] : '') {
+      'place' || 'search' => [_stopOf(query['q'] ?? '')],
+      'directions' => [
+          _stopOf(query['origin'] ?? ''),
+          _stopOf(query['destination'] ?? ''),
+        ],
+      'streetview' => [_stopOf(query['location'] ?? '')],
+      _ => const <GoogleMapsStop?>[],
+    };
+    final target = GoogleMapsTarget(
+      stops: stops.nonNulls.toList(),
+      centre: parseMapLocation(query['center'] ?? '').point,
+      zoom: double.tryParse(query['zoom'] ?? ''),
+    );
+    return target.isEmpty ? null : target;
+  }
+
+  /// The zoom an embed's camera comes to: what it sees from [altitude]
+  /// across its field of view, over the height it was drawn at.
+  static double? _embedZoom(String pb, double altitude, LatLng centre) {
+    final view = RegExp(r'!1i(\d+)!2i(\d+)').firstMatch(pb);
+    final height = double.tryParse(view?.group(2) ?? '') ?? 768;
+    final fov = double.tryParse(
+          RegExp(r'!4f(\d+(?:\.\d+)?)').firstMatch(pb)?.group(1) ?? '',
+        ) ??
+        13.1;
+    final metresPerPixel =
+        2 * altitude * math.tan(fov / 2 * math.pi / 180) / height;
+    final zoom = math.log(
+          156543.03392 *
+              math.cos(centre.latitude * math.pi / 180) /
+              metresPerPixel,
+        ) /
+        math.ln2;
+    return zoom.isFinite ? zoom.clamp(minMapZoom, maxMapZoom).toDouble() : null;
   }
 
   static LatLng? _pinOf(String path) {
     final match = _pin.firstMatch(path);
-    if (match == null) {
-      return null;
-    }
-    final lat = double.tryParse(match.group(1)!);
-    final lng = double.tryParse(match.group(2)!);
+    return match == null ? null : _pointOf(match.group(1), match.group(2));
+  }
+
+  static LatLng? _pointOf(String? latitude, String? longitude) {
+    final lat = double.tryParse(latitude ?? '');
+    final lng = double.tryParse(longitude ?? '');
     if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
       return null;
     }
@@ -273,6 +401,7 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
     String? embed,
     String? title,
     bool needsResolution = false,
+    GoogleMapsTarget? target,
   }) =>
       WebEmbedLink(
         provider: this,
@@ -283,6 +412,7 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
         defaultWidth: 640,
         defaultHeight: 420,
         needsResolution: needsResolution,
+        parameters: target?.toParameters() ?? const {},
       );
 
   @override
@@ -291,9 +421,29 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
       Uri.parse(link.url),
       stopAt: (uri) => _landing(uri) != null,
     );
+    final landed = target == null ? null : _landing(target);
+    if (landed != null || !canShowWebEmbedPages) {
+      // With no page to fall back on, a link that could not be followed is
+      // a failure, which the reader can try again.
+      return landed;
+    }
     // Offline, or Google would not say: its own page still follows the link.
-    return (target == null ? null : _landing(target)) ??
-        webEmbedAsFullPage(link);
+    return webEmbedAsFullPage(link);
+  }
+
+  /// Google's own embedded map where a page can be shown. Where none can,
+  /// Google's map drawn with the key in Settings, or the application's own
+  /// map of the same place.
+  @override
+  Widget buildView(
+    BuildContext context,
+    WebEmbedLink link,
+    WebEmbedViewOptions options,
+  ) {
+    final target = canShowWebEmbedPages ? null : GoogleMapsTarget.of(link);
+    return target == null
+        ? super.buildView(context, link, options)
+        : GoogleMapsEmbedView(link: link, target: target, options: options);
   }
 
   /// What a short link has arrived at, looking through Google's consent page

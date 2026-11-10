@@ -163,6 +163,19 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
 
   final editorKeyboardInterceptor = EditorKeyboardInterceptor();
 
+  /// Types `/` at the caret and opens this page's own `/` menu, exactly as
+  /// typing it would — the mobile menu reads its search from that `/`.
+  Future<void> _showFullSlashMenu(EditorState editorState) async {
+    await customAppFlowySlashCommand(
+      itemsBuilder: (editorState, node) => _customSlashMenuItems(
+        editorState: editorState,
+        node: node,
+      ),
+      style: styleCustomizer.selectionMenuStyleBuilder(),
+      supportSlashMenuNodeTypes: supportSlashMenuNodeTypes,
+    ).handler(editorState);
+  }
+
   Future<bool> showSlashMenu(editorState) async => customSlashCommand(
         _customSlashMenuItems(),
         shouldInsertSlash: false,
@@ -444,9 +457,11 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
             footer: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: isEditable ? _focusOnLastEmptyParagraph : null,
+              // A short gap: flicking to the end leaves the last lines on
+              // screen, so the edge's bounce stays visible.
               child: SizedBox(
                 width: double.infinity,
-                height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
+                height: UniversalPlatform.isDesktopOrWeb ? 120 : 400,
               ),
             ),
             dropTargetStyle: AppFlowyDropTargetStyle(
@@ -502,7 +517,11 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
       return AppFlowyMobileToolbar(
         toolbarHeight: 42.0,
         editorState: editorState,
-        toolbarItemsBuilder: (sel) => buildMobileToolbarItems(editorState, sel),
+        toolbarItemsBuilder: (sel) => buildMobileToolbarItems(
+          editorState,
+          sel,
+          showAllBlocks: () => _showFullSlashMenu(editorState),
+        ),
         child: MobileFloatingToolbar(
           editorState: editorState,
           editorScrollController: editorScrollController,

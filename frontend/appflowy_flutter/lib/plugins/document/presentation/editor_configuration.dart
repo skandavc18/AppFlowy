@@ -154,6 +154,10 @@ BlockComponentConfiguration _buildDefaultConfiguration(
     // Left/center/right reach the text through the editor's own align mixin;
     // justification has no box alignment to express it, so it is answered here.
     textAlign: blockTextAlign,
+    // The editor's default is a fixed mid grey that sits near 2.5:1 on the
+    // light and paper canvases; hints take the theme's own hint ink instead.
+    placeholderTextStyle: (node, {TextSpan? textSpan}) =>
+        TextStyle(color: Theme.of(context).hintColor),
     indentPadding: (node, textDirection) {
       double padding = 26.0;
 
@@ -678,6 +682,15 @@ TodoListBlockComponentBuilder _buildTodoListBlockComponentBuilder(
       node: node,
       onCheck: onCheck,
     ),
+    // The editor's own default is a fixed light grey that all but vanishes
+    // on the light and paper canvases; a done item should read as quieter,
+    // not as gone.
+    textStyleBuilder: (checked) => checked
+        ? TextStyle(
+            decoration: TextDecoration.lineThrough,
+            color: Theme.of(context).hintColor,
+          )
+        : const TextStyle(),
     toggleChildrenTriggers: [
       LogicalKeyboardKey.shift,
       LogicalKeyboardKey.shiftLeft,

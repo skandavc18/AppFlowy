@@ -159,6 +159,7 @@ class FlowyRunner {
           const InitAppWidgetTask(),
           const InitPlatformServiceTask(),
           const RecentServiceTask(),
+          if (!mode.isIntegrationTest) const OfficeEditorWarmUpTask(),
         ],
       ],
     );

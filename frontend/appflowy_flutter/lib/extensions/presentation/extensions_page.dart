@@ -67,48 +67,56 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     final theme = Theme.of(context);
     final extensions = _store.extensions;
 
+    // A phone cannot spare the desktop gutter.
+    final side = MediaQuery.sizeOf(context).width < 600 ? 16.0 : 40.0;
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          LocaleKeys.extensions_settingsTitle.tr(),
+          style: theme.textTheme.headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          LocaleKeys.extensions_settingsSubtitle.tr(),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+    final reload = OutlinedButton.icon(
+      onPressed: _store.isLoading ? null : _store.reload,
+      icon: const Icon(Icons.refresh_rounded, size: 16),
+      label: Text(LocaleKeys.extensions_reload.tr()),
+    );
+    final example = OutlinedButton.icon(
+      onPressed:
+          _root.isEmpty ? null : () => _folder.writeExample(context, _root),
+      icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+      label: Text(LocaleKeys.extensions_createExample.tr()),
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 28, 40, 32),
+      padding: EdgeInsets.fromLTRB(side, 28, side, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      LocaleKeys.extensions_settingsTitle.tr(),
-                      style: theme.textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      LocaleKeys.extensions_settingsSubtitle.tr(),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              OutlinedButton.icon(
-                onPressed: _store.isLoading ? null : _store.reload,
-                icon: const Icon(Icons.refresh_rounded, size: 16),
-                label: Text(LocaleKeys.extensions_reload.tr()),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _root.isEmpty
-                    ? null
-                    : () => _folder.writeExample(context, _root),
-                icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                label: Text(LocaleKeys.extensions_createExample.tr()),
-              ),
-            ],
-          ),
+          // On a phone the buttons go under the title, which needs the width.
+          if (side < 40) ...[
+            title,
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [reload, example]),
+          ] else
+            Row(
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: 16),
+                reload,
+                const SizedBox(width: 8),
+                example,
+              ],
+            ),
           const SizedBox(height: 14),
           ExtensionFolderRow(
             path: _root,
@@ -165,7 +173,7 @@ class _EmptyState extends StatelessWidget {
             Icon(
               Icons.extension_rounded,
               size: 40,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              color: theme.hintColor,
             ),
             const SizedBox(height: 14),
             Text(

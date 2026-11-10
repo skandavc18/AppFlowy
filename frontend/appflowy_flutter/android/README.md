@@ -62,3 +62,39 @@ This GitHub [issue](https://github.com/fzyzcjy/flutter_rust_bridge/issues/419) e
  ```vim
  export PATH=/home/sean/Android/Sdk/ndk/24.0.8215888
  ```
+
+ ---
+
+**x86_64 emulators and Waydroid**
+
+The APK only packages `arm64-v8a` unless you pass `abi-filters`. To run on an x86_64 emulator or Waydroid, build the SDK for `x86_64` (with the `dart-ffi` crate type switched to `cdylib`, as `cargo make` does) and select that ABI. Gradle needs JDK 17, and the Android SDK at `ANDROID_HOME` needs NDK `24.0.8215888` with its license accepted: every `flutter` command rewrites `android/local.properties` from `ANDROID_HOME`, so set it in the shell, not only in that file.
+
+In Waydroid, a laptop touchpad arrives as mouse-wheel notches (10 px of finger travel each). `lib/shared/scrolling/waydroid_scroll.dart` detects Waydroid and turns them back into 1:1 scrolling with the desktop release coast; other Android devices are unaffected.
+
+```bash
+# frontend/rust-lib (cargo-ndk 3.x; --bindgen points librocksdb-sys at the NDK sysroot)
+cargo ndk -t x86_64 --bindgen -o ../appflowy_flutter/android/app/src/main/jniLibs build --features "dart,openssl_vendored" --package=dart-ffi --release
+
+# frontend/appflowy_flutter: fetch the built-in office editor first (see below)
+dart run tool/office_editor/fetch_office_editor.dart
+
+# frontend/appflowy_flutter (`flutter run` accepts the same -P flag)
+flutter build apk --release --target-platform android-x64 -P abi-filters=x86_64
+waydroid app install build/app/outputs/flutter-apk/app-release.apk
+```
+
+**Built-in office editor**
+
+Word, Excel and PowerPoint files open in the same bundled editor as on the desktop, and the APK carries it: `android/app/build.gradle` stages `frontend/appflowy_flutter/office_editor` as `assets/office_editor/**` (task `stageOfficeEditorAssets`, run before every `merge*Assets`). That folder is not in git, so fetch it before building:
+
+```bash
+# frontend/appflowy_flutter; re-run after pulling a change to the tool. It skips the download when the folder is current.
+dart run tool/office_editor/fetch_office_editor.dart
+```
+
+Without it the build still succeeds, but prints `Warning: … office_editor is missing` and the APK has no editor: office files then fall back to AppFlowy Cloud's editor or a self-hosted document server, as before.
+
+- The editor adds about 183 MB to the APK (413 MB unpacked). Already-compressed files (`.br`, `.woff2`, `.pptx`, and PNG by default) are stored; scripts, JSON, WASM and fonts stay deflated.
+- The first time a document opens, `OfficeEditorBundle.kt` copies the assets into the app's files (`files/office_editor`, excluded from backups) while the editor shows "Preparing the document editor…" with progress. It needs about 480 MB free. Later launches and updates reuse the copy until an APK brings a different `APPFLOWY_BUNDLE.json`/`build-identity.json`.
+- The editor is served to the WebView over `http://127.0.0.1`, which `res/xml/network_security_config.xml` allows; every other host keeps Android's no-cleartext default, so a self-hosted document server must use HTTPS.
+- To debug, `adb logcat -s AppFlowyOfficeEditor` shows each unpacking (file count, size, time) and any failure. Deleting `files/office_editor` makes the next document unpack it again: `adb shell run-as io.appflowy.appflowy rm -rf files/office_editor` on a debug build, or remove `/data/data/io.appflowy.appflowy/files/office_editor` from a root shell (`sudo waydroid shell` on Waydroid).

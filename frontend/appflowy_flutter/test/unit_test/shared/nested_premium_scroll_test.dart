@@ -3,6 +3,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Pages scroll one-to-one by default; a scale makes it observable that a
+/// nested scope applies the outer scope's tuning exactly once.
+const _observableScale = PremiumScrollPhysicsConfig(
+  desktopDirectManipulationScale: 0.6,
+);
+
 void main() {
   for (final wrapBehavior in [false, true]) {
     testWidgets(
@@ -24,12 +30,13 @@ void main() {
           ),
         );
 
+        // Into the content: past the edge the rubber band would resist.
         expect(
           controller.position.physics.applyPhysicsToUserOffset(
             controller.position,
-            100,
+            -100,
           ),
-          closeTo(60, 0.001),
+          closeTo(-60, 0.001),
         );
         final tracker = ScrollConfiguration.of(scrollContext)
             .velocityTrackerBuilder(scrollContext)(
@@ -103,9 +110,9 @@ void main() {
       expect(
         controller.position.physics.applyPhysicsToUserOffset(
           controller.position,
-          100,
+          -100,
         ),
-        closeTo(value ? 60 : 100, 0.001),
+        closeTo(value ? -60 : -100, 0.001),
       );
     }
   });
@@ -171,6 +178,7 @@ Widget _app({
       scrollBehavior: const _WindowsScrollBehavior(),
       home: PremiumScrollScope(
         enabled: enabled,
+        config: _observableScale,
         child: Builder(
           builder: (context) {
             final nested = PremiumScrollScope(enabled: true, child: child);

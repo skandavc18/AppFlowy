@@ -70,6 +70,25 @@ replace that header with `shell/platform/embedder/embedder.h` from the new
 engine revision and check the startup log. Set `APPFLOWY_DISPLAY_VSYNC=0` to turn
 it off, or run with `G_MESSAGES_DEBUG=all` to see the intervals in use.
 
+Embedded web views (the office editor) are offscreen GTK windows, which WebKit
+would hold to 60 Hz. The `appflowy_linux_webview` plugin turns off WebKit's
+`PreferPageRenderingUpdatesNear60FPS`, so pages render at the display's rate
+(`APPFLOWY_DISPLAY_VSYNC=0` keeps it on). WebKit composites a page's next frame
+only after the last one has been drawn, so the plugin takes each frame as soon
+as WebKit hands it over rather than when the offscreen window paints, and copies
+it into its own image after telling WebKit it has been drawn. Only the image's
+changed rows are uploaded to an `FlTextureGL`; GDK never paints the offscreen
+window.
+
+On a computer with an NVIDIA GPU, WebKit would draw pages with NVIDIA's EGL,
+which leaves a sync file open in the web process for every frame; once a
+process started from the desktop reaches its limit of 1024 open files, the page
+stops drawing and documents stop scrolling. Since frames reach the view in
+shared memory, the plugin gives the web processes Mesa's EGL wherever Mesa
+drives a GPU (the integrated one on a laptop, which also leaves the NVIDIA GPU
+asleep), and otherwise raises their open-file limit. An EGL vendor chosen with
+`__EGL_VENDOR_LIBRARY_FILENAMES` or `__EGL_VENDOR_LIBRARY_DIRS` is kept.
+
 ### Need Help?
 
 - New to GitHub? Follow [these](https://docs.appflowy.io/docs/documentation/software-contributions/submitting-code/setting-up-your-repositories) steps to get started

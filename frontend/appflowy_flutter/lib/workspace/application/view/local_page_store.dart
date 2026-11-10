@@ -66,6 +66,17 @@ class LocalPageStore {
     await _kv?.set('$_prefix$id', extra);
   }
 
+  /// Reads [id] again, after its cover arrived from another computer.
+  Future<void> reload(String id) async {
+    _extras.remove(id);
+    await read(id);
+  }
+
+  /// The place a stored preference named [key] belongs to, or null when the
+  /// key is not one of these.
+  static String? idOfKey(String key) =>
+      key.startsWith(_prefix) ? key.substring(_prefix.length) : null;
+
   VoidCallback listen(String id, ValueChanged<String> onChanged) {
     final listeners = _listeners.putIfAbsent(id, () => []);
     listeners.add(onChanged);

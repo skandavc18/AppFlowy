@@ -21,6 +21,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/vide
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
@@ -972,7 +973,7 @@ class _FilePreviewImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) => Image.file(
-        File(path),
+        File(resolveWorkspaceFilePath(path)),
         fit: BoxFit.contain,
         width: double.infinity,
         height: double.infinity,

@@ -315,7 +315,7 @@ Future<void> _withFixture(
       try {
         await tester.pumpWidget(_FixtureApp(fixture, environment.translations));
         await settleVividIconPictures(tester);
-        expect(fixture.windowCalls, ['isMaximized']);
+        expect(fixture.windowCalls, ['isMaximized', 'isFullScreen']);
         environment.expectFonts(tester);
         await body(fixture);
         expect(tester.takeException(), isNull);
@@ -1015,6 +1015,7 @@ class _Fixture extends ChangeNotifier {
       windowCalls.add(call.method);
       switch (call.method) {
         case 'isMaximized':
+        case 'isFullScreen':
           return false;
         case 'minimize':
         case 'maximize':

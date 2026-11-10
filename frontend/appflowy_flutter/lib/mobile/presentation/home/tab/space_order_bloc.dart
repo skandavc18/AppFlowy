@@ -16,7 +16,9 @@ enum MobileSpaceTabType {
   spaces,
   recent,
   favorites,
-  shared;
+  shared,
+  // The desktop landing page.
+  home;
 
   String get tr {
     switch (this) {
@@ -28,6 +30,8 @@ enum MobileSpaceTabType {
         return LocaleKeys.sideBar_favoriteSpace.tr();
       case MobileSpaceTabType.shared:
         return 'Shared';
+      case MobileSpaceTabType.home:
+        return LocaleKeys.dashboard_home.tr();
     }
   }
 }
@@ -92,8 +96,11 @@ class SpaceOrderBloc extends Bloc<SpaceOrderEvent, SpaceOrderState> {
             if (order.isEmpty) {
               return MobileSpaceTabType.values;
             }
-            if (!order.contains(MobileSpaceTabType.shared.index)) {
-              order.add(MobileSpaceTabType.shared.index);
+            // Tabs added since the order was saved go at the end.
+            for (final type in MobileSpaceTabType.values) {
+              if (!order.contains(type.index)) {
+                order.add(type.index);
+              }
             }
             return order
                 .map((e) => MobileSpaceTabType.values[e])

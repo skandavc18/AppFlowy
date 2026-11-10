@@ -4,6 +4,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+double get _gain =>
+    const PremiumScrollPhysicsConfig().desktopDirectManipulationScale;
+
 void main() {
   for (final enabled in [false, true]) {
     for (final reducedMotion in [false, true]) {
@@ -25,12 +28,17 @@ void main() {
           );
 
           final kinetic = enabled && !reducedMotion;
+          final physics = controller.position.physics;
           expect(
-            controller.position.physics.applyPhysicsToUserOffset(
-              controller.position,
-              100,
-            ),
-            closeTo(kinetic ? 60 : 100, 0.001),
+            physics,
+            kinetic
+                ? isA<PremiumKineticScrollPhysics>()
+                : isNot(isA<PremiumKineticScrollPhysics>()),
+          );
+          // Into the content: past the edge the rubber band would resist.
+          expect(
+            physics.applyPhysicsToUserOffset(controller.position, -100),
+            closeTo(kinetic ? -100 * _gain : -100, 0.001),
           );
           await tester.sendEventToBinding(
             PointerScrollEvent(
@@ -69,12 +77,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final physics = controller.position.physics;
+      expect(physics, isA<PremiumKineticScrollPhysics>());
       expect(
-        controller.position.physics.applyPhysicsToUserOffset(
-          controller.position,
-          100,
-        ),
-        closeTo(60, 0.001),
+        physics.applyPhysicsToUserOffset(controller.position, -100),
+        closeTo(-100 * _gain, 0.001),
       );
       key.currentState!.remove('scroll-test');
       await tester.pumpAndSettle();

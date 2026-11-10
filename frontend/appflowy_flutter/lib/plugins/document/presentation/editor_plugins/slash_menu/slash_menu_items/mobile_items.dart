@@ -1,151 +1,71 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
-import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/selection_menu/mobile_selection_menu_item.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/selectable_svg_widget.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
 
-import 'slash_menu_items.dart';
+import '../slash_menu_metadata.dart';
+import 'slash_menu_item_builder.dart';
 
-final List<SelectionMenuItem> mobileItems = [
-  textStyleMobileSlashMenuItem,
-  listMobileSlashMenuItem,
-  toggleListMobileSlashMenuItem,
-  fileAndMediaMobileSlashMenuItem,
-  mobileTableSlashMenuItem,
-  visualsMobileSlashMenuItem,
-  reminderSlashMenuItem,
-  dateOrReminderSlashMenuItem,
-  buildSubpageSlashMenuItem(svg: FlowySvgs.type_page_m),
-  advancedMobileSlashMenuItem,
-];
+/// The `/` menu on mobile: one group per desktop section, opening onto the
+/// very same entries, so a phone offers every block a desktop does.
+///
+/// A section can be assembled from more than one list (extension islands
+/// join the interactive blocks); they share one group, in first-seen order.
+List<SelectionMenuItem> mobileSlashMenuGroups(
+  List<SlashMenuSectionItems> sections,
+) {
+  final grouped = <SlashMenuSection, List<SelectionMenuItem>>{};
+  for (final section in sections) {
+    final items = grouped.putIfAbsent(section.section, () => []);
+    for (final item in section.items) {
+      if (!items.contains(item)) items.add(item);
+    }
+  }
+  return [
+    for (final MapEntry(key: section, value: items) in grouped.entries)
+      if (items.isNotEmpty)
+        MobileSelectionMenuItem(
+          getName: () => slashMenuSectionLabel(section),
+          handler: (_, __, ___) {},
+          icon: (_, isSelected, style) => _sectionIcon(
+            section,
+            isSelected: isSelected,
+            style: style,
+          ),
+          nameBuilder: slashMenuItemNameBuilder,
+          children: items,
+        ),
+  ];
+}
 
-final List<SelectionMenuItem> mobileItemsInTale = [
-  textStyleMobileSlashMenuItem,
-  listMobileSlashMenuItem,
-  toggleListMobileSlashMenuItem,
-  fileAndMediaMobileSlashMenuItem,
-  visualsMobileSlashMenuItem,
-  reminderSlashMenuItem,
-  dateOrReminderSlashMenuItem,
-  buildSubpageSlashMenuItem(svg: FlowySvgs.type_page_m),
-  advancedMobileSlashMenuItem,
-];
-
-SelectionMenuItemHandler _handler = (_, __, ___) {};
-
-MobileSelectionMenuItem textStyleMobileSlashMenuItem = MobileSelectionMenuItem(
-  getName: LocaleKeys.document_slashMenu_name_textStyle.tr,
-  handler: _handler,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.slash_menu_icon_text_s,
+Widget _sectionIcon(
+  SlashMenuSection section, {
+  required bool isSelected,
+  required SelectionMenuStyle style,
+}) {
+  final svg = switch (section) {
+    SlashMenuSection.suggestions => FlowySvgs.ai_sparks_s,
+    SlashMenuSection.basicBlocks => FlowySvgs.slash_menu_icon_text_s,
+    SlashMenuSection.media => FlowySvgs.slash_menu_icon_file_s,
+    SlashMenuSection.database => FlowySvgs.slash_menu_icon_grid_s,
+    SlashMenuSection.advanced => FlowySvgs.drag_element_s,
+    _ => null,
+  };
+  if (svg != null) {
+    return SelectableSvgWidget(data: svg, isSelected: isSelected, style: style);
+  }
+  return SelectableIconWidget(
+    icon: switch (section) {
+      SlashMenuSection.interactive => Icons.touch_app_rounded,
+      SlashMenuSection.canvas => Icons.dashboard_customize_rounded,
+      SlashMenuSection.dashboards => Icons.dashboard_rounded,
+      SlashMenuSection.widgets => Icons.widgets_rounded,
+      SlashMenuSection.diagrams => Icons.schema_rounded,
+      SlashMenuSection.collections => Icons.collections_bookmark_rounded,
+      _ => Icons.add_box_rounded,
+    },
     isSelected: isSelected,
     style: style,
-  ),
-  nameBuilder: slashMenuItemNameBuilder,
-  children: [
-    paragraphSlashMenuItem,
-    heading1SlashMenuItem,
-    heading2SlashMenuItem,
-    heading3SlashMenuItem,
-  ],
-);
-
-MobileSelectionMenuItem listMobileSlashMenuItem = MobileSelectionMenuItem(
-  getName: LocaleKeys.document_slashMenu_name_list.tr,
-  handler: _handler,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.slash_menu_icon_bulleted_list_s,
-    isSelected: isSelected,
-    style: style,
-  ),
-  nameBuilder: slashMenuItemNameBuilder,
-  children: [
-    todoListSlashMenuItem,
-    bulletedListSlashMenuItem,
-    numberedListSlashMenuItem,
-  ],
-);
-
-MobileSelectionMenuItem toggleListMobileSlashMenuItem = MobileSelectionMenuItem(
-  getName: LocaleKeys.document_slashMenu_name_toggle.tr,
-  handler: _handler,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.slash_menu_icon_toggle_s,
-    isSelected: isSelected,
-    style: style,
-  ),
-  nameBuilder: slashMenuItemNameBuilder,
-  children: [
-    toggleListSlashMenuItem,
-    toggleHeading1SlashMenuItem,
-    toggleHeading2SlashMenuItem,
-    toggleHeading3SlashMenuItem,
-  ],
-);
-
-MobileSelectionMenuItem fileAndMediaMobileSlashMenuItem =
-    MobileSelectionMenuItem(
-  getName: LocaleKeys.document_slashMenu_name_fileAndMedia.tr,
-  handler: _handler,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.slash_menu_icon_file_s,
-    isSelected: isSelected,
-    style: style,
-  ),
-  nameBuilder: slashMenuItemNameBuilder,
-  children: [
-    buildImageSlashMenuItem(svg: FlowySvgs.slash_menu_image_m),
-    photoGallerySlashMenuItem,
-    audioSlashMenuItem,
-    videoSlashMenuItem,
-    fileSlashMenuItem,
-    pdfSlashMenuItem,
-    wordSlashMenuItem,
-    excelSlashMenuItem,
-    powerpointSlashMenuItem,
-    htmlSlashMenuItem,
-    markdownSlashMenuItem,
-    zipSlashMenuItem,
-    csvSlashMenuItem,
-    jsonSlashMenuItem,
-    codeFileSlashMenuItem,
-    textFileSlashMenuItem,
-    notebookSlashMenuItem,
-  ],
-);
-
-MobileSelectionMenuItem visualsMobileSlashMenuItem = MobileSelectionMenuItem(
-  getName: LocaleKeys.document_slashMenu_name_visuals.tr,
-  handler: _handler,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.slash_menu_icon_visuals_s,
-    isSelected: isSelected,
-    style: style,
-  ),
-  nameBuilder: slashMenuItemNameBuilder,
-  children: [
-    calloutSlashMenuItem,
-    dividerSlashMenuItem,
-    quoteSlashMenuItem,
-  ],
-);
-
-MobileSelectionMenuItem advancedMobileSlashMenuItem = MobileSelectionMenuItem(
-  getName: LocaleKeys.document_slashMenu_name_advanced.tr,
-  handler: _handler,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.drag_element_s,
-    isSelected: isSelected,
-    style: style,
-  ),
-  nameBuilder: slashMenuItemNameBuilder,
-  children: [
-    codeBlockSlashMenuItem,
-    mathEquationSlashMenuItem,
-    // Drawing is left out: its editor needs a web view, which mobile does
-    // not carry yet. The other three are Flutter all the way down.
-    mermaidSlashMenuItem,
-    mindMapSlashMenuItem,
-  ],
-);
+  );
+}

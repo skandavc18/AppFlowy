@@ -13,6 +13,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -121,7 +122,8 @@ class _ResizableImageState extends State<ResizableImage> {
     }
     final src = widget.src;
     final type = widget.type;
-    final exists = src.isNotEmpty && File(src).existsSync();
+    final exists =
+        src.isNotEmpty && File(resolveWorkspaceFilePath(src)).existsSync();
     _reportState(
       src,
       type,
@@ -251,7 +253,7 @@ class _ResizableImageState extends State<ResizableImage> {
     } else {
       // load local file
       _cacheImage ??= Image.file(
-        File(src),
+        File(resolveWorkspaceFilePath(src)),
         fit: fit,
         errorBuilder: (_, error, __) {
           _reportState(src, type, ResizableImageState.failed);

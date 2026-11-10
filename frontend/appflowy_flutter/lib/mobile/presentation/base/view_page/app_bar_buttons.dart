@@ -8,11 +8,13 @@ import 'package:appflowy/mobile/presentation/base/app_bar/app_bar_actions.dart';
 import 'package:appflowy/mobile/presentation/base/view_page/more_bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/plugins/document/presentation/editor_notification.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/cover_ink.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_style/page_style_bottom_sheet.dart';
 import 'package:appflowy/plugins/shared/share/share_bloc.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -73,8 +75,7 @@ class MobileViewPageImmersiveAppBar extends StatelessWidget
         icon: FlowySvgs.m_app_bar_back_s,
         dimension: 30.0,
         iconPadding: 3.0,
-        isImmersiveMode:
-            context.read<MobileViewPageBloc>().state.isImmersiveMode,
+        cover: view?.cover,
         appBarOpacity: appBarOpacity,
       ),
     );
@@ -85,12 +86,10 @@ class MobileViewPageMoreButton extends StatelessWidget {
   const MobileViewPageMoreButton({
     super.key,
     required this.view,
-    required this.isImmersiveMode,
     required this.appBarOpacity,
   });
 
   final ViewPB view;
-  final bool isImmersiveMode;
   final ValueListenable appBarOpacity;
 
   @override
@@ -121,7 +120,7 @@ class MobileViewPageMoreButton extends StatelessWidget {
         icon: FlowySvgs.m_app_bar_more_s,
         dimension: 30.0,
         iconPadding: 3.0,
-        isImmersiveMode: isImmersiveMode,
+        cover: view.cover,
         appBarOpacity: appBarOpacity,
       ),
     );
@@ -132,14 +131,12 @@ class MobileViewPageLayoutButton extends StatelessWidget {
   const MobileViewPageLayoutButton({
     super.key,
     required this.view,
-    required this.isImmersiveMode,
     required this.appBarOpacity,
     required this.tabs,
   });
 
   final ViewPB view;
   final List<PickerTabType> tabs;
-  final bool isImmersiveMode;
   final ValueListenable appBarOpacity;
 
   @override
@@ -178,7 +175,7 @@ class MobileViewPageLayoutButton extends StatelessWidget {
         icon: FlowySvgs.m_layout_s,
         dimension: 30.0,
         iconPadding: 3.0,
-        isImmersiveMode: isImmersiveMode,
+        cover: view.cover,
         appBarOpacity: appBarOpacity,
       ),
     );
@@ -190,14 +187,14 @@ class _ImmersiveAppBarButton extends StatelessWidget {
     required this.icon,
     required this.dimension,
     required this.iconPadding,
-    required this.isImmersiveMode,
+    required this.cover,
     required this.appBarOpacity,
   });
 
   final FlowySvgData icon;
   final double dimension;
   final double iconPadding;
-  final bool isImmersiveMode;
+  final PageStyleCover? cover;
   final ValueListenable appBarOpacity;
 
   @override
@@ -207,34 +204,28 @@ class _ImmersiveAppBarButton extends StatelessWidget {
       'dimension must be greater than 0, and less than or equal to kToolbarHeight',
     );
 
-    // if the immersive mode is on, the icon should be white and add a black background
-    //  also, the icon opacity will change based on the app bar opacity
     return UnconstrainedBox(
       child: SizedBox.square(
         dimension: dimension,
         child: ValueListenableBuilder(
           valueListenable: appBarOpacity,
           builder: (context, appBarOpacity, child) {
-            Color? color;
-
-            // if there's no cover or the cover is not immersive,
-            //  make sure the app bar is always visible
-            if (!isImmersiveMode) {
-              color = null;
-            } else if (appBarOpacity < 0.99) {
-              color = Colors.white;
-            }
+            // While the bar is see-through the glyph sits on the cover, so it
+            // takes the cover's ink on a disc of the opposite tone; on the
+            // bar, or with no cover, it keeps the theme's.
+            final onCover =
+                appBarOpacity < 0.99 ? CoverInk.button(context, cover) : null;
 
             Widget child = Container(
               margin: EdgeInsets.all(iconPadding),
-              child: FlowySvg(icon, color: color),
+              child: FlowySvg(icon, color: onCover?.ink),
             );
 
-            if (isImmersiveMode && appBarOpacity <= 0.99) {
+            if (onCover != null) {
               child = DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(dimension / 2.0),
-                  color: Colors.black.withValues(alpha: 0.2),
+                  color: onCover.disc,
                 ),
                 child: child,
               );

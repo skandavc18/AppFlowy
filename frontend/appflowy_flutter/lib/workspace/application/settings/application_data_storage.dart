@@ -17,6 +17,11 @@ class ApplicationDataStorage {
   ApplicationDataStorage();
   String? _cachePath;
 
+  /// The data folder, once [getPath] has been asked — which it is as AppFlowy
+  /// starts. For code that has to know it synchronously, such as resolving a
+  /// file a page refers to while that page is drawn.
+  String? get cachedPath => _cachePath;
+
   /// Set the custom path to store the data.
   /// If the path is not exists, the path will be created.
   /// If the path is invalid, the path will be set to the default path.

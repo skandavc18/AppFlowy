@@ -571,6 +571,9 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
                 color: canvas,
                 child: StandaloneFilePage(
                   nativeBodyGestures: _isImage,
+                  // Office editors scroll their own documents; the header
+                  // stays above them instead of trading scrolls with them.
+                  pinHeader: isOfficeFile(_rendererName),
                   header: ValueListenableBuilder<StandaloneFileHeader>(
                     valueListenable: _chrome,
                     builder: (context, controls, _) =>

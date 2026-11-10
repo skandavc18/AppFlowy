@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -41,6 +42,9 @@ String providerServicePurpose(ProviderService service) => switch (service) {
     };
 
 /// The rounded accent tile every row leads with.
+///
+/// Brand accents are published for a white page, so the tile and its glyph are
+/// drawn with the accent made legible on the card it sits on.
 class ConnectionGlyph extends StatelessWidget {
   const ConnectionGlyph({
     super.key,
@@ -56,19 +60,26 @@ class ConnectionGlyph extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: muted ? 0.08 : 0.14),
-          borderRadius: BorderRadius.circular(ConnectionsMetrics.glyphRadius),
-        ),
-        child: Icon(
-          icon,
-          size: size * 0.5,
-          color: muted ? accent.withValues(alpha: 0.7) : accent,
-        ),
-      );
+  Widget build(BuildContext context) {
+    final ink = LegibleColor.onWash(
+      FolderExplorerPalette.of(context).surface,
+      accent,
+      wash: 0.14,
+    );
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: ink.withValues(alpha: muted ? 0.08 : 0.14),
+        borderRadius: BorderRadius.circular(ConnectionsMetrics.glyphRadius),
+      ),
+      child: Icon(
+        icon,
+        size: size * 0.5,
+        color: muted ? ink.withValues(alpha: 0.7) : ink,
+      ),
+    );
+  }
 }
 
 /// One row of the connections pages.
@@ -225,7 +236,12 @@ class _ConnectionAddButtonState extends State<ConnectionAddButton> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.accent;
+    // Measured against the hover wash, the strongest tint the label sits on.
+    final accent = LegibleColor.onWash(
+      widget.palette.surface,
+      widget.accent,
+      wash: 0.14,
+    );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovered = true),

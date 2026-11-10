@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/providers/connections/connect_service.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
@@ -220,43 +221,49 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     );
   }
 
-  Widget _header(FolderExplorerPalette palette, ProviderServiceInfo info) =>
-      Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: info.accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(info.icon, size: 19, color: info.accent),
+  Widget _header(FolderExplorerPalette palette, ProviderServiceInfo info) {
+    final accent = LegibleColor.onWash(
+      palette.floatingSurface,
+      info.accent,
+      wash: 0.12,
+    );
+    return Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(11),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  LocaleKeys.providers_connectTo.tr(args: [info.label]),
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    fontVariations: const [FontVariation.weight(640)],
-                  ),
+          child: Icon(info.icon, size: 19, color: accent),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                LocaleKeys.providers_connectTo.tr(args: [info.label]),
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  fontVariations: const [FontVariation.weight(640)],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _subtitleFor(info),
-                  style: TextStyle(color: palette.textMuted, fontSize: 12),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _subtitleFor(info),
+                style: TextStyle(color: palette.textMuted, fontSize: 12),
+              ),
+            ],
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 
   String _subtitleFor(ProviderServiceInfo info) => switch (info.authKind) {
         ProviderAuthKind.selfHostedToken =>

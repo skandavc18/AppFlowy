@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_cloud_session.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_editor_android_bundle.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_embedded_host.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_embedded_view.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_platform.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_server_settings.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_server_settings_form.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
@@ -34,7 +37,7 @@ class SettingsOfficeView extends StatefulWidget {
   final OfficeServerStore store;
   final OfficeServerProbe probe;
 
-  /// The bundled editor; desktop builds default to the shared instance.
+  /// The bundled editor; defaults to the one for this platform.
   final EmbeddedOfficeEditor? embeddedEditor;
 
   @override
@@ -47,6 +50,10 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
   String? _errorMessage;
   BuiltInOfficeEditorState _builtIn = BuiltInOfficeEditorState.checking;
 
+  /// Where the editor is unpacked on first use (Android), whether that has
+  /// happened yet.
+  OfficeEditorInstallStatus? _install;
+
   @override
   void initState() {
     super.initState();
@@ -58,17 +65,22 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
     final editor =
         widget.embeddedEditor ?? EmbeddedOfficeEditor.forCurrentPlatform();
     var state = BuiltInOfficeEditorState.unavailable;
+    OfficeEditorInstallStatus? install;
     try {
       if (editor != null && await editor.host.isAvailable) {
         state = await editor.webViewSupported()
             ? BuiltInOfficeEditorState.available
             : BuiltInOfficeEditorState.needsWebKit;
+        install = await editor.host.installer?.status();
       }
     } catch (error) {
       Log.error('Unable to check the built-in office editor: $error');
     }
     if (mounted) {
-      setState(() => _builtIn = state);
+      setState(() {
+        _builtIn = state;
+        _install = install;
+      });
     }
   }
 
@@ -100,6 +112,13 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
                     'to edit office files in the built-in editor, without '
                     'a document server.',
               ),
+            if (builtIn && _install != null)
+              _PriorityNote(
+                icon: _install!.installed
+                    ? Icons.check_circle_outline_rounded
+                    : Icons.inventory_2_outlined,
+                text: _installText(_install!),
+              ),
           ],
         ),
         if (builtIn || _builtIn == BuiltInOfficeEditorState.checking)
@@ -127,8 +146,10 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
 
   String _priorityText(bool usesCloud) {
     if (_builtIn == BuiltInOfficeEditorState.available) {
+      // Phones and tablets, which this page also serves, are not computers.
+      final device = officeRunsOnMobile ? 'device' : 'computer';
       return usesCloud
-          ? 'Office files on this computer open in AppFlowy\'s built-in '
+          ? 'Office files on this $device open in AppFlowy\'s built-in '
               'editor, without a document server. Files stored in AppFlowy '
               'Cloud use the document server managed by your Cloud '
               'deployment, so changes reach cloud storage.'
@@ -140,6 +161,21 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
             'the document server managed by this Cloud deployment.'
         : 'AppFlowy is in local mode. Office files use the direct '
             'document server configured below.';
+  }
+
+  String _installText(OfficeEditorInstallStatus install) {
+    final bytes = install.bytes;
+    final size =
+        bytes == null ? null : 'about ${officeEditorMegabytes(bytes)} MB';
+    if (install.installed) {
+      return size == null
+          ? 'The built-in editor is ready on this device.'
+          : 'The built-in editor is ready on this device ($size of '
+              'storage).';
+    }
+    return 'AppFlowy unpacks the built-in editor the first time you open a '
+        'document, and again only after an update that changes it. This '
+        'takes a moment${size == null ? '' : ' and $size of storage'}.';
   }
 
   Future<void> _load() async {

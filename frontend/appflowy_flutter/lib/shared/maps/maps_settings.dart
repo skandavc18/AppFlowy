@@ -41,6 +41,13 @@ class MapsSettings extends ChangeNotifier {
     }
   }
 
+  /// Reads the key again, after it arrived from another computer.
+  Future<void> reload() async {
+    _loaded = false;
+    await ensureLoaded();
+    notifyListeners();
+  }
+
   Future<void> setApiKey(String value) async {
     final trimmed = value.trim();
     if (trimmed == _apiKey) {

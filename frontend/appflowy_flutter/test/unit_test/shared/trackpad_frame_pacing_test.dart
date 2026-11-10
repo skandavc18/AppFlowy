@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/document_viewer/document_scroll.dart';
 import 'package:appflowy/shared/scrolling/frame_synced_scroll_pan.dart';
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -239,7 +240,6 @@ void main() {
       expect(controller.offset, shown);
       expect(controller.position.isScrollingNotifier.value, isTrue);
       final velocity = 24 * _gain / (_packetInterval.inMicroseconds / 1e6);
-      final friction = const PremiumScrollPhysicsConfig().desktopCoastFriction;
       // Its first frame continues at the release speed, a frame in.
       await tester.pump();
       final firstFrame = controller.offset - shown;
@@ -248,8 +248,56 @@ void main() {
       await tester.pumpAndSettle(_frameInterval);
       // And it travels the unshown distance as well as the original bounded
       // coast: the same resting place as jumping there and coasting.
-      expect(controller.offset, greaterThan(target + velocity / friction - 2));
-      expect(controller.offset, lessThan(target + velocity / friction));
+      final coast = premiumCoastDistance(velocity);
+      expect(controller.offset, greaterThan(target + coast - 2));
+      expect(controller.offset, lessThanOrEqualTo(target + coast + 0.01));
+    },
+    variant: _desktop,
+  );
+
+  testWidgets(
+    'a release delivered with the last movement shows no double step',
+    (tester) async {
+      tester.view.display.refreshRate = 120;
+      addTearDown(tester.view.display.resetRefreshRate);
+      final controller = await _mount(tester);
+      final point = tester.getCenter(find.byKey(_listKey));
+      await _start(tester, point);
+      var previous = controller.offset;
+      final steps = <double>[];
+      // Frame-locked packets, one per 120 Hz frame, need no pacing.
+      for (var step = 1; step <= 8; step++) {
+        await tester.sendEventToBinding(
+          PointerPanZoomUpdateEvent(
+            pointer: 71,
+            device: 71,
+            position: point,
+            pan: Offset(0, -20.0 * step),
+            panDelta: const Offset(0, -20),
+            timeStamp: _frameInterval * step,
+          ),
+        );
+        if (step == 8) {
+          // A compositor delivers the stop together with the last movement.
+          await tester.sendEventToBinding(
+            PointerPanZoomEndEvent(
+              pointer: 71,
+              device: 71,
+              position: point,
+              timeStamp: _frameInterval * 8,
+            ),
+          );
+        }
+        await tester.pump(_frameInterval);
+        steps.add(controller.offset - previous);
+        previous = controller.offset;
+      }
+      // The release frame shows the last movement only; the coast already
+      // being a frame in added a second one.
+      expect(steps.last, closeTo(20 * _gain, 0.01));
+      await tester.pump(_frameInterval);
+      expect(controller.offset - previous, inInclusiveRange(18, 20.01));
+      await tester.pumpAndSettle(_frameInterval);
     },
     variant: _desktop,
   );

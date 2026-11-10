@@ -264,6 +264,50 @@ void main() {
     await controller.dispose();
   });
 
+  testWidgets('a trackpad pan over the view never scrolls the list around it',
+      (tester) async {
+    final controller = await LinuxWebViewController.create(
+      url: Uri.parse('http://127.0.0.1:4321/__appflowy__/office/t/'),
+    );
+    final list = ScrollController();
+    addTearDown(list.dispose);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ListView(
+          controller: list,
+          children: [
+            const SizedBox(height: 100),
+            SizedBox(height: 300, child: LinuxWebView(controller: controller)),
+            const SizedBox(height: 1000),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    Future<void> swipeUp(Offset position) async {
+      final gesture =
+          await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await gesture.panZoomStart(position);
+      for (var i = 1; i <= 6; i++) {
+        await gesture.panZoomUpdate(position, pan: Offset(0, -20.0 * i));
+      }
+      await gesture.panZoomEnd();
+      await tester.pumpAndSettle();
+    }
+
+    // Over the view only the page scrolls, never the list as well.
+    await swipeUp(tester.getCenter(find.byType(LinuxWebView)));
+    expect(pointer('scroll'), hasLength(6));
+    expect(list.offset, 0);
+
+    // Elsewhere the list still scrolls.
+    await swipeUp(const Offset(400, 50));
+    expect(list.offset, greaterThan(0));
+    await controller.dispose();
+  });
+
   testWidgets('relays page messages and runs scripts', (tester) async {
     final controller = await LinuxWebViewController.create(
       url: Uri.parse('http://127.0.0.1:4321/__appflowy__/office/t/'),

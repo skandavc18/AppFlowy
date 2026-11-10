@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <application android:label="AppFlowy" android:icon="@mipmap/ic_launcher"
-    android:name="${applicationName}">
+    android:name="${applicationName}"
+    android:networkSecurityConfig="@xml/network_security_config"
+    android:fullBackupContent="@xml/backup_rules"
+    android:dataExtractionRules="@xml/data_extraction_rules">
     <activity android:name=".MainActivity"
       android:exported="true"
       android:launchMode="singleInstance"

@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
@@ -759,6 +760,11 @@ class _PickerRowState extends State<_PickerRow> {
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final node = widget.node;
+    final accent = LegibleColor.onWash(
+      palette.floatingSurface,
+      widget.accent,
+      wash: 0.14,
+    );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovered = true),
@@ -771,7 +777,7 @@ class _PickerRowState extends State<_PickerRow> {
           padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
           decoration: BoxDecoration(
             color: widget.selected
-                ? widget.accent.withValues(alpha: 0.14)
+                ? accent.withValues(alpha: 0.14)
                 : hovered
                     ? palette.hover
                     : palette.hover.withValues(alpha: 0),
@@ -785,14 +791,14 @@ class _PickerRowState extends State<_PickerRow> {
                       ? Icons.check_circle_rounded
                       : Icons.radio_button_unchecked_rounded,
                   size: 16,
-                  color: widget.selected ? widget.accent : palette.textMuted,
+                  color: widget.selected ? accent : palette.textMuted,
                 ),
                 const SizedBox(width: 9),
               ],
               Icon(
                 providerNodeGlyph(node),
                 size: 16,
-                color: node.isFolder ? widget.accent : palette.textMuted,
+                color: node.isFolder ? accent : palette.textMuted,
               ),
               const SizedBox(width: 10),
               Expanded(

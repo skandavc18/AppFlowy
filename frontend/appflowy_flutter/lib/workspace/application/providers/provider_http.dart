@@ -81,11 +81,35 @@ class ProviderTransport {
           throw const ProviderFailure.authExpired('Cannot renew this sign in.');
         }
 
-        final renewed = await _oauth.refresh(
-          endpoints: endpoints,
-          app: app,
-          refreshToken: expired.refreshToken,
-        );
+        ProviderCredentials renewed;
+        try {
+          renewed = await _oauth.refresh(
+            endpoints: endpoints,
+            app: app,
+            refreshToken: expired.refreshToken,
+          );
+        } on Object {
+          // Another computer may have renewed this sign in first: some
+          // services take back a refresh token once it is used, and the one
+          // that replaced it arrives here through sync.
+          final stored = await _connections.credentialsFor(connectionId);
+          if (stored != null &&
+              stored.accessToken != expired.accessToken &&
+              !stored.isExpired) {
+            _credentials = stored;
+            return stored;
+          }
+          if (stored == null ||
+              !stored.canRefresh ||
+              stored.refreshToken == expired.refreshToken) {
+            rethrow;
+          }
+          renewed = await _oauth.refresh(
+            endpoints: endpoints,
+            app: app,
+            refreshToken: stored.refreshToken,
+          );
+        }
         await _connections.updateCredentials(connectionId, renewed);
         _credentials = renewed;
         return renewed;

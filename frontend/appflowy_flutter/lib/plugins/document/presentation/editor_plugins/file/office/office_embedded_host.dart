@@ -105,14 +105,91 @@ Directory? locateOfficeEditorBundle({
   );
   for (final candidate in candidates) {
     final directory = Directory(candidate);
-    final complete = _requiredBundleFiles.every(
-      (required) => File(p.join(directory.path, required)).existsSync(),
-    );
-    if (complete) {
+    if (isCompleteOfficeEditorBundle(directory)) {
       return directory;
     }
   }
   return null;
+}
+
+/// Whether [directory] holds the files the editor cannot start without.
+bool isCompleteOfficeEditorBundle(Directory directory) =>
+    _requiredBundleFiles.every(
+      (required) => File(p.join(directory.path, required)).existsSync(),
+    );
+
+/// How far unpacking the bundled editor has got.
+@immutable
+class OfficeEditorInstallProgress {
+  const OfficeEditorInstallProgress({
+    required this.copiedBytes,
+    required this.totalBytes,
+  });
+
+  final int copiedBytes;
+  final int totalBytes;
+
+  /// Null until the size of the editor is known.
+  double? get fraction => totalBytes > 0
+      ? (copiedBytes / totalBytes).clamp(0.0, 1.0).toDouble()
+      : null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OfficeEditorInstallProgress &&
+      other.copiedBytes == copiedBytes &&
+      other.totalBytes == totalBytes;
+
+  @override
+  int get hashCode => Object.hash(copiedBytes, totalBytes);
+}
+
+/// What a build that unpacks its editor knows before unpacking it.
+@immutable
+class OfficeEditorInstallStatus {
+  const OfficeEditorInstallStatus({
+    required this.packaged,
+    required this.installed,
+    this.bytes,
+  });
+
+  /// Whether this build carries the editor at all.
+  final bool packaged;
+
+  /// Whether a current copy is unpacked, so opening needs no wait.
+  final bool installed;
+
+  /// The unpacked size, when the build records it.
+  final int? bytes;
+}
+
+/// Why the bundled editor could not be unpacked, in words for the reader.
+class OfficeEditorInstallException implements Exception {
+  const OfficeEditorInstallException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Unpacks the bundled editor where a build cannot serve it from where it is
+/// installed: an Android APK keeps it packed among its assets.
+abstract class OfficeEditorBundleInstaller {
+  /// Whether this build carries the editor. Cheap: nothing is unpacked or
+  /// checked on disk.
+  Future<bool> isPackaged();
+
+  Future<OfficeEditorInstallStatus> status();
+
+  /// The unpacked editor, unpacking it first unless a current copy exists.
+  Future<Directory> install();
+
+  /// The editor [install] last returned in this session.
+  Directory? get installed;
+
+  /// Set while files are being copied, null otherwise.
+  ValueListenable<OfficeEditorInstallProgress?> get progress;
 }
 
 /// Where an embedded editing session stands.
@@ -193,6 +270,12 @@ class EmbeddedOfficeSession {
   final bool relayScroll;
   final ValueNotifier<EmbeddedOfficeStatus> status;
 
+  final ValueNotifier<bool> _loaded = ValueNotifier(false);
+
+  /// Whether the editor has drawn the document. [EmbeddedOfficePhase.ready]
+  /// comes as soon as the editor takes the file, while it still loads.
+  ValueListenable<bool> get loaded => _loaded;
+
   OfficeEmbeddedTheme _theme;
   OfficeEmbeddedTheme get theme => _theme;
 
@@ -254,6 +337,7 @@ class EmbeddedOfficeSession {
       return;
     }
     _update((status) => status.copyWith(phase: EmbeddedOfficePhase.loading));
+    _loaded.value = false;
     _send({'type': 'reload', 'theme': theme.toJson()});
   }
 
@@ -316,8 +400,12 @@ String officeFileIdentity(File file) {
 /// threads need, and each open document gets an unguessable token through
 /// which its page reads the file, saves it and receives commands.
 class EmbeddedOfficeHost {
-  EmbeddedOfficeHost({Directory? Function()? locate})
-      : _locate = locate ?? locateOfficeEditorBundle;
+  EmbeddedOfficeHost({
+    Directory? Function()? locate,
+    this.installer,
+    bool? cacheBundle,
+  })  : _locate = locate ?? locateOfficeEditorBundle,
+        cacheBundle = cacheBundle ?? (!kIsWeb && Platform.isLinux);
 
   static final EmbeddedOfficeHost instance = EmbeddedOfficeHost();
 
@@ -325,20 +413,49 @@ class EmbeddedOfficeHost {
   static const _maxDocumentBytes = 512 * 1024 * 1024;
 
   final Directory? Function() _locate;
+
+  /// Unpacks the editor before it is served, on builds that keep it packed
+  /// (Android); null where the build installs it as files.
+  final OfficeEditorBundleInstaller? installer;
+
+  /// Whether a web view may keep the editor's files between page loads.
+  ///
+  /// Linux web views keep website data in memory only, so the next document
+  /// reuses the editor the last one loaded (its scripts, fonts and converter)
+  /// instead of fetching and compiling it all again. Other web views cache on
+  /// disk, where a copy tied to this launch's port would never be read again.
+  final bool cacheBundle;
   final Random _random = Random.secure();
   final Map<String, EmbeddedOfficeSession> _sessions = {};
 
   bool _located = false;
   Directory? _bundle;
+  Future<bool>? _packaged;
   HttpServer? _server;
   Future<HttpServer>? _starting;
   Timer? _heartbeat;
 
-  /// Whether this build ships the editor.
-  Future<bool> get isAvailable => SynchronousFuture(bundle != null);
+  /// Whether this build ships the editor. Where it is unpacked on first use,
+  /// whether the build carries it.
+  Future<bool> get isAvailable {
+    final installer = this.installer;
+    if (installer == null) {
+      return SynchronousFuture(bundle != null);
+    }
+    return _packaged ??= installer.isPackaged().catchError((Object error) {
+      Log.error('Unable to check the bundled office editor: $error');
+      _packaged = null;
+      return false;
+    });
+  }
 
-  /// The unpacked editor, looked up once.
+  /// The unpacked editor, looked up once. Where it is unpacked on first use,
+  /// the copy unpacked in this session, if any.
   Directory? get bundle {
+    final installer = this.installer;
+    if (installer != null) {
+      return installer.installed;
+    }
     if (!_located) {
       _located = true;
       try {
@@ -350,6 +467,10 @@ class EmbeddedOfficeHost {
     return _bundle;
   }
 
+  /// How far unpacking the editor has got, where it is unpacked on first use.
+  ValueListenable<OfficeEditorInstallProgress?>? get installProgress =>
+      installer?.progress;
+
   Uri get origin {
     final server = _server;
     if (server == null) {
@@ -358,9 +479,19 @@ class EmbeddedOfficeHost {
     return Uri(scheme: 'http', host: '127.0.0.1', port: server.port);
   }
 
+  static const _idlePath = '/__appflowy__/idle';
+  static const _idlePage =
+      '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>';
+
+  /// An empty page of the editor's own origin, where a web view waits for its
+  /// next document. Any other origin, even `about:blank`, would make WebKit
+  /// give the next document a new web process, without the editor loaded.
+  Uri get idleUrl => origin.replace(path: _idlePath);
+
   Iterable<EmbeddedOfficeSession> get sessions => _sessions.values;
 
-  /// Opens [file] in the bundled editor.
+  /// Opens [file] in the bundled editor, unpacking the editor first where it
+  /// is unpacked on first use.
   Future<EmbeddedOfficeSession> open({
     required File file,
     required String fileName,
@@ -368,7 +499,8 @@ class EmbeddedOfficeHost {
     required OfficeEmbeddedTheme theme,
     bool relayScroll = false,
   }) async {
-    final root = bundle;
+    final installer = this.installer;
+    final root = installer == null ? bundle : await installer.install();
     if (root == null) {
       throw StateError('This build does not include the office editor.');
     }
@@ -454,6 +586,9 @@ class EmbeddedOfficeHost {
           officeEmbeddedShimScript,
           ContentType('text', 'javascript', charset: 'utf-8'),
         );
+      }
+      if (path == _idlePath) {
+        return _sendText(request, _idlePage, ContentType.html);
       }
       if (path.startsWith('/__appflowy__/office/')) {
         return await _handleSession(request);
@@ -643,6 +778,8 @@ class EmbeddedOfficeHost {
           ),
           sequence: sequence,
         );
+      case 'loaded':
+        if (!session.isClosed) session._loaded.value = true;
       case 'dirty':
         final dirty = decoded['dirty'] == true;
         session._update(
@@ -718,10 +855,15 @@ class EmbeddedOfficeHost {
     final name = p.basename(path);
     final isEditorPage = relative == '/editor.html';
     final headers = response.headers;
-    // Every launch serves from a new port, so a cached copy could never be
-    // used again: storing the bundle (x2t alone is 42 MB decoded) would only
-    // fill the user's cache directory.
-    headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+    // Every launch serves from a new port, so a disk cache could never use
+    // its copy again: storing the bundle (x2t alone is 42 MB decoded) would
+    // only fill the user's cache directory. See [cacheBundle].
+    headers.set(
+      HttpHeaders.cacheControlHeader,
+      cacheBundle && !isEditorPage
+          ? 'private, max-age=31536000, immutable'
+          : 'no-store',
+    );
 
     if (isEditorPage) {
       final html = await file.readAsString();

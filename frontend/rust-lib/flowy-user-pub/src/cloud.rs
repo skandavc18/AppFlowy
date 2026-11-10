@@ -170,6 +170,21 @@ pub trait UserCloudService: Send + Sync + 'static {
   /// Using the user's token to update the user information
   async fn update_user(&self, params: UpdateUserProfileParams) -> Result<(), FlowyError>;
 
+  /// A value the server keeps with the user's account under `key`, for what
+  /// follows the person to every computer they sign in on. `None` when there
+  /// is none; an error when the server keeps nothing of the kind.
+  async fn get_user_value(&self, key: &str) -> Result<Option<String>, FlowyError> {
+    let _ = key;
+    Err(FlowyError::not_support())
+  }
+
+  /// Keeps `value` with the user's account under `key`, beside whatever else
+  /// is kept there.
+  async fn set_user_value(&self, key: &str, value: &str) -> Result<(), FlowyError> {
+    let _ = (key, value);
+    Err(FlowyError::not_support())
+  }
+
   /// Get the user information using the user's token or uid
   /// return None if the user is not found
   async fn get_user_profile(&self, uid: i64, workspace_id: &str)

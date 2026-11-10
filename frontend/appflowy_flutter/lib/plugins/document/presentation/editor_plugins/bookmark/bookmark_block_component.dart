@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart'
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/unusable_page_title.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_browser_reader.dart';
@@ -451,8 +452,13 @@ class _BookmarkPlaceholderButtonState extends State<BookmarkPlaceholderButton> {
     final background = widget.primary
         ? accent.withValues(alpha: enabled ? (_hovered ? 1 : 0.9) : 0.28)
         : theme.sunken.withValues(alpha: _hovered ? 1 : 0.75);
+    // White reads on the site's full colour; on the faint fill of a disabled
+    // button it vanishes, so the glyph takes the site's colour instead.
+    final fill = Color.alphaBlend(background, theme.panel);
     final foreground = widget.primary
-        ? Colors.white
+        ? LegibleColor.contrast(Colors.white, fill) >= LegibleColor.glyph
+            ? Colors.white
+            : LegibleColor.on(fill, accent, minimum: LegibleColor.glyph)
         : (_hovered ? theme.textStrong : theme.textBody);
 
     return Tooltip(

@@ -8,6 +8,19 @@ class WindowsButtonListener extends WindowListener {
   WindowsButtonListener();
 
   final ValueNotifier<bool> isMaximized = ValueNotifier(false);
+  final ValueNotifier<bool> isFullScreen = ValueNotifier(false);
+  bool _disposed = false;
+
+  /// Reads the window's current state. The events only report changes, so a
+  /// title bar made while the window is maximized or full screen needs this.
+  void readWindowState() {
+    windowManager.isMaximized().then((v) => _set(isMaximized, v));
+    windowManager.isFullScreen().then((v) => _set(isFullScreen, v));
+  }
+
+  void _set(ValueNotifier<bool> notifier, bool value) {
+    if (!_disposed) notifier.value = value;
+  }
 
   @override
   void onWindowMaximize() => isMaximized.value = true;
@@ -15,7 +28,17 @@ class WindowsButtonListener extends WindowListener {
   @override
   void onWindowUnmaximize() => isMaximized.value = false;
 
-  void dispose() => isMaximized.dispose();
+  @override
+  void onWindowEnterFullScreen() => isFullScreen.value = true;
+
+  @override
+  void onWindowLeaveFullScreen() => isFullScreen.value = false;
+
+  void dispose() {
+    _disposed = true;
+    isMaximized.dispose();
+    isFullScreen.dispose();
+  }
 }
 
 class WindowTitleBar extends StatefulWidget {
@@ -41,6 +64,7 @@ class WindowTitleBar extends StatefulWidget {
 class _WindowTitleBarState extends State<WindowTitleBar> {
   late final WindowsButtonListener? windowsButtonListener;
   bool isMaximized = false;
+  bool isFullScreen = false;
 
   @override
   void initState() {
@@ -48,29 +72,45 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
 
     if (widget.showCaptionButtons &&
         (UniversalPlatform.isWindows || UniversalPlatform.isLinux)) {
-      windowsButtonListener = WindowsButtonListener();
-      windowManager.addListener(windowsButtonListener!);
-      windowsButtonListener!.isMaximized.addListener(_isMaximizedChanged);
-      windowManager
-          .isMaximized()
-          .then((v) => mounted ? setState(() => isMaximized = v) : null);
+      final listener = windowsButtonListener = WindowsButtonListener();
+      windowManager.addListener(listener);
+      listener.isMaximized.addListener(_windowStateChanged);
+      listener.isFullScreen.addListener(_windowStateChanged);
+      listener.readWindowState();
     } else {
       windowsButtonListener = null;
     }
   }
 
-  void _isMaximizedChanged() {
+  void _windowStateChanged() {
+    final listener = windowsButtonListener!;
     if (mounted) {
-      setState(() => isMaximized = windowsButtonListener!.isMaximized.value);
+      setState(() {
+        isMaximized = listener.isMaximized.value;
+        isFullScreen = listener.isFullScreen.value;
+      });
+    }
+  }
+
+  // Some Linux desktops (macOS-like shells) answer the maximize button by
+  // going full screen. Restoring has to leave full screen then: unmaximizing
+  // would only change the size kept behind it.
+  void _restore() {
+    if (isFullScreen) {
+      windowManager.setFullScreen(false);
+    } else {
+      windowManager.unmaximize();
     }
   }
 
   @override
   void dispose() {
-    if (windowsButtonListener != null) {
-      windowManager.removeListener(windowsButtonListener!);
-      windowsButtonListener!.isMaximized.removeListener(_isMaximizedChanged);
-      windowsButtonListener?.dispose();
+    final listener = windowsButtonListener;
+    if (listener != null) {
+      windowManager.removeListener(listener);
+      listener.isMaximized.removeListener(_windowStateChanged);
+      listener.isFullScreen.removeListener(_windowStateChanged);
+      listener.dispose();
     }
 
     super.dispose();
@@ -103,13 +143,15 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
                 brightness: brightness,
                 onPressed: () => windowManager.minimize(),
               ),
-              if (isMaximized)
+              if (isMaximized || isFullScreen)
                 WindowCaptionButton.unmaximize(
+                  key: const ValueKey('window-caption-restore'),
                   brightness: brightness,
-                  onPressed: () => windowManager.unmaximize(),
+                  onPressed: _restore,
                 )
               else
                 WindowCaptionButton.maximize(
+                  key: const ValueKey('window-caption-maximize'),
                   brightness: brightness,
                   onPressed: () => windowManager.maximize(),
                 ),

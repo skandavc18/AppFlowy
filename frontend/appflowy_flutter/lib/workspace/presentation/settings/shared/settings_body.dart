@@ -22,6 +22,9 @@ class SettingsBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showHeader = SettingsHeaderScope.showsTitle(context) ||
+        descriptionBuilder != null ||
+        description?.isNotEmpty == true;
     return LayoutBuilder(
       builder: (context, constraints) {
         final inset = WorkspaceTokens.pageInset(constraints.maxWidth);
@@ -35,12 +38,14 @@ class SettingsBody extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SettingsHeader(
-                      title: title,
-                      description: description,
-                      descriptionBuilder: descriptionBuilder,
-                    ),
-                    const SettingsCategorySpacer(),
+                    if (showHeader) ...[
+                      SettingsHeader(
+                        title: title,
+                        description: description,
+                        descriptionBuilder: descriptionBuilder,
+                      ),
+                      const SettingsCategorySpacer(),
+                    ],
                     SeparatedColumn(
                       mainAxisSize: MainAxisSize.min,
                       separatorBuilder: () => autoSeparate

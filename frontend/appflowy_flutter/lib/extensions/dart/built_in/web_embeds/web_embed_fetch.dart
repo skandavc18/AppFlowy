@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:appflowy/workspace/application/collections/bookmark/link_metadata.dart';
+import 'package:appflowy_backend/log.dart';
+import 'package:flutter/foundation.dart';
 
 /// What a desktop browser says it is. Sites answer a bare client with an error
 /// page or a challenge, so embeds ask the way a browser would.
@@ -21,6 +23,28 @@ const _timeout = Duration(seconds: 10);
 const _maxTextBytes = 2 * 1024 * 1024;
 const _maxHeadBytes = 384 * 1024;
 
+/// How long a Google short link's own address has to answer before Google
+/// Public DNS is asked for another, short enough that both fit in the time a
+/// short link is given to resolve: Google answers in well under a second.
+const _shortLinkConnectTimeout = Duration(seconds: 3);
+
+/// Stands in for Google Public DNS, so tests need no network.
+@visibleForTesting
+Future<InternetAddress?> Function(String host)? debugWebEmbedPublicLookup;
+
+/// Forgets the short-link hosts rerouted so far.
+@visibleForTesting
+void debugForgetWebEmbedReroutes() => _rerouted.clear();
+
+/// Short-link hosts whose address from the network did not answer this
+/// session, with the address Google Public DNS gave instead.
+final Map<String, InternetAddress> _rerouted = {};
+
+/// Google's link-shortener hosts: `maps.app.goo.gl`, `photos.app.goo.gl` and
+/// `goo.gl/maps/…`.
+bool _isGoogleShortLinkHost(String host) =>
+    host == 'goo.gl' || host.endsWith('.goo.gl');
+
 /// Where a short link leads.
 ///
 /// Redirects are followed one at a time so each hop can be looked at: it
@@ -33,21 +57,16 @@ Future<Uri?> followWebEmbedRedirects(
   String userAgent = webEmbedDesktopUserAgent,
   int maxHops = 8,
 }) async {
-  final client = _client(userAgent);
+  final asker = _HopAsker(userAgent);
   try {
     var current = start;
     for (var hop = 0; hop <= maxHops; hop++) {
       if (hop > 0 && (stopAt?.call(current) ?? false)) {
         return current;
       }
-      final request = await client.getUrl(current).timeout(_timeout);
-      request
-        ..followRedirects = false
-        ..headers.set(HttpHeaders.acceptHeader, _htmlAccept)
-        ..headers.set(HttpHeaders.acceptLanguageHeader, _language);
-      final response = await request.close().timeout(_timeout);
+      final response = await asker.ask(current);
       final location = response.headers.value(HttpHeaders.locationHeader);
-      // The body is never needed; closing the client drops it.
+      // The body is never needed; closing the clients drops it.
       if (!response.isRedirect || location == null || location.isEmpty) {
         return response.statusCode < 400 ? current : null;
       }
@@ -57,8 +76,172 @@ Future<Uri?> followWebEmbedRedirects(
   } on Object {
     return null;
   } finally {
+    asker.close();
+  }
+}
+
+/// Asks for one address at a time, without following the answer.
+///
+/// Some networks' resolvers answer for Google's short-link hosts with an
+/// address that never replies (a Jio home router does for every `*.goo.gl`),
+/// though the links work everywhere else: Google's Maps app on a phone never
+/// notices, as it asks Google's own servers where a link leads. For those
+/// hosts alone, when the network's address does not answer, Google Public DNS
+/// is asked for Google's address and the link is asked there, over TLS still
+/// checked against the link's own host.
+class _HopAsker {
+  _HopAsker(this._userAgent) : _direct = _client(_userAgent);
+
+  final String _userAgent;
+  final HttpClient _direct;
+  final Map<String, HttpClient> _rerouting = {};
+
+  Future<HttpClientResponse> ask(Uri uri) async {
+    final host = uri.host.toLowerCase();
+    if (!_isGoogleShortLinkHost(host)) {
+      return _send(_direct, uri);
+    }
+    final known = _rerouted[host];
+    if (known != null) {
+      try {
+        return await _send(_via(host, known), uri);
+      } on Object {
+        _rerouted.remove(host);
+        rethrow;
+      }
+    }
+    try {
+      _direct.connectionTimeout = _shortLinkConnectTimeout;
+      return await _send(_direct, uri);
+    } on Object {
+      final address =
+          await (debugWebEmbedPublicLookup ?? _googlePublicAddress)(host);
+      if (address == null) {
+        rethrow;
+      }
+      final response = await _send(_via(host, address), uri);
+      _rerouted[host] = address;
+      Log.info(
+        "The network's address for $host did not answer; "
+        "using Google Public DNS's (${address.address}).",
+      );
+      return response;
+    } finally {
+      _direct.connectionTimeout = _timeout;
+    }
+  }
+
+  /// A client that connects to [address] for [host], whatever the network
+  /// resolves the host to.
+  HttpClient _via(String host, InternetAddress address) {
+    final existing = _rerouting[host];
+    if (existing != null) {
+      return existing;
+    }
+    final client = _client(_userAgent)
+      ..connectionFactory = (uri, proxyHost, proxyPort) async {
+        if (proxyHost != null && proxyPort != null) {
+          return Socket.startConnect(proxyHost, proxyPort);
+        }
+        final secure = uri.isScheme('https');
+        final task = await Socket.startConnect(
+          address,
+          uri.hasPort ? uri.port : (secure ? 443 : 80),
+        );
+        final connected = task.socket.timeout(
+          _timeout,
+          onTimeout: () {
+            task.cancel();
+            throw TimeoutException('No answer from $address', _timeout);
+          },
+        );
+        return ConnectionTask.fromSocket<Socket>(
+          secure
+              ? connected.then(
+                  (socket) => SecureSocket.secure(socket, host: uri.host),
+                )
+              : connected,
+          task.cancel,
+        );
+      };
+    return _rerouting[host] = client;
+  }
+
+  static Future<HttpClientResponse> _send(HttpClient client, Uri uri) async {
+    final request = await client.getUrl(uri).timeout(_timeout);
+    request
+      ..followRedirects = false
+      ..headers.set(HttpHeaders.acceptHeader, _htmlAccept)
+      ..headers.set(HttpHeaders.acceptLanguageHeader, _language);
+    return request.close().timeout(_timeout);
+  }
+
+  void close() {
+    _direct.close(force: true);
+    for (final client in _rerouting.values) {
+      client.close(force: true);
+    }
+  }
+}
+
+/// [host]'s address as Google Public DNS gives it, asked over HTTPS: IPv4
+/// where there is one, as every network reaches it.
+Future<InternetAddress?> _googlePublicAddress(String host) async {
+  final client = _client(webEmbedDesktopUserAgent);
+  try {
+    for (final type in const [1, 28]) {
+      final query = Uri.https(
+        'dns.google',
+        '/resolve',
+        {'name': host, 'type': '$type'},
+      );
+      final request = await client.getUrl(query).timeout(_timeout);
+      request.headers.set(HttpHeaders.acceptHeader, 'application/dns-json');
+      final response = await request.close().timeout(_timeout);
+      final body =
+          await response.transform(utf8.decoder).join().timeout(_timeout);
+      if (response.statusCode != HttpStatus.ok) {
+        continue;
+      }
+      final address = webEmbedPublicDnsAddress(body, type: type);
+      if (address != null) {
+        return address;
+      }
+    }
+    return null;
+  } on Object {
+    return null;
+  } finally {
     client.close(force: true);
   }
+}
+
+/// The first address of [type] (1 for IPv4, 28 for IPv6) in a Google Public
+/// DNS answer, past any aliases.
+@visibleForTesting
+InternetAddress? webEmbedPublicDnsAddress(String body, {required int type}) {
+  final Object? json;
+  try {
+    json = jsonDecode(body);
+  } on FormatException {
+    return null;
+  }
+  if (json is! Map || json['Status'] != 0) {
+    return null;
+  }
+  final answers = json['Answer'];
+  if (answers is! List) {
+    return null;
+  }
+  for (final answer in answers) {
+    if (answer is Map && answer['type'] == type && answer['data'] is String) {
+      final address = InternetAddress.tryParse(answer['data'] as String);
+      if (address != null) {
+        return address;
+      }
+    }
+  }
+  return null;
 }
 
 /// [uri]'s body as text, or null on any failure, a non-200 answer or a body

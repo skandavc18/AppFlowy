@@ -13,9 +13,12 @@ import 'excalidraw_host.dart';
 
 /// Whether the real Excalidraw editor can be opened on this platform.
 ///
-/// It runs in a web view, which the desktop builds carry; on mobile the block
-/// still shows its drawing and its data, it simply cannot be edited yet.
-bool get canRunExcalidrawEditor => UniversalPlatform.isDesktop;
+/// It runs in a web view served from loopback, which the desktop builds and
+/// Android carry (Android allows plain HTTP to 127.0.0.1 only, through the
+/// app's network security config). Elsewhere the block still shows its
+/// drawing and its data, it simply cannot be edited yet.
+bool get canRunExcalidrawEditor =>
+    UniversalPlatform.isDesktop || UniversalPlatform.isAndroid;
 
 /// Hosts the bundled Excalidraw editor and speaks to it.
 ///

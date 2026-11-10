@@ -80,7 +80,8 @@ class MapTilePainter extends CustomPainter {
     final zoom = tileZoomFor(camera, provider.maxZoom);
     final paint = Paint()
       ..filterQuality = FilterQuality.low
-      ..isAntiAlias = false;
+      ..isAntiAlias = false
+      ..colorFilter = provider.toneFor(style);
 
     for (final tile in visibleTiles(camera, zoom)) {
       final rect = tileRect(tile, camera, zoom);

@@ -121,10 +121,6 @@ class _AIWriterBlockComponentState extends State<AiWriterBlockComponent> {
 
   @override
   Widget build(BuildContext context) {
-    if (UniversalPlatform.isMobile) {
-      return const SizedBox.shrink();
-    }
-
     final documentId = context.read<DocumentBloc?>()?.documentId;
 
     return BlocProvider(
@@ -142,8 +138,10 @@ class _AIWriterBlockComponentState extends State<AiWriterBlockComponent> {
                   link: layerLink,
                   showWhenUnlinked: false,
                   child: Container(
-                    padding: const EdgeInsets.only(
-                      left: 40.0,
+                    // A phone has no drag handle gutter to line up with.
+                    padding: EdgeInsets.only(
+                      left: UniversalPlatform.isMobile ? 16.0 : 40.0,
+                      right: UniversalPlatform.isMobile ? 16.0 : 0.0,
                       bottom: 16.0,
                     ),
                     width: constraints.maxWidth,

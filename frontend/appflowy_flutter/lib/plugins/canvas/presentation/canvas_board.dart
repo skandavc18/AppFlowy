@@ -2621,6 +2621,11 @@ class CanvasBoardState extends State<CanvasBoard> {
 
   List<Widget> _chrome(CanvasPalette palette, Size size) {
     final compact = size.width < 560;
+    // A narrow board has no room beside the toolbar, so the zoom controls
+    // (and the minimap above them) sit one row higher.
+    final zoomBottom = compact
+        ? CanvasMetrics.space4 + CanvasMetrics.toolbarHeight + 8
+        : CanvasMetrics.space4;
     final document = _controller.document;
 
     return [
@@ -2695,7 +2700,7 @@ class CanvasBoardState extends State<CanvasBoard> {
         ),
       Positioned(
         right: CanvasMetrics.space4,
-        bottom: CanvasMetrics.space4,
+        bottom: zoomBottom,
         child: _keep(
           #zoom,
           (palette, _camera.zoom),
@@ -2712,7 +2717,7 @@ class CanvasBoardState extends State<CanvasBoard> {
       if (_controller.settings.showMinimap && !document.isEmpty)
         Positioned(
           right: CanvasMetrics.space4,
-          bottom: CanvasMetrics.space4 + CanvasMetrics.toolbarHeight + 8,
+          bottom: zoomBottom + CanvasMetrics.toolbarHeight + 8,
           child: CanvasMinimap(
             document: document,
             palette: palette,

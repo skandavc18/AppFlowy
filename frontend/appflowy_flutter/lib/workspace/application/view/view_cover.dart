@@ -80,6 +80,15 @@ class PageStyleCover {
   bool get isPresets => isPureColor || isGradient || isBuiltInImage;
   bool get isPhoto => isCustomImage || isLocalImage || isUnsplashImage;
 
+  /// The built-in photographs of places. They are pictures rather than
+  /// artwork drawn to sit behind dark type, and some are night skies.
+  bool get isBuiltInPhotograph =>
+      isBuiltInImage && value.startsWith(natureCoverPrefix);
+
+  /// Whether type laid over this cover is set light, over a shade, as it is
+  /// over a person's own photo.
+  bool get isPhotographic => isPhoto || isBuiltInPhotograph;
+
   bool get isNone => type == PageStyleCoverImageType.none;
   bool get isPureColor => type == PageStyleCoverImageType.pureColor;
   bool get isGradient => type == PageStyleCoverImageType.gradientColor;

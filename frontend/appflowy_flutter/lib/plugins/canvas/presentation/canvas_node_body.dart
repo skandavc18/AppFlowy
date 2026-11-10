@@ -15,6 +15,7 @@ import 'package:appflowy/shared/drawing/excalidraw_scene.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/mermaid/mermaid_view.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
@@ -759,7 +760,7 @@ class _CanvasImageBody extends StatelessWidget {
     if (remote) {
       original = NetworkImage(source);
     } else {
-      original = FileImage(File(source));
+      original = FileImage(File(resolveWorkspaceFilePath(source)));
     }
     final ImageProvider<Object> picture = ResizeImage(
       original,

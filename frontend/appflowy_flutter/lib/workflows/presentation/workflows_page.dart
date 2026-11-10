@@ -146,8 +146,25 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
     ];
     final enabled = all.where((workflow) => workflow.enabled).length;
 
+    // A phone cannot spare the desktop gutter.
+    final side = MediaQuery.sizeOf(context).width < 600 ? 16.0 : 40.0;
+    final filters = WorkflowSegmented<_Filter>(
+      values: _Filter.values,
+      selected: _filter,
+      labelOf: (filter) => switch (filter) {
+        _Filter.all => LocaleKeys.workflows_tabs_all.tr(),
+        _Filter.on => LocaleKeys.workflows_tabs_on.tr(),
+        _Filter.off => LocaleKeys.workflows_tabs_off.tr(),
+        _Filter.history => LocaleKeys.workflows_tabs_history.tr(),
+      },
+      onChanged: (filter) => setState(() => _filter = filter),
+    );
+    final search = _SearchField(
+      controller: _search,
+      onChanged: () => setState(() {}),
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 26, 40, 0),
+      padding: EdgeInsets.fromLTRB(side, 26, side, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -189,30 +206,22 @@ class _WorkflowsPageState extends State<WorkflowsPage> {
             ),
           _Stats(workflows: all, runs: _manager.log.runs),
           const SizedBox(height: 18),
-          Row(
-            children: [
-              WorkflowSegmented<_Filter>(
-                values: _Filter.values,
-                selected: _filter,
-                labelOf: (filter) => switch (filter) {
-                  _Filter.all => LocaleKeys.workflows_tabs_all.tr(),
-                  _Filter.on => LocaleKeys.workflows_tabs_on.tr(),
-                  _Filter.off => LocaleKeys.workflows_tabs_off.tr(),
-                  _Filter.history => LocaleKeys.workflows_tabs_history.tr(),
-                },
-                onChanged: (filter) => setState(() => _filter = filter),
-              ),
-              const Spacer(),
-              if (_filter != _Filter.history)
-                SizedBox(
-                  width: 240,
-                  child: _SearchField(
-                    controller: _search,
-                    onChanged: () => setState(() {}),
-                  ),
-                ),
+          if (side < 40) ...[
+            // A phone stacks the filter above a full-width search.
+            Align(alignment: AlignmentDirectional.centerStart, child: filters),
+            if (_filter != _Filter.history) ...[
+              const SizedBox(height: 10),
+              search,
             ],
-          ),
+          ] else
+            Row(
+              children: [
+                filters,
+                const Spacer(),
+                if (_filter != _Filter.history)
+                  SizedBox(width: 240, child: search),
+              ],
+            ),
           const SizedBox(height: 16),
           Expanded(
             child: _filter == _Filter.history
@@ -300,7 +309,7 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = DashboardPalette.of(context);
-    return Row(
+    final title = Row(
       children: [
         const WorkflowGlyphTile(
           glyph: 'infinity',
@@ -325,22 +334,40 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+    final background = WorkflowButton(
+      key: const ValueKey('workflow-background-button'),
+      label: LocaleKeys.workflows_backgroundButton.tr(),
+      glyph: 'moon',
+      onPressed: onBackground,
+    );
+    final create = WorkflowButton(
+      key: const ValueKey('workflow-new-button'),
+      label: LocaleKeys.workflows_newWorkflow.tr(),
+      glyph: 'plus',
+      kind: WorkflowButtonKind.primary,
+      busy: creating,
+      onPressed: onNew,
+    );
+    // On a phone the buttons go under the title, which needs the width.
+    if (MediaQuery.sizeOf(context).width < 600) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          title,
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [background, create]),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: title),
         const SizedBox(width: 16),
-        WorkflowButton(
-          key: const ValueKey('workflow-background-button'),
-          label: LocaleKeys.workflows_backgroundButton.tr(),
-          glyph: 'moon',
-          onPressed: onBackground,
-        ),
+        background,
         const SizedBox(width: 8),
-        WorkflowButton(
-          key: const ValueKey('workflow-new-button'),
-          label: LocaleKeys.workflows_newWorkflow.tr(),
-          glyph: 'plus',
-          kind: WorkflowButtonKind.primary,
-          busy: creating,
-          onPressed: onNew,
-        ),
+        create,
       ],
     );
   }

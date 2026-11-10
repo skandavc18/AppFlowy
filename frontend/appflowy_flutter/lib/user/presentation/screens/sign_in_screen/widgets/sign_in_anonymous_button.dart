@@ -12,7 +12,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 class SignInAnonymousButtonV2 extends StatelessWidget {
   const SignInAnonymousButtonV2({
     super.key,
+    this.label,
+    this.beforeStart,
   });
+
+  /// What the button says; anonymous mode when not given.
+  final String? label;
+
+  /// Runs before the workspace is opened; false stays on this screen.
+  final Future<bool> Function()? beforeStart;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +40,7 @@ class SignInAnonymousButtonV2 extends StatelessWidget {
             child: BlocBuilder<AnonUserBloc, AnonUserState>(
               builder: (context, state) {
                 final theme = AppFlowyTheme.of(context);
-                final onTap = state.anonUsers.isEmpty
+                final start = state.anonUsers.isEmpty
                     ? () {
                         context
                             .read<SignInBloc>()
@@ -43,8 +51,16 @@ class SignInAnonymousButtonV2 extends StatelessWidget {
                         final user = bloc.state.anonUsers.first;
                         bloc.add(AnonUserEvent.openAnonUser(user));
                       };
+                final before = beforeStart;
+                final onTap = before == null
+                    ? start
+                    : () async {
+                        if (await before() && context.mounted) {
+                          start();
+                        }
+                      };
                 return AFGhostIconTextButton(
-                  text: LocaleKeys.signIn_anonymousMode.tr(),
+                  text: label ?? LocaleKeys.signIn_anonymousMode.tr(),
                   textColor: (context, isHovering, disabled) {
                     return theme.textColorScheme.secondary;
                   },

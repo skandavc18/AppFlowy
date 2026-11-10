@@ -301,6 +301,76 @@ class AppearanceSettingsCubit extends Cubit<AppearanceSettingsState> {
     emit(state.copyWith(dateFormat: format));
   }
 
+  /// Takes appearance settings that arrived from another computer: kept, and
+  /// shown straight away. How this window's sidebar sits stays as it is here.
+  Future<void> adoptSyncedAppearance(
+    BuildContext context,
+    AppearanceSettingsPB settings,
+  ) async {
+    settings
+      ..isMenuCollapsed = _appearanceSettings.isMenuCollapsed
+      ..menuOffset = _appearanceSettings.menuOffset;
+    _appearanceSettings
+      ..clear()
+      ..mergeFromMessage(settings);
+    await _saveAppearanceSettings();
+
+    var theme = state.appTheme;
+    if (theme.themeName != settings.theme) {
+      try {
+        theme = await AppTheme.fromName(settings.theme);
+      } catch (error) {
+        // A theme this computer does not have leaves the current one on.
+        Log.warn('A synced theme could not be loaded: $error');
+      }
+    }
+    if (isClosed) {
+      return;
+    }
+    final cursor = settings.documentSetting.cursorColor;
+    final selection = settings.documentSetting.selectionColor;
+    emit(
+      state.copyWith(
+        appTheme: theme,
+        themeMode: _themeModeFromPB(settings.themeMode),
+        font: settings.font,
+        layoutDirection:
+            LayoutDirection.fromLayoutDirectionPB(settings.layoutDirection),
+        textDirection:
+            AppFlowyTextDirection.fromTextDirectionPB(settings.textDirection),
+        enableRtlToolbarItems: settings.enableRtlToolbarItems,
+        documentCursorColor:
+            cursor.isEmpty ? null : Color(int.tryParse(cursor) ?? 0),
+        documentSelectionColor:
+            selection.isEmpty ? null : Color(int.tryParse(selection) ?? 0),
+      ),
+    );
+    final locale = Locale(
+      settings.locale.languageCode,
+      settings.locale.countryCode,
+    );
+    if (context.mounted && locale != state.locale) {
+      setLocale(context, locale);
+    }
+  }
+
+  /// Takes date and time settings that arrived from another computer.
+  Future<void> adoptSyncedDateTime(DateTimeSettingsPB settings) async {
+    _dateTimeSettings
+      ..clear()
+      ..mergeFromMessage(settings);
+    await _saveDateTimeSettings();
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          dateFormat: settings.dateFormat,
+          timeFormat: settings.timeFormat,
+          timezoneId: settings.timezoneId,
+        ),
+      );
+    }
+  }
+
   void setTimeFormat(UserTimeFormatPB format) {
     _dateTimeSettings.timeFormat = format;
     _saveDateTimeSettings();

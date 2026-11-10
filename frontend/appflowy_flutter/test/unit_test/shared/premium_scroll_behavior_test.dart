@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/scrolling/premium_coast.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -7,20 +8,27 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('desktop tuning is lighter without changing embedded wheel physics', () {
     const config = PremiumScrollPhysicsConfig();
-    expect(config.desktopDirectManipulationScale, 0.60);
-    expect(config.desktopCoastFriction, 4.4);
+    expect(config.desktopDirectManipulationScale, 1.0);
+    expect(config.desktopCoastFriction, premiumCoastFriction);
+    expect(config.desktopCoastDeceleration, premiumCoastDeceleration);
     expect(config.friction, 5);
-    expect(config.maxVelocity, 4800);
+    expect(config.maxVelocity, 8000);
     expect(config.desktopFramePacing, isTrue);
     const custom = PremiumScrollPhysicsConfig(
       desktopCoastFriction: 4,
+      desktopCoastDeceleration: 0,
       desktopFramePacing: false,
     );
     expect(custom.copyWith(), custom);
     expect(custom.copyWith().hashCode, custom.hashCode);
     expect(config, isNot(custom));
+    expect(
+      config,
+      isNot(const PremiumScrollPhysicsConfig(desktopCoastDeceleration: 900)),
+    );
     final copy = custom.copyWith(immediateResponse: 0.1);
     expect(copy.desktopCoastFriction, 4);
+    expect(copy.desktopCoastDeceleration, 0);
     expect(copy.desktopFramePacing, isFalse);
   });
 
@@ -97,32 +105,82 @@ void main() {
     expect(model.velocity.dy, closeTo(-220.48, 0.001));
   });
 
-  test('embedded kinetic frames use shared decay and cap delayed frames', () {
-    final model = PremiumKineticScrollModel()
-      ..beginRelease(const Offset(0, 1000));
+  test('embedded wheel frames use shared decay and cap delayed frames', () {
+    final model = PremiumKineticScrollModel();
+    model.addWheelDelta(const Offset(0, 20));
+    final velocity = model.velocity;
     final frame = model.advance(1 / 60);
 
-    expect(frame.displacement.dy, closeTo(15.9911, 0.001));
-    expect(frame.velocity.dy, closeTo(920.044, 0.001));
+    expect(
+      frame.displacement,
+      premiumKineticFrameDisplacement(
+        velocity: velocity,
+        friction: model.config.friction,
+        elapsedSeconds: 1 / 60,
+      ),
+    );
+    expect(
+      frame.velocity,
+      premiumKineticFrameVelocity(
+        velocity: velocity,
+        friction: model.config.friction,
+        elapsedSeconds: 1 / 60,
+      ),
+    );
 
     final delayedModel = PremiumKineticScrollModel()
-      ..beginRelease(const Offset(0, 1000));
+      ..addWheelDelta(const Offset(0, 20));
     final delayedFrame = delayedModel.advance(0.2);
     expect(
       delayedFrame.displacement,
       premiumKineticFrameDisplacement(
-        velocity: const Offset(0, 1000),
+        velocity: velocity,
         friction: delayedModel.config.friction,
         elapsedSeconds: premiumKineticMaximumFrameIntervalSeconds,
       ),
     );
   });
 
+  test('an embedded trackpad release coasts like every page', () {
+    final coast = PremiumCoastSimulation(position: 0, velocity: 1000);
+    final model = PremiumKineticScrollModel()
+      ..beginRelease(const Offset(600, 800));
+    final frame = model.advance(1 / 60);
+
+    // Along the release direction, exactly the page coast.
+    expect(frame.displacement.dx, closeTo(coast.x(1 / 60) * 0.6, 1e-9));
+    expect(frame.displacement.dy, closeTo(coast.x(1 / 60) * 0.8, 1e-9));
+    expect(frame.velocity.distance, closeTo(coast.dx(1 / 60), 1e-9));
+
+    var travelled = frame.displacement;
+    var elapsed = 1 / 60;
+    while (model.isActive) {
+      travelled += model.advance(1 / 60).displacement;
+      elapsed += 1 / 60;
+    }
+    expect(travelled.distance, closeTo(coast.finalX, 0.05));
+    expect(elapsed, lessThan(coast.duration + 1 / 60));
+
+    // A wheel impulse during the coast hands motion back to wheel decay.
+    final wheeled = PremiumKineticScrollModel()
+      ..beginRelease(const Offset(0, 1000))
+      ..addWheelDelta(const Offset(0, 20));
+    final wheelVelocity = wheeled.velocity;
+    expect(
+      wheeled.advance(1 / 60).displacement,
+      premiumKineticFrameDisplacement(
+        velocity: wheelVelocity,
+        friction: wheeled.config.friction,
+        elapsedSeconds: 1 / 60,
+      ),
+    );
+  });
+
   test('embedded release limits and boundary cancellation match PDF', () {
     final model = PremiumKineticScrollModel()
-      ..beginRelease(const Offset(1000, -6000));
+      ..beginRelease(const Offset(1000, -9000));
 
-    expect(model.velocity, const Offset(1000, -4800));
+    expect(model.velocity, const Offset(1000, -8000));
     model.stopAxes(vertical: true);
     expect(model.velocity, const Offset(1000, 0));
     model.beginRelease(const Offset(10, 0));
@@ -150,6 +208,18 @@ void main() {
     );
     expect(script, contains('Math.exp(-config.friction * elapsed)'));
     expect(script, contains('requestAnimationFrame(tick)'));
+    // Trackpad releases coast on the page curve, not on wheel decay.
+    expect(
+      script,
+      contains(
+        buildPremiumCoastJavaScript(
+          friction: config.desktopCoastFriction,
+          deceleration: config.desktopCoastDeceleration,
+        ),
+      ),
+    );
+    expect(script, contains('const step = coastStep(speed, elapsed);'));
+    expect(script, contains('state.coasting = true;'));
     expect(
       script,
       contains('element.scrollHeight - element.clientHeight'),
@@ -249,7 +319,7 @@ void main() {
     expect(physics.maxFlingVelocity, parent.maxFlingVelocity);
   });
 
-  test('desktop direct manipulation is slower without losing precision', () {
+  test('desktop direct manipulation follows the fingers one-to-one', () {
     const config = PremiumScrollPhysicsConfig();
     final physics = PremiumKineticScrollPhysics(
       config: config,
@@ -265,26 +335,28 @@ void main() {
       devicePixelRatio: 1,
     );
 
-    expect(
-      physics.applyPhysicsToUserOffset(metrics, 100),
-      closeTo(60, 0.001),
+    expect(physics.applyPhysicsToUserOffset(metrics, 100), 100);
+    expect(physics.applyPhysicsToUserOffset(metrics, 0.25), 0.25);
+
+    // A configured scale still applies once, without losing precision.
+    final scaled = PremiumKineticScrollPhysics(
+      config: config,
+      directManipulationScale: 0.6,
+      parent: const ClampingScrollPhysics(),
     );
     expect(
-      physics.applyPhysicsToUserOffset(metrics, 0.25),
+      scaled.applyPhysicsToUserOffset(metrics, 0.25),
       closeTo(0.15, 0.001),
     );
-
-    final reapplied = physics.applyTo(const RangeMaintainingScrollPhysics());
-    expect(
-      reapplied.directManipulationScale,
-      config.desktopDirectManipulationScale,
-    );
+    final reapplied = scaled.applyTo(const RangeMaintainingScrollPhysics());
+    expect(reapplied.directManipulationScale, 0.6);
   });
 
-  testWidgets('desktop touch release retains scaled delegate estimation', (
+  testWidgets('desktop touch release retains delegate estimation', (
     tester,
   ) async {
     late GestureVelocityTrackerBuilder trackerBuilder;
+    late GestureVelocityTrackerBuilder scaledTrackerBuilder;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
@@ -292,21 +364,31 @@ void main() {
             trackerBuilder = PremiumScrollBehavior(
               delegate: const _WindowsVelocityScrollBehavior(),
             ).velocityTrackerBuilder(context);
+            scaledTrackerBuilder = PremiumScrollBehavior(
+              delegate: const _WindowsVelocityScrollBehavior(),
+              config: const PremiumScrollPhysicsConfig(
+                desktopDirectManipulationScale: 0.6,
+              ),
+            ).velocityTrackerBuilder(context);
             return const SizedBox.shrink();
           },
         ),
       ),
     );
 
-    final tracker = trackerBuilder(
+    final estimate = trackerBuilder(
       const PointerDownEvent(pointer: 31),
-    );
-    final estimate = tracker.getVelocityEstimate()!;
-
-    expect(estimate.pixelsPerSecond, const Offset(600, -1200));
-    expect(estimate.offset, const Offset(6, -12));
+    ).getVelocityEstimate()!;
+    expect(estimate.pixelsPerSecond, const Offset(1000, -2000));
+    expect(estimate.offset, const Offset(10, -20));
     expect(estimate.duration, const Duration(milliseconds: 20));
     expect(estimate.confidence, 0.9);
+
+    final scaled = scaledTrackerBuilder(
+      const PointerDownEvent(pointer: 32),
+    ).getVelocityEstimate()!;
+    expect(scaled.pixelsPerSecond, const Offset(600, -1200));
+    expect(scaled.offset, const Offset(6, -12));
   });
 
   testWidgets('wheel offsets advance only on smooth 120Hz frames', (
@@ -472,7 +554,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(directOffset, closeTo(80 * 0.60, 0.001));
+    expect(directOffset, closeTo(80, 0.001));
     expect(controller.offset, greaterThanOrEqualTo(directOffset));
     expect(
       controller.position.physics.parent,

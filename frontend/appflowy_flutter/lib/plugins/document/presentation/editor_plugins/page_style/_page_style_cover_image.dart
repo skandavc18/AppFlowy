@@ -16,6 +16,7 @@ import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/feedback_gesture_detector.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/permission/permission_checker.dart';
+import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy_backend/log.dart';
@@ -146,7 +147,7 @@ class PageStyleCoverImage extends StatelessWidget {
 
     if (type == PageStyleCoverImageType.localImage) {
       preview = Image.file(
-        File(value),
+        File(resolveWorkspaceFilePath(value)),
         fit: BoxFit.cover,
       );
     }

@@ -435,6 +435,19 @@ class FlowyTextButton extends StatelessWidget {
                   radius ?? const BorderRadius.all(Radius.circular(8)),
             ),
           ),
+          // A theme that gives text buttons a side replaces the shape's, so
+          // an explicit border is set as the style's side too. A focused
+          // button keeps the theme's focus ring.
+          side: borderColor == null && !isDangerous
+              ? null
+              : WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.focused)
+                      ? null
+                      : BorderSide(
+                          color: borderColor ??
+                              Theme.of(context).colorScheme.error,
+                        ),
+                ),
           textStyle: WidgetStateProperty.all(
             Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: fontWeight ?? flowyRegularFontWeight,

@@ -15,9 +15,7 @@ class GridAddRowButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).brightness == Brightness.light
-        ? const Color(0xFF171717).withValues(alpha: 0.4)
-        : const Color(0xFFFFFFFF).withValues(alpha: 0.4);
+    final color = Theme.of(context).hintColor;
     return FlowyButton(
       radius: BorderRadius.zero,
       decoration: BoxDecoration(

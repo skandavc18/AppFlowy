@@ -15,19 +15,16 @@ import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/shared/appflowy_cloud_auth.dart';
 import 'package:appflowy/workspace/application/backup/backup_manifest.dart';
 import 'package:appflowy/workspace/application/backup/backup_policy.dart';
+import 'package:appflowy/workspace/application/backup/provider_file_transfer.dart';
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
-import 'package:appflowy/workspace/application/providers/provider_http.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_registry.dart';
-import 'package:appflowy/workspace/application/providers/provider_state.dart';
-import 'package:appflowy/workspace/application/providers/remote_provider_base.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -255,9 +252,9 @@ class LocalFolderBackupTarget extends BackupTarget {
 /// Google Drive, OneDrive or Box, through the account already signed in.
 ///
 /// Listing, deleting and downloading go through the provider the rest of the
-/// application uses. Only the upload is written here, because a backup is far
-/// larger than the one-request upload a file embed needs and every one of these
-/// services has its own way of taking a big file in pieces.
+/// application uses. Uploading goes through [ProviderFileTransfer], because a
+/// backup is far larger than the one-request upload a file embed needs and
+/// every one of these services has its own way of taking a big file in pieces.
 class ProviderBackupTarget extends BackupTarget {
   ProviderBackupTarget({
     required this.kind,
@@ -274,16 +271,7 @@ class ProviderBackupTarget extends BackupTarget {
   final String folderName;
 
   CollectionProvider? _provider;
-  http.Client? _client;
-
-  /// Google, Microsoft and Box all ask for pieces that are a multiple of a
-  /// few hundred kilobytes; eight mebibytes divides cleanly into all of them
-  /// and keeps a retry cheap.
-  static const int chunkBytes = 8 * 1024 * 1024;
-
-  /// Below this a single request is simpler, and is the path the rest of the
-  /// application already exercises.
-  static const int simpleUploadCeiling = 4 * 1024 * 1024;
+  ProviderFileTransfer? _transfer;
 
   @override
   String get label => folderName.isEmpty
@@ -295,6 +283,11 @@ class ProviderBackupTarget extends BackupTarget {
         connectionId: connection.id,
         remoteId: folderId,
         remoteName: folderName,
+      );
+
+  ProviderFileTransfer get _files => _transfer ??= ProviderFileTransfer(
+        service: kind.providerService!,
+        connection: connection,
       );
 
   Future<CollectionProvider> _resolve() async {
@@ -381,23 +374,13 @@ class ProviderBackupTarget extends BackupTarget {
     final provider = await _resolve();
     final total = archive.lengthSync();
 
-    final ProviderNode uploaded;
-    if (total <= simpleUploadCeiling) {
-      uploaded = await provider.upload(
-        manifest.archiveFileName,
-        await archive.readAsBytes(),
-        parentId: folderId,
-        mimeType: 'application/octet-stream',
-      );
-      onProgress?.call(total, total);
-    } else {
-      uploaded = await _uploadInPieces(
-        archive: archive,
-        name: manifest.archiveFileName,
-        total: total,
-        onProgress: onProgress,
-      );
-    }
+    final uploaded = await _files.upload(
+      provider: provider,
+      file: archive,
+      name: manifest.archiveFileName,
+      folderId: folderId,
+      onProgress: onProgress,
+    );
 
     final manifestNode = await provider.upload(
       manifest.manifestFileName,
@@ -423,20 +406,13 @@ class ProviderBackupTarget extends BackupTarget {
     BackupTransferProgress? onProgress,
   }) async {
     final provider = await _resolve();
-    await destination.parent.create(recursive: true);
-
-    final url = _contentUrlFor(copy.locator);
-    if (provider is RemoteCollectionProvider && url != null) {
-      await provider.transport.download(
-        url,
-        destination,
-        maxBytes: 8 << 30,
-        onProgress: (received, contentLength) =>
-            onProgress?.call(received, contentLength ?? copy.bytes),
-      );
-      return;
-    }
-    throw const BackupTargetError('That copy could not be downloaded.');
+    await _files.download(
+      provider: provider,
+      id: copy.locator,
+      destination: destination,
+      expectedBytes: copy.bytes,
+      onProgress: onProgress,
+    );
   }
 
   @override
@@ -460,306 +436,8 @@ class ProviderBackupTarget extends BackupTarget {
   void dispose() {
     _provider?.dispose();
     _provider = null;
-    _client?.close();
-    _client = null;
-  }
-
-  String? _contentUrlFor(String id) => switch (kind) {
-        BackupDestinationKind.googleDrive =>
-          'https://www.googleapis.com/drive/v3/files/$id?alt=media&supportsAllDrives=true',
-        BackupDestinationKind.oneDrive =>
-          'https://graph.microsoft.com/v1.0/me/drive/items/$id/content',
-        BackupDestinationKind.box =>
-          'https://api.box.com/2.0/files/$id/content',
-        _ => null,
-      };
-
-  // --- Uploading something large ---------------------------------------------
-
-  http.Client get _http => _client ??= http.Client();
-
-  /// A fresh bearer token for every request.
-  ///
-  /// An upload can run for longer than a token lives, so the token is asked for
-  /// per piece rather than once at the start; it comes out of memory unless it
-  /// has actually expired.
-  Future<Map<String, String>> _authorization() async {
-    final token = await providerAccessToken(connection.id);
-    if (token == null || token.isEmpty) {
-      throw const ProviderFailure.authExpired();
-    }
-    return {'Authorization': 'Bearer $token'};
-  }
-
-  Future<ProviderNode> _uploadInPieces({
-    required File archive,
-    required String name,
-    required int total,
-    BackupTransferProgress? onProgress,
-  }) async =>
-      switch (kind) {
-        BackupDestinationKind.googleDrive => _uploadToDrive(
-            archive: archive,
-            name: name,
-            total: total,
-            onProgress: onProgress,
-          ),
-        BackupDestinationKind.oneDrive => _uploadToOneDrive(
-            archive: archive,
-            name: name,
-            total: total,
-            onProgress: onProgress,
-          ),
-        BackupDestinationKind.box => _uploadToBox(
-            archive: archive,
-            name: name,
-            total: total,
-            onProgress: onProgress,
-          ),
-        _ => throw const BackupTargetError('That service cannot take a file.'),
-      };
-
-  /// Drive's resumable upload: ask for a session, then send ranges to it.
-  Future<ProviderNode> _uploadToDrive({
-    required File archive,
-    required String name,
-    required int total,
-    BackupTransferProgress? onProgress,
-  }) async {
-    final start = await _http.post(
-      Uri.parse(
-        'https://www.googleapis.com/upload/drive/v3/files'
-        '?uploadType=resumable&fields=id,name,size,modifiedTime',
-      ),
-      headers: {
-        ...await _authorization(),
-        'Content-Type': 'application/json; charset=UTF-8',
-        'X-Upload-Content-Type': 'application/octet-stream',
-        'X-Upload-Content-Length': '$total',
-      },
-      body: jsonEncode({
-        'name': name,
-        'parents': [folderId],
-      }),
-    );
-    if (start.statusCode >= 400) {
-      throw ProviderFailure.fromStatusCode(start.statusCode);
-    }
-    final session = start.headers['location'];
-    if (session == null || session.isEmpty) {
-      throw const BackupTargetError('Google Drive refused to start an upload.');
-    }
-
-    final answer = await _sendRanges(
-      archive: archive,
-      total: total,
-      session: Uri.parse(session),
-      // Drive answers 308 while it wants more; the client must be told not to
-      // treat that as a redirect, which is what `_sendRanges` arranges.
-      authorize: true,
-      onProgress: onProgress,
-    );
-    final file = jsonMap(jsonDecode(answer));
-    return ProviderNode(
-      id: jsonString(file['id']),
-      name: name,
-      kind: ProviderNodeKind.archive,
-      parentId: folderId,
-      byteSize: total,
-    );
-  }
-
-  /// Graph's upload session. The session url carries its own permission, so
-  /// the pieces are sent without the account's token.
-  Future<ProviderNode> _uploadToOneDrive({
-    required File archive,
-    required String name,
-    required int total,
-    BackupTransferProgress? onProgress,
-  }) async {
-    final encoded = Uri.encodeComponent(name);
-    final start = await _http.post(
-      Uri.parse(
-        'https://graph.microsoft.com/v1.0/me/drive/items/'
-        '$folderId:/$encoded:/createUploadSession',
-      ),
-      headers: {
-        ...await _authorization(),
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'item': {'@microsoft.graph.conflictBehavior': 'replace'},
-      }),
-    );
-    if (start.statusCode >= 400) {
-      throw ProviderFailure.fromStatusCode(start.statusCode);
-    }
-    final session = jsonString(jsonMap(jsonDecode(start.body))['uploadUrl']);
-    if (session.isEmpty) {
-      throw const BackupTargetError('OneDrive refused to start an upload.');
-    }
-
-    final answer = await _sendRanges(
-      archive: archive,
-      total: total,
-      session: Uri.parse(session),
-      authorize: false,
-      onProgress: onProgress,
-    );
-    final file = jsonMap(jsonDecode(answer));
-    return ProviderNode(
-      id: jsonString(file['id']),
-      name: name,
-      kind: ProviderNodeKind.archive,
-      parentId: folderId,
-      byteSize: total,
-    );
-  }
-
-  /// One session, one `PUT` per part, then a commit naming every part.
-  ///
-  /// Box is the only one of the three that checks the bytes itself: each part
-  /// and the whole file carry a SHA-1 it verifies, so a piece that arrived
-  /// wrong is refused rather than quietly stored.
-  Future<ProviderNode> _uploadToBox({
-    required File archive,
-    required String name,
-    required int total,
-    BackupTransferProgress? onProgress,
-  }) async {
-    final start = await _http.post(
-      Uri.parse('https://upload.box.com/api/2.0/files/upload_sessions'),
-      headers: {
-        ...await _authorization(),
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'folder_id': folderId,
-        'file_size': total,
-        'file_name': name,
-      }),
-    );
-    if (start.statusCode >= 400) {
-      throw ProviderFailure.fromStatusCode(start.statusCode);
-    }
-    final session = jsonMap(jsonDecode(start.body));
-    final sessionId = jsonString(session['id']);
-    final partSize =
-        session['part_size'] is int ? session['part_size']! as int : chunkBytes;
-    if (sessionId.isEmpty) {
-      throw const BackupTargetError('Box refused to start an upload.');
-    }
-
-    final parts = <Map<String, dynamic>>[];
-    final whole = _DigestSink();
-    final wholeSink = sha1.startChunkedConversion(whole);
-
-    final handle = await archive.open();
-    try {
-      var offset = 0;
-      while (offset < total) {
-        final piece = await handle.read(partSize);
-        if (piece.isEmpty) {
-          break;
-        }
-        wholeSink.add(piece);
-        final digest = base64Encode(sha1.convert(piece).bytes);
-        final response = await _http.put(
-          Uri.parse(
-            'https://upload.box.com/api/2.0/files/upload_sessions/$sessionId',
-          ),
-          headers: {
-            ...await _authorization(),
-            'Content-Type': 'application/octet-stream',
-            'Digest': 'sha=$digest',
-            'Content-Range':
-                'bytes $offset-${offset + piece.length - 1}/$total',
-          },
-          body: piece,
-        );
-        if (response.statusCode >= 400) {
-          throw ProviderFailure.fromStatusCode(response.statusCode);
-        }
-        final part = jsonMap(jsonMap(jsonDecode(response.body))['part']);
-        parts.add(part);
-        offset += piece.length;
-        onProgress?.call(offset, total);
-      }
-    } finally {
-      await handle.close();
-    }
-    wholeSink.close();
-
-    final commit = await _http.post(
-      Uri.parse(
-        'https://upload.box.com/api/2.0/files/upload_sessions/$sessionId/commit',
-      ),
-      headers: {
-        ...await _authorization(),
-        'Content-Type': 'application/json',
-        'Digest': 'sha=${base64Encode(whole.value!.bytes)}',
-      },
-      body: jsonEncode({'parts': parts}),
-    );
-    if (commit.statusCode >= 400) {
-      throw ProviderFailure.fromStatusCode(commit.statusCode);
-    }
-    final entries = jsonList(jsonMap(jsonDecode(commit.body)), 'entries');
-    return ProviderNode(
-      id: entries.isEmpty ? '' : jsonString(entries.first['id']),
-      name: name,
-      kind: ProviderNodeKind.archive,
-      parentId: folderId,
-      byteSize: total,
-    );
-  }
-
-  /// The half Drive and Graph share: `Content-Range` pieces until the last one
-  /// answers with the finished file.
-  Future<String> _sendRanges({
-    required File archive,
-    required int total,
-    required Uri session,
-    required bool authorize,
-    BackupTransferProgress? onProgress,
-  }) async {
-    final handle = await archive.open();
-    try {
-      var offset = 0;
-      while (offset < total) {
-        final piece = await handle.read(chunkBytes);
-        if (piece.isEmpty) {
-          break;
-        }
-        final request = http.Request('PUT', session)
-          // ⚠️ A resumable upload answers 308 for every piece but the last, and
-          // an HTTP client that follows redirects treats 308 as one — then
-          // fails, because the answer carries no Location header.
-          ..followRedirects = false
-          ..bodyBytes = piece
-          ..headers['Content-Range'] =
-              'bytes $offset-${offset + piece.length - 1}/$total';
-        if (authorize) {
-          request.headers.addAll(await _authorization());
-        }
-
-        final response =
-            await http.Response.fromStream(await _http.send(request));
-        offset += piece.length;
-        onProgress?.call(offset, total);
-
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          return response.body;
-        }
-        // 308 (Drive) and 202 (Graph) both mean "send the next piece".
-        if (response.statusCode != 308 && response.statusCode != 202) {
-          throw ProviderFailure.fromStatusCode(response.statusCode);
-        }
-      }
-    } finally {
-      await handle.close();
-    }
-    throw const BackupTargetError('The upload ended without being finished.');
+    _transfer?.close();
+    _transfer = null;
   }
 }
 
@@ -1071,17 +749,6 @@ class BackupTargetError implements Exception {
 
   @override
   String toString() => 'BackupTargetError: $detail';
-}
-
-/// Catches the one digest a chunked SHA-1 produces.
-class _DigestSink implements Sink<Digest> {
-  Digest? value;
-
-  @override
-  void add(Digest data) => value = data;
-
-  @override
-  void close() {}
 }
 
 Future<void> _deleteQuietly(File file) async {

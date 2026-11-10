@@ -34,6 +34,7 @@ use collab_plugins::local_storage::kv::doc::CollabKVAction;
 use collab_user::core::{UserAwareness, UserAwarenessNotifier};
 
 use crate::instant_indexed_data_provider::InstantIndexedDataWriter;
+use crate::live_collab::LiveCollabRegistry;
 use flowy_error::FlowyError;
 use lib_infra::{if_native, if_wasm};
 use tracing::{error, instrument, trace, warn};
@@ -81,6 +82,7 @@ pub struct AppFlowyCollabBuilder {
   rocksdb_backup: ArcSwapOption<Arc<dyn RocksdbBackup>>,
   workspace_integrate: Arc<dyn WorkspaceCollabIntegrate>,
   embeddings_writer: Option<Weak<InstantIndexedDataWriter>>,
+  live_collabs: Arc<LiveCollabRegistry>,
 }
 
 impl AppFlowyCollabBuilder {
@@ -97,7 +99,13 @@ impl AppFlowyCollabBuilder {
       #[cfg(not(target_arch = "wasm32"))]
       rocksdb_backup: Default::default(),
       workspace_integrate: Arc::new(workspace_integrate),
+      live_collabs: Arc::new(LiveCollabRegistry::new()),
     }
+  }
+
+  /// The collabs this builder has opened that are still alive.
+  pub fn live_collabs(&self) -> Arc<LiveCollabRegistry> {
+    self.live_collabs.clone()
   }
 
   pub fn set_snapshot_persistence(&self, snapshot_persistence: Arc<dyn SnapshotPersistence>) {
@@ -280,6 +288,7 @@ impl AppFlowyCollabBuilder {
     let object = object.clone();
     let collab_db = collab_db.clone();
     let device_id = self.workspace_integrate.device_id()?;
+    let live_collabs = self.live_collabs.clone();
     let collab = tokio::task::spawn_blocking(move || {
       let collab = CollabBuilder::new(object.uid, &object.object_id, data_source)
         .with_device_id(device_id)
@@ -294,6 +303,8 @@ impl AppFlowyCollabBuilder {
         persistence_config,
       );
       collab.add_plugin(Box::new(db_plugin));
+      let live_plugin = live_collabs.track(&object.workspace_id, &collab);
+      collab.add_plugin(Box::new(live_plugin));
       Ok::<_, Error>(collab)
     })
     .await??;

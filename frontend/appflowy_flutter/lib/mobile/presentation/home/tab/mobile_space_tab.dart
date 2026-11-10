@@ -8,6 +8,7 @@ import 'package:appflowy/mobile/presentation/home/tab/_tab_bar.dart';
 import 'package:appflowy/mobile/presentation/home/tab/space_order_bloc.dart';
 import 'package:appflowy/mobile/presentation/presentation.dart';
 import 'package:appflowy/mobile/presentation/setting/workspace/invite_members_screen.dart';
+import 'package:appflowy/plugins/blank/workspace_home_page.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
@@ -191,6 +192,9 @@ class _MobileHomePageTabState extends State<MobileHomePageTab>
           return MSharedSection(
             workspaceId: workspaceId,
           );
+        case MobileSpaceTabType.home:
+          // The desktop landing page; pages it opens are pushed as routes.
+          return const WorkspaceHomePage();
       }
     }).toList();
   }

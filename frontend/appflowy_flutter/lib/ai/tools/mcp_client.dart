@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:appflowy_backend/log.dart';
 import 'package:http/http.dart' as http;
+import 'package:universal_platform/universal_platform.dart';
 
 import 'ai_tool.dart';
 import 'mcp_server_config.dart';
@@ -193,6 +194,12 @@ class _StdioMcpClient extends McpClient {
     final command = config.command.trim();
     if (command.isEmpty) {
       throw McpException('${config.name} has no command to run.');
+    }
+    // Phones cannot launch a program for a server; HTTP servers still work.
+    if (UniversalPlatform.isMobile) {
+      throw McpException(
+        '${config.name} runs a program, which only works on desktop.',
+      );
     }
 
     final process = await Process.start(

@@ -330,6 +330,68 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
+  for (final nested in [false, true]) {
+    testWidgets(
+      'a two-finger scroll follows the fingers from its first movement: '
+      'nested=$nested',
+      (tester) async {
+        final scroll = ScrollController();
+        final outer = ScrollController();
+        Widget list() => ListView.builder(
+              controller: scroll,
+              itemExtent: 40,
+              itemCount: 200,
+              itemBuilder: (_, index) => Text('Item $index'),
+            );
+        try {
+          await tester.pumpWidget(
+            _app(
+              child: nested
+                  // Two vertical lists and the history swipe compete: the
+                  // inner one wins only after Flutter's 18px touch slop.
+                  ? SingleChildScrollView(
+                      controller: outer,
+                      child: Column(
+                        children: [
+                          SizedBox(height: 600, child: list()),
+                          const SizedBox(height: 4000),
+                        ],
+                      ),
+                    )
+                  : list(),
+            ),
+          );
+          final pan =
+              await tester.createGesture(kind: PointerDeviceKind.trackpad);
+          const point = Offset(300, 300);
+          await pan.panZoomStart(point);
+          const moved = [6.0, 14.0, 30.0, 60.0, 61.0];
+          for (var i = 0; i < moved.length; i++) {
+            await pan.panZoomUpdate(
+              point,
+              pan: Offset(0, -moved[i]),
+              timeStamp: Duration(milliseconds: (i + 1) * 8),
+            );
+            await tester.pump(const Duration(milliseconds: 8));
+            // Nothing the fingers did before the page took the gesture over
+            // is dropped.
+            if (scroll.offset != 0) expect(scroll.offset, moved[i]);
+          }
+          expect(scroll.offset, moved.last);
+          expect(outer.hasClients ? outer.offset : 0, 0);
+          await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 41));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        } finally {
+          await tester.pumpWidget(const SizedBox());
+          scroll.dispose();
+          outer.dispose();
+        }
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.linux),
+    );
+  }
+
   testWidgets(
     'board local scroll behavior keeps slow horizontal swipes',
     (tester) async {

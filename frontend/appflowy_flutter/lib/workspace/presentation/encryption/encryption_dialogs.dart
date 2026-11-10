@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/encryption/encryption.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/encryption/encryption.dart';
+import 'package:appflowy/workspace/presentation/app_password/app_password_dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -45,15 +46,23 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
   String? _error;
   bool _working = false;
 
+  /// Whether the key is to be the AppFlowy password, while choosing one.
+  late bool _useAppPassword =
+      widget.purpose == _PassphrasePurpose.create;
+
+  bool get _usesAppPasswordNow => EncryptionVault.instance.policy.usesAppPassword;
+
+  bool get _choosesKind =>
+      widget.purpose == _PassphrasePurpose.create ||
+      widget.purpose == _PassphrasePurpose.change;
+
   bool get _asksCurrent =>
       widget.purpose == _PassphrasePurpose.unlock ||
       widget.purpose == _PassphrasePurpose.change ||
       widget.purpose == _PassphrasePurpose.remove ||
       widget.purpose == _PassphrasePurpose.reveal;
 
-  bool get _asksNew =>
-      widget.purpose == _PassphrasePurpose.create ||
-      widget.purpose == _PassphrasePurpose.change;
+  bool get _asksNew => _choosesKind && !_useAppPassword;
 
   @override
   void initState() {
@@ -111,6 +120,18 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
 
     switch (widget.purpose) {
       case _PassphrasePurpose.create:
+        if (_useAppPassword) {
+          final password = await ensureAppPassword(context);
+          if (password == null) {
+            return LocaleKeys.encryption_needsAppPassword.tr();
+          }
+          final done = await vault.enable(
+            passphrase: password,
+            gateWholeWorkspace: widget.gatesWholeWorkspace,
+            usesAppPassword: true,
+          );
+          return done ? null : LocaleKeys.encryption_couldNotSet.tr();
+        }
         final done = await vault.enable(
           passphrase: _next.text,
           hint: _hint.text.trim(),
@@ -136,6 +157,29 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
         return null;
 
       case _PassphrasePurpose.change:
+        if (_useAppPassword) {
+          if (_usesAppPasswordNow) {
+            return LocaleKeys.encryption_alreadyAppPassword.tr();
+          }
+          if (unlockEncryptionKey(
+                policy: vault.policy,
+                passphrase: _current.text,
+              ) ==
+              null) {
+            return LocaleKeys.encryption_wrongPassphrase.tr();
+          }
+          final password = await ensureAppPassword(context);
+          if (password == null) {
+            return LocaleKeys.encryption_needsAppPassword.tr();
+          }
+          final done = await vault.changePassphrase(
+            current: _current.text,
+            next: password,
+            reseal: resealWorkspace,
+            usesAppPassword: true,
+          );
+          return done ? null : LocaleKeys.encryption_couldNotChange.tr();
+        }
         final done = await vault.changePassphrase(
           current: _current.text,
           next: _next.text,
@@ -143,6 +187,7 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
           // Everything already sealed was sealed with the OLD key. Without
           // this the new passphrase opens nothing that came before it.
           reseal: resealWorkspace,
+          usesAppPassword: false,
         );
         return done ? null : LocaleKeys.encryption_couldNotChange.tr();
 
@@ -194,10 +239,12 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
             const SizedBox(height: 18),
             if (_asksCurrent) ...[
               ProviderTextField(
-                label: widget.purpose == _PassphrasePurpose.unlock ||
-                        widget.purpose == _PassphrasePurpose.reveal
-                    ? LocaleKeys.encryption_passphrase.tr()
-                    : LocaleKeys.encryption_currentPassphrase.tr(),
+                label: _usesAppPasswordNow
+                    ? LocaleKeys.encryption_appPasswordLabel.tr()
+                    : widget.purpose == _PassphrasePurpose.unlock ||
+                            widget.purpose == _PassphrasePurpose.reveal
+                        ? LocaleKeys.encryption_passphrase.tr()
+                        : LocaleKeys.encryption_currentPassphrase.tr(),
                 controller: _current,
                 palette: palette,
                 obscure: true,
@@ -206,6 +253,7 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
               ),
               if ((widget.purpose == _PassphrasePurpose.unlock ||
                       widget.purpose == _PassphrasePurpose.reveal) &&
+                  !_usesAppPasswordNow &&
                   EncryptionVault.instance.hint.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -218,6 +266,16 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
                     ),
                   ),
                 ),
+              const SizedBox(height: 12),
+            ],
+            if (_choosesKind) ...[
+              WorkspaceKeyKindChoice(
+                useAppPassword: _useAppPassword,
+                onChanged: (value) => setState(() {
+                  _useAppPassword = value;
+                  _error = null;
+                }),
+              ),
               const SizedBox(height: 12),
             ],
             if (_asksNew) ...[
@@ -297,10 +355,16 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
         _PassphrasePurpose.create => widget.gatesWholeWorkspace
             ? LocaleKeys.encryption_setBodyWorkspace.tr()
             : LocaleKeys.encryption_setBody.tr(),
-        _PassphrasePurpose.unlock => LocaleKeys.encryption_unlockBody.tr(),
-        _PassphrasePurpose.change => LocaleKeys.encryption_changeBody.tr(),
+        _PassphrasePurpose.unlock => _usesAppPasswordNow
+            ? LocaleKeys.encryption_unlockBodyApp.tr()
+            : LocaleKeys.encryption_unlockBody.tr(),
+        _PassphrasePurpose.change => _usesAppPasswordNow
+            ? LocaleKeys.encryption_changeBodyApp.tr()
+            : LocaleKeys.encryption_changeBody.tr(),
         _PassphrasePurpose.remove => LocaleKeys.encryption_removeBody.tr(),
-        _PassphrasePurpose.reveal => LocaleKeys.encryption_revealBody.tr(),
+        _PassphrasePurpose.reveal => _usesAppPasswordNow
+            ? LocaleKeys.encryption_revealBodyApp.tr()
+            : LocaleKeys.encryption_revealBody.tr(),
       };
 
   String get _confirmLabel => switch (widget.purpose) {
@@ -310,6 +374,110 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
         _PassphrasePurpose.remove => LocaleKeys.encryption_removeConfirm.tr(),
         _PassphrasePurpose.reveal => LocaleKeys.encryption_revealConfirm.tr(),
       };
+}
+
+/// The AppFlowy password, or a password of the key's own.
+class WorkspaceKeyKindChoice extends StatelessWidget {
+  const WorkspaceKeyKindChoice({
+    super.key,
+    required this.useAppPassword,
+    required this.onChanged,
+  });
+
+  final bool useAppPassword;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          _KindRow(
+            selected: useAppPassword,
+            title: LocaleKeys.encryption_useAppPassword.tr(),
+            hint: LocaleKeys.encryption_useAppPasswordHint.tr(),
+            onTap: () => onChanged(true),
+          ),
+          const SizedBox(height: 6),
+          _KindRow(
+            selected: !useAppPassword,
+            title: LocaleKeys.encryption_useOwnPassword.tr(),
+            hint: LocaleKeys.encryption_useOwnPasswordHint.tr(),
+            onTap: () => onChanged(false),
+          ),
+        ],
+      );
+}
+
+class _KindRow extends StatelessWidget {
+  const _KindRow({
+    required this.selected,
+    required this.title,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final String title;
+  final String hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final premium = PremiumThemeExtension.of(context);
+    return Material(
+      color: selected ? premium.hover : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? premium.accent : premium.border,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 17,
+                color: selected ? premium.accent : premium.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: premium.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hint,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.35,
+                        color: premium.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _StrengthBar extends StatelessWidget {

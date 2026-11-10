@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:appflowy/shared/scrolling/waydroid_scroll.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:auto_updater/auto_updater.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -80,6 +81,8 @@ class ApplicationInfoTask extends LaunchTask {
     if (Platform.isAndroid) {
       final androidInfo = await deviceInfoPlugin.androidInfo;
       ApplicationInfo.androidSDKVersion = androidInfo.version.sdkInt;
+      WaydroidDetection.resolve(androidInfo);
+      if (WaydroidDetection.isWaydroid) WaydroidDetection.paceTouches();
     }
 
     ApplicationInfo.applicationVersion = packageInfo.version;

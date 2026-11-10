@@ -146,7 +146,12 @@ class _MobileInlineActionsHandlerState
 
   @override
   Widget build(BuildContext context) {
-    final width = editorState.renderBox!.size.width - 24 * 2;
+    final renderBox = editorState.renderBox;
+    // Its page has closed; the menu goes once the editor is disposed.
+    if (renderBox == null) {
+      return const SizedBox.shrink();
+    }
+    final width = renderBox.size.width - 24 * 2;
     return Focus(
       focusNode: _focusNode,
       child: Container(

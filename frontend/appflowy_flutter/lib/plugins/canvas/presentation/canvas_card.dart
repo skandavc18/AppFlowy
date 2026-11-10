@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
 import 'package:appflowy/shared/find_replace/find_highlight.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/json_equality.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
@@ -890,11 +891,19 @@ class _CanvasFrameBoxState extends State<CanvasFrameBox> {
 
   Widget _heading(CanvasPalette palette, Color accent) {
     final frame = widget.frame;
+    // The frame's colour is a fine border and wash but a poor letter on that
+    // wash: amber or emerald on cream sits under 2:1 until it is deepened.
+    final wash = Color.alphaBlend(
+      accent.withValues(alpha: palette.isDark ? 0.09 : 0.055),
+      palette.canvas,
+    );
     final style = canvasLabelStyle(
       palette,
       size: 13,
       weight: FontWeight.w600,
-      color: frame.color == null ? palette.textSecondary : accent,
+      color: frame.color == null
+          ? palette.textSecondary
+          : LegibleColor.on(wash, accent),
     );
 
     return Row(

@@ -60,6 +60,7 @@ import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart'
     show UserProfilePB, UserWorkspacePB;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:universal_platform/universal_platform.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// Everything Home reads. Hosts and tests can replace any source; Home owns
@@ -323,6 +324,10 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
     }
   }
 
+  // Mobile opens pages as routes; there are no tabs to open one in.
+  bool get _canOpenInNewTab =>
+      !UniversalPlatform.isMobile && _navigation() != null;
+
   void _openInNewTab(ViewPB view) =>
       _navigation()?.call(TabsEvent.openTab(plugin: view.plugin(), view: view));
 
@@ -470,7 +475,7 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
           icon: Icons.open_in_new_rounded,
           onSelected: () => _open(entry.view),
         ),
-        if (_navigation() != null)
+        if (_canOpenInNewTab)
           AppMenuItem(
             label: LocaleKeys.viewLibrary_openInNewTab.tr(),
             icon: Icons.tab_rounded,
@@ -691,7 +696,7 @@ class _WorkspaceHomePageState extends State<WorkspaceHomePage> {
         onOpen: () {
           if (resume != null) _open(resume.view);
         },
-        onOpenInNewTab: resume == null || _navigation() == null
+        onOpenInNewTab: resume == null || !_canOpenInNewTab
             ? null
             : () => _openInNewTab(resume.view),
       ),

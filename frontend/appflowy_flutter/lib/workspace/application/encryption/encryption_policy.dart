@@ -50,6 +50,7 @@ class EncryptionPolicy {
     this.iterations = defaultKeyIterations,
     this.lockAfterMinutes = 15,
     this.gateWholeWorkspace = false,
+    this.usesAppPassword = false,
   });
 
   factory EncryptionPolicy.fromJson(Map<String, Object?> json) {
@@ -80,6 +81,7 @@ class EncryptionPolicy {
       // collection had the whole workspace closed behind them. Reading the old
       // `gate_whole_workspace` would carry that mistake forward.
       gateWholeWorkspace: readBool('gates_workspace', false),
+      usesAppPassword: readBool('app_password', false),
     );
   }
 
@@ -109,6 +111,11 @@ class EncryptionPolicy {
   /// in to everything else.
   final bool gateWholeWorkspace;
 
+  /// Whether the passphrase is the AppFlowy password, rather than one given
+  /// to the workspace key alone. Either way it is typed to open what it
+  /// protects; this decides what changing the AppFlowy password moves along.
+  final bool usesAppPassword;
+
   bool get locksOnIdle => lockAfterMinutes > 0;
 
   bool get isConfigured => enabled && salt.isNotEmpty && verifier.isNotEmpty;
@@ -129,6 +136,7 @@ class EncryptionPolicy {
     int? iterations,
     int? lockAfterMinutes,
     bool? gateWholeWorkspace,
+    bool? usesAppPassword,
   }) =>
       EncryptionPolicy(
         enabled: enabled ?? this.enabled,
@@ -138,6 +146,7 @@ class EncryptionPolicy {
         iterations: iterations ?? this.iterations,
         lockAfterMinutes: lockAfterMinutes ?? this.lockAfterMinutes,
         gateWholeWorkspace: gateWholeWorkspace ?? this.gateWholeWorkspace,
+        usesAppPassword: usesAppPassword ?? this.usesAppPassword,
       );
 
   Map<String, Object?> toJson() => {
@@ -148,6 +157,7 @@ class EncryptionPolicy {
         'iterations': iterations,
         'lock_after_minutes': lockAfterMinutes,
         'gates_workspace': gateWholeWorkspace,
+        if (usesAppPassword) 'app_password': true,
       };
 
   @override
@@ -159,7 +169,8 @@ class EncryptionPolicy {
       other.hint == hint &&
       other.iterations == iterations &&
       other.lockAfterMinutes == lockAfterMinutes &&
-      other.gateWholeWorkspace == gateWholeWorkspace;
+      other.gateWholeWorkspace == gateWholeWorkspace &&
+      other.usesAppPassword == usesAppPassword;
 
   @override
   int get hashCode => Object.hash(
@@ -170,6 +181,7 @@ class EncryptionPolicy {
         iterations,
         lockAfterMinutes,
         gateWholeWorkspace,
+        usesAppPassword,
       );
 }
 

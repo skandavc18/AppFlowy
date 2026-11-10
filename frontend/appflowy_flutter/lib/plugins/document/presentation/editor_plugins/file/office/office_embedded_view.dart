@@ -17,16 +17,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'office_editor_android_bundle.dart';
 import 'office_editor_chrome.dart';
 import 'office_editor_scroll.dart';
 import 'office_editor_skin.dart';
 import 'office_embedded_host.dart';
 import 'office_embedded_page.dart';
+import 'office_linux_view_pool.dart';
 import 'office_panel.dart';
+import 'office_platform.dart';
 
 /// What the bundled editor runs in. Either way it sits inside the page.
 enum EmbeddedOfficePresentation {
-  /// A platform WebView (Windows and macOS).
+  /// A platform WebView (Windows, macOS and Android).
   webView,
 
   /// A WebKitGTK view drawn into a Flutter texture (Linux, where Flutter has
@@ -54,7 +57,13 @@ class EmbeddedOfficeEditor {
     webViewSupported: LinuxWebViewController.isSupported,
   );
 
-  /// The editor for this platform; mobile keeps the server-based editors.
+  /// The APK carries the editor packed, so it is unpacked on first use.
+  static final _android = EmbeddedOfficeEditor(
+    host: EmbeddedOfficeHost(installer: AndroidOfficeEditorBundle.instance),
+    presentation: EmbeddedOfficePresentation.webView,
+  );
+
+  /// The editor for this platform; iOS keeps the server-based editors.
   static EmbeddedOfficeEditor? forCurrentPlatform() {
     if (kIsWeb) {
       return null;
@@ -65,6 +74,9 @@ class EmbeddedOfficeEditor {
     if (Platform.isLinux) {
       return _texture;
     }
+    if (Platform.isAndroid) {
+      return _android;
+    }
     return null;
   }
 
@@ -72,7 +84,7 @@ class EmbeddedOfficeEditor {
   final EmbeddedOfficePresentation presentation;
 
   /// Whether the web engine the editor runs in is installed: WebKitGTK on
-  /// Linux; Windows and macOS always have one.
+  /// Linux; Windows, macOS and Android always have one.
   final Future<bool> Function() webViewSupported;
 
   /// Whether [name] can open here: the bundle ships with this build, reads
@@ -83,6 +95,20 @@ class EmbeddedOfficeEditor {
     }
     return webViewSupported();
   }
+}
+
+/// Gets the bundled editor ready for this device's next document, where
+/// editor views are kept between documents (Linux; see
+/// [OfficeLinuxViewPool.warmUp]).
+Future<void> warmUpOfficeEditor() async {
+  final editor = EmbeddedOfficeEditor.forCurrentPlatform();
+  if (editor == null ||
+      editor.presentation != EmbeddedOfficePresentation.texture ||
+      !await editor.host.isAvailable ||
+      !await editor.webViewSupported()) {
+    return;
+  }
+  await OfficeLinuxViewPool.instance.warmUp(host: editor.host);
 }
 
 /// A document the view asks the bundled editor to open.
@@ -135,6 +161,38 @@ String _appFontFamily(BuildContext context) {
 
 OfficeEmbeddedTheme _themeOf(BuildContext context) =>
     OfficeEmbeddedTheme.fromSkin(OfficeEditorSkin.of(context));
+
+/// The WebView settings the bundled editor runs with.
+///
+/// The editor is a JavaScript application, so scripting stays on (the
+/// default) unlike sandboxed markdown and HTML previews. On Android,
+/// JavaScript, DOM storage, IndexedDB and WebAssembly are on by default too;
+/// links need `window.open` to reach `onCreateWindow`, and the page never
+/// needs `file:` or `content:` URLs.
+@visibleForTesting
+InAppWebViewSettings officeEmbeddedWebViewSettings({TargetPlatform? platform}) {
+  final android = platform == null
+      ? officeRunsOnAndroid
+      : platform == TargetPlatform.android;
+  if (!android) {
+    return InAppWebViewSettings(
+      supportZoom: false,
+      transparentBackground: true,
+      mediaPlaybackRequiresUserGesture: false,
+      supportMultipleWindows: true,
+    );
+  }
+  return InAppWebViewSettings(
+    supportZoom: false,
+    builtInZoomControls: false,
+    transparentBackground: true,
+    mediaPlaybackRequiresUserGesture: false,
+    supportMultipleWindows: true,
+    javaScriptCanOpenWindowsAutomatically: true,
+    allowFileAccess: false,
+    allowContentAccess: false,
+  );
+}
 
 class _InlineOfficeEditor extends StatefulWidget {
   const _InlineOfficeEditor({
@@ -215,8 +273,26 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
           Log.warn('Unable to release the office editor WebView: $error');
         }
       }
-      await textureView?.dispose();
+      if (textureView != null) {
+        await _returnTextureView(session, textureView);
+      }
     }
+  }
+
+  /// Keeps a Linux view, and the editor its web process has loaded, for the
+  /// next document (see [OfficeLinuxViewPool]).
+  static Future<void> _returnTextureView(
+    EmbeddedOfficeSession session,
+    LinuxWebViewController view,
+  ) async {
+    final Uri idleUrl;
+    try {
+      idleUrl = session.host.idleUrl;
+    } on StateError {
+      await view.dispose();
+      return;
+    }
+    await OfficeLinuxViewPool.instance.release(view, idleUrl: idleUrl);
   }
 
   Future<void> _open(OfficeEmbeddedTheme theme) async {
@@ -233,7 +309,7 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
       LinuxWebViewController? textureView;
       if (mounted && _usesTexture) {
         try {
-          textureView = await LinuxWebViewController.create(
+          textureView = await OfficeLinuxViewPool.instance.acquire(
             url: session.pageUrl,
             userScripts: _scriptSources(session),
           );
@@ -241,10 +317,13 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
           session.close();
           rethrow;
         }
+        unawaited(OfficeEditorUsage.remember(widget.request.name, theme));
       }
       if (!mounted) {
         session.close();
-        await textureView?.dispose();
+        if (textureView != null) {
+          await _returnTextureView(session, textureView);
+        }
         return;
       }
       setState(() {
@@ -343,6 +422,7 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
       buildOfficeEditorChromeScript(
         documentServerOrigin: session.host.origin.toString(),
         typography: _currentTypography,
+        offscreenCanvasesInMemory: true,
       ),
       buildOfficeScrollRuntimeScript(
         documentServerOrigin: session.host.origin.toString(),
@@ -360,7 +440,9 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
     if (error != null) {
       return _EmbeddedOfficeFailure(
         file: widget.request.file,
-        message: 'AppFlowy could not start its document editor.',
+        message: error is OfficeEditorInstallException
+            ? error.message
+            : 'AppFlowy could not start its document editor.',
         onRetry: () => unawaited(_open(_themeOf(context))),
       );
     }
@@ -368,7 +450,9 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
     final keepAlive = _keepAlive;
     final textureView = _textureView;
     if (session == null || (keepAlive == null && textureView == null)) {
-      return const _EmbeddedOfficeLoading();
+      return _EmbeddedOfficeLoading(
+        installProgress: widget.editor.host.installProgress,
+      );
     }
     return ValueListenableBuilder<EmbeddedOfficeStatus>(
       valueListenable: session.status,
@@ -435,14 +519,7 @@ class _InlineOfficeEditorState extends State<_InlineOfficeEditor> {
                 url: WebUri(session.pageUrl.toString()),
               ),
               initialUserScripts: UnmodifiableListView(_userScripts(session)),
-              // The editor is a JavaScript application, so scripting stays on
-              // (the default) unlike sandboxed markdown and HTML previews.
-              initialSettings: InAppWebViewSettings(
-                supportZoom: false,
-                transparentBackground: true,
-                mediaPlaybackRequiresUserGesture: false,
-                supportMultipleWindows: true,
-              ),
+              initialSettings: officeEmbeddedWebViewSettings(),
               onWebViewCreated: (controller) {
                 _controller = controller;
                 _scroll.attach(controller);
@@ -539,28 +616,86 @@ class _OfficeNotice extends StatelessWidget {
 }
 
 class _EmbeddedOfficeLoading extends StatelessWidget {
-  const _EmbeddedOfficeLoading();
+  const _EmbeddedOfficeLoading({this.installProgress});
+
+  /// Set where the editor is unpacked on first use.
+  final ValueListenable<OfficeEditorInstallProgress?>? installProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final installProgress = this.installProgress;
+    if (installProgress == null) {
+      return const _OpeningDocument();
+    }
+    return ValueListenableBuilder<OfficeEditorInstallProgress?>(
+      valueListenable: installProgress,
+      builder: (context, progress, _) => progress == null
+          ? const _OpeningDocument()
+          : _PreparingEditor(progress: progress),
+    );
+  }
+}
+
+/// Where the editor is about to appear: the card it opens in, already in its
+/// place and colour. Opening a document is quick and needs no announcement;
+/// the editor's own skeleton takes over within a moment.
+class _OpeningDocument extends StatelessWidget {
+  const _OpeningDocument();
+
+  @override
+  Widget build(BuildContext context) => ViewerCard(
+        key: const ValueKey('office-editor-opening'),
+        color: OfficeEditorSkin.of(context).desk,
+        child: const SizedBox.expand(),
+      );
+}
+
+/// Shown while the editor is copied out of the APK, the first time a
+/// document opens and after an update that changes the editor.
+class _PreparingEditor extends StatelessWidget {
+  const _PreparingEditor({required this.progress});
+
+  final OfficeEditorInstallProgress progress;
 
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
+    final fraction = progress.fraction;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox.square(
-            dimension: 24,
-            child: CircularProgressIndicator(strokeWidth: 2.2),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  value: fraction,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                fraction == null
+                    ? 'Preparing the document editor...'
+                    : 'Preparing the document editor... '
+                        '${(fraction * 100).floor()}%',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: theme.textColorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const _PanelMessage(
+                'This happens the first time, and again only after an update '
+                'that changes the editor.',
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Opening the document...',
-            style: TextStyle(
-              fontSize: 13,
-              color: theme.textColorScheme.secondary,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

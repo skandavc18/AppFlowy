@@ -5,6 +5,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import 'premium_coast.dart';
+
 /// A short-lived input buffer owned by a mounted premium scroll region.
 ///
 /// The original gesture arena and DragScrollActivity retain ownership. Only
@@ -142,6 +144,10 @@ class FrameSyncedScrollPan {
   int? _tickBaseUs;
   int? _lastFrameUs;
 
+  /// Whether motion handed to the page directly, between frames, has yet to
+  /// be drawn.
+  bool _undrawn = false;
+
   // Read the real activity only to avoid writing through an interrupted drag.
   // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
   ScrollActivity? get _activity => position.activity;
@@ -214,6 +220,10 @@ class FrameSyncedScrollPan {
       // the old pixels and would overwrite such a nested position update.
       _received += offset;
       _settleAt(math.max(stampUs, _horizonUs));
+      if (total != 0 && !_undrawn) {
+        _undrawn = true;
+        SchedulerBinding.instance.addPostFrameCallback((_) => _undrawn = false);
+      }
       return total;
     }
 
@@ -369,12 +379,16 @@ class FrameSyncedScrollPan {
     final carry = pending.abs() < _minCarry ? 0.0 : pending;
     if (carry != 0) _settleAt(_horizonUs);
     final scrolled = position;
+    final undrawn = _undrawn;
     dispose(flush: true);
     _releases[scrolled] = FrameSyncedRelease._(
       carry: carry,
-      // The last paced frame already moved; the coast's first frame, which a
-      // new animation shows at its start, would otherwise hold still.
-      lead: 1 / refreshRate,
+      // A new animation shows its start on its first frame. When the drag's
+      // last movement is already on screen, that frame would hold still, so
+      // the coast starts a frame on. When the fingers lift in the same frame
+      // as they last moved (a compositor delivers the stop with the last
+      // movement), that frame already moves: leading too showed a double step.
+      lead: undrawn ? 0 : 1 / refreshRate,
     );
     // The release coast takes it while this same pointer event is handled.
     // Should nothing take it, show the carried distance rather than lose it.
@@ -440,10 +454,26 @@ class FrameSyncedRelease {
   /// Seconds of coast already due by the coast's first frame.
   final double lead;
 
-  /// [velocity] raised so that a coast decaying exponentially at [friction]
-  /// also travels [carry], from what is on screen instead of jumping to it.
-  double launch(double velocity, double friction) =>
-      velocity + carry * friction;
+  /// [velocity] raised so that a coast with [friction] and [deceleration]
+  /// (see [PremiumCoastSimulation]) also travels [carry], from what is on
+  /// screen instead of jumping to it.
+  double launch(
+    double velocity, {
+    required double friction,
+    double deceleration = 0,
+  }) {
+    if (carry == 0) return velocity;
+    return premiumCoastVelocity(
+      premiumCoastDistance(
+            velocity,
+            friction: friction,
+            deceleration: deceleration,
+          ) +
+          carry,
+      friction: friction,
+      deceleration: deceleration,
+    );
+  }
 
   /// [coast], [lead] seconds on. A new animation shows its start on its
   /// first frame; a coast taking over from paced dragging would otherwise

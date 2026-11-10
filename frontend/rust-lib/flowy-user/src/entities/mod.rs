@@ -5,6 +5,7 @@ pub use reminder::*;
 pub use user_profile::*;
 pub use user_setting::*;
 pub use workspace::*;
+pub use workspace_sync::*;
 
 pub mod auth;
 pub mod date_time;
@@ -15,3 +16,4 @@ mod reminder;
 mod user_profile;
 mod user_setting;
 mod workspace;
+mod workspace_sync;

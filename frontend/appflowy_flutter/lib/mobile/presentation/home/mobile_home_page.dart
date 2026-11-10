@@ -14,9 +14,11 @@ import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/recent/cached_recent_service.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/user/user_workspace_bloc.dart';
+import 'package:appflowy/workspace/presentation/encryption/workspace_lock_screen.dart';
 import 'package:appflowy/workspace/presentation/home/errors/workspace_failed_screen.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
+import 'package:appflowy/workspace/presentation/home/workspace_sync_host.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
@@ -65,14 +67,18 @@ class MobileHomeScreen extends StatelessWidget {
           return const WorkspaceFailedScreen();
         }
 
-        return Scaffold(
-          body: SafeArea(
-            bottom: false,
-            child: Provider.value(
-              value: userProfile,
-              child: MobileHomePage(
-                userProfile: userProfile,
-                workspaceLatest: workspaceLatest,
+        // Nothing behind this is built while the workspace waits for its
+        // passphrase, exactly as on desktop.
+        return WorkspaceEncryptionGate(
+          child: Scaffold(
+            body: SafeArea(
+              bottom: false,
+              child: Provider.value(
+                value: userProfile,
+                child: MobileHomePage(
+                  userProfile: userProfile,
+                  workspaceLatest: workspaceLatest,
+                ),
               ),
             ),
           ),
@@ -194,57 +200,62 @@ class _HomePageState extends State<_HomePage> {
 
         final workspaceId = state.currentWorkspace!.workspaceId;
 
-        return Column(
-          key: ValueKey('mobile_home_page_$workspaceId'),
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.only(
-                left: HomeSpaceViewSizes.mHorizontalPadding,
-                right: 8.0,
-              ),
-              child: MobileHomePageHeader(
-                userProfile: widget.userProfile,
-              ),
-            ),
-
-            Expanded(
-              child: MultiBlocProvider(
-                providers: [
-                  BlocProvider(
-                    create: (_) =>
-                        SpaceOrderBloc()..add(const SpaceOrderEvent.initial()),
-                  ),
-                  BlocProvider(
-                    create: (_) => SidebarSectionsBloc()
-                      ..add(
-                        SidebarSectionsEvent.initial(
-                          widget.userProfile,
-                          workspaceId,
-                        ),
-                      ),
-                  ),
-                  BlocProvider(
-                    create: (_) =>
-                        FavoriteBloc()..add(const FavoriteEvent.initial()),
-                  ),
-                  BlocProvider(
-                    create: (_) => SpaceBloc(
-                      userProfile: widget.userProfile,
-                      workspaceId: workspaceId,
-                    )..add(
-                        const SpaceEvent.initial(
-                          openFirstPage: false,
-                        ),
-                      ),
-                  ),
-                ],
-                child: MobileHomePageTab(
+        // Sync follows the workspace on screen, as on desktop.
+        return WorkspaceSyncHost(
+          userProfile: widget.userProfile,
+          workspaceId: workspaceId,
+          child: Column(
+            key: ValueKey('mobile_home_page_$workspaceId'),
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: HomeSpaceViewSizes.mHorizontalPadding,
+                  right: 8.0,
+                ),
+                child: MobileHomePageHeader(
                   userProfile: widget.userProfile,
                 ),
               ),
-            ),
-          ],
+
+              Expanded(
+                child: MultiBlocProvider(
+                  providers: [
+                    BlocProvider(
+                      create: (_) => SpaceOrderBloc()
+                        ..add(const SpaceOrderEvent.initial()),
+                    ),
+                    BlocProvider(
+                      create: (_) => SidebarSectionsBloc()
+                        ..add(
+                          SidebarSectionsEvent.initial(
+                            widget.userProfile,
+                            workspaceId,
+                          ),
+                        ),
+                    ),
+                    BlocProvider(
+                      create: (_) =>
+                          FavoriteBloc()..add(const FavoriteEvent.initial()),
+                    ),
+                    BlocProvider(
+                      create: (_) => SpaceBloc(
+                        userProfile: widget.userProfile,
+                        workspaceId: workspaceId,
+                      )..add(
+                          const SpaceEvent.initial(
+                            openFirstPage: false,
+                          ),
+                        ),
+                    ),
+                  ],
+                  child: MobileHomePageTab(
+                    userProfile: widget.userProfile,
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

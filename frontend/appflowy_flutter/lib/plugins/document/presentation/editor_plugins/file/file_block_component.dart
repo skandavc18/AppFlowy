@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
@@ -51,6 +52,7 @@ import 'file_preview_kind.dart';
 import 'file_upload_menu.dart';
 import 'materialized_file_builder.dart';
 import 'office/office_document_view.dart';
+import 'office/office_mobile_page.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
 
@@ -932,6 +934,31 @@ class FileBlockComponentState extends State<FileBlockComponent>
     String name,
     FileUrlType urlType,
   ) {
+    if (opensOfficeFileInApp(name)) {
+      // A phone has no room to edit inside the page; the card opens the
+      // editor full screen.
+      final binding = _iconBinding!;
+      final accent = FolderExplorerPalette.of(context).accent;
+      return Align(
+        alignment: blockEmbedAlignment(node),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: OfficeFileLaunchCard(
+            name: name,
+            icon: ListenableBuilder(
+              listenable: binding,
+              builder: (_, __) => FileIdentityGlyph(
+                icon: binding.icon,
+                name: name,
+                size: 22,
+                color: accent,
+              ),
+            ),
+            onOpen: () => unawaited(_openOfficeEditor(url, name, urlType)),
+          ),
+        ),
+      );
+    }
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         defaultVisualMediaWidth;
     final height = node.attributes[FileBlockKeys.height]?.toDouble() ?? 520.0;
@@ -1212,6 +1239,41 @@ class FileBlockComponentState extends State<FileBlockComponent>
             )
           : const {};
 
+  /// Opens an office attachment in the editor, full screen, where a phone
+  /// has room for it.
+  Future<void> _openOfficeEditor(
+    String url,
+    String name,
+    FileUrlType urlType,
+  ) {
+    // Puts the keyboard away, as the attachment menus do.
+    editorState.updateSelectionWithReason(null, extraInfo: {});
+    final kind = filePreviewKindFromName(name);
+    return showOfficeEditorPage(
+      context,
+      source: url,
+      name: name,
+      editable: editorState.editable && urlType != FileUrlType.network,
+      httpHeaders: _httpHeadersFor(urlType),
+      // Delimited text stays readable without an editor, as it does inline.
+      fallbackBuilder: kind == null
+          ? null
+          : (context, file) => FilePreview(
+                file: file,
+                name: name,
+                kind: kind,
+                metadata: Map<String, dynamic>.from(
+                  node.attributes[FileBlockKeys.previewMetadata] as Map? ??
+                      const {},
+                ),
+                onMetadataChanged: (metadata) {
+                  if (mounted) _savePreviewMetadata(metadata);
+                },
+                editable: editorState.editable && urlType == FileUrlType.local,
+              ),
+    );
+  }
+
   void _openMenu() {
     if (UniversalPlatform.isDesktopOrWeb) {
       controller.show();
@@ -1304,8 +1366,11 @@ class FileBlockComponentState extends State<FileBlockComponent>
       opaque: false,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTap:
-            hasFile ? () async => _openFile(context, urlType, url) : _openMenu,
+        onTap: !hasFile
+            ? _openMenu
+            : opensOfficeFileInApp(name)
+                ? () => unawaited(_openOfficeEditor(url, name!, urlType))
+                : () async => _openFile(context, urlType, url),
         child: card,
       ),
     );

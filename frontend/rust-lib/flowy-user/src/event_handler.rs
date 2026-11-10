@@ -884,3 +884,149 @@ pub async fn notify_did_switch_plan_handler(
   manager.notify_did_switch_plan(success).await?;
   Ok(())
 }
+
+#[tracing::instrument(level = "info", skip_all, err)]
+pub async fn export_workspace_snapshot_handler(
+  params: AFPluginData<ExportWorkspaceSnapshotPB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> DataResult<WorkspaceBundlePB, FlowyError> {
+  let params = params.into_inner();
+  let manager = upgrade_manager(manager)?;
+  let (summary, header, workspace_type) = manager
+    .export_workspace_snapshot(&params.path, &params.sync_state_path)
+    .await?;
+  data_result_ok(WorkspaceBundlePB {
+    object_count: summary.objects as i64,
+    wrote: summary.wrote,
+    uid: header.uid,
+    workspace_id: header.workspace_id,
+    workspace_name: header.workspace_name,
+    is_local_workspace: matches!(workspace_type, WorkspaceType::Local),
+    device_id: header.device_id,
+  })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub async fn export_workspace_changes_handler(
+  params: AFPluginData<ExportWorkspaceChangesPB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> DataResult<WorkspaceBundlePB, FlowyError> {
+  let params = params.into_inner();
+  let manager = upgrade_manager(manager)?;
+  let (summary, header, workspace_type) = manager
+    .export_workspace_changes(&params.path, &params.sync_state_path)
+    .await?;
+  data_result_ok(WorkspaceBundlePB {
+    object_count: summary.objects as i64,
+    wrote: summary.wrote,
+    uid: header.uid,
+    workspace_id: header.workspace_id,
+    workspace_name: header.workspace_name,
+    is_local_workspace: matches!(workspace_type, WorkspaceType::Local),
+    device_id: header.device_id,
+  })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub async fn import_workspace_changes_handler(
+  params: AFPluginData<ImportWorkspaceChangesPB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> DataResult<WorkspaceImportPB, FlowyError> {
+  let params = params.into_inner();
+  let manager = upgrade_manager(manager)?;
+  let summary = manager
+    .import_workspace_changes(&params.path, &params.sync_state_path)
+    .await?;
+  data_result_ok(WorkspaceImportPB {
+    objects: summary.objects as i64,
+    live: summary.live as i64,
+    created: summary.created as i64,
+    merged: summary.merged as i64,
+    unchanged: summary.unchanged as i64,
+  })
+}
+
+#[tracing::instrument(level = "info", skip_all, err)]
+pub async fn schedule_workspace_restore_handler(
+  params: AFPluginData<ScheduleWorkspaceRestorePB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> DataResult<ScheduledWorkspaceRestorePB, FlowyError> {
+  let params = params.into_inner();
+  let manager = upgrade_manager(manager)?;
+  let (header, objects) = manager
+    .schedule_workspace_restore(&params.snapshot_path, &params.sync_state_path)
+    .await?;
+  data_result_ok(ScheduledWorkspaceRestorePB {
+    uid: header.uid,
+    workspace_id: header.workspace_id,
+    workspace_name: header.workspace_name,
+    object_count: objects as i64,
+  })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub async fn take_workspace_restore_outcome_handler(
+  manager: AFPluginState<Weak<UserManager>>,
+) -> DataResult<WorkspaceRestoreOutcomePB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let outcome = match manager.take_workspace_restore_outcome() {
+    None => WorkspaceRestoreOutcomePB::default(),
+    Some(outcome) => WorkspaceRestoreOutcomePB {
+      happened: true,
+      succeeded: outcome.succeeded,
+      workspace_id: outcome.workspace_id,
+      workspace_name: outcome.workspace_name,
+      object_count: outcome.objects as i64,
+      detail: outcome.detail,
+    },
+  };
+  data_result_ok(outcome)
+}
+
+/// Only sync's own values may be read or written this way: the rest of what
+/// the server keeps with an account is not for an event to change.
+const CLOUD_USER_VALUE_PREFIX: &str = "appflowy_sync_";
+
+fn check_cloud_user_key(key: &str) -> FlowyResult<()> {
+  if key.len() > CLOUD_USER_VALUE_PREFIX.len() && key.starts_with(CLOUD_USER_VALUE_PREFIX) {
+    Ok(())
+  } else {
+    Err(FlowyError::invalid_data().with_context("Not a value sync keeps"))
+  }
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub async fn get_cloud_user_value_handler(
+  data: AFPluginData<CloudUserKeyPB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> DataResult<CloudUserValuePB, FlowyError> {
+  let key = data.into_inner().key;
+  check_cloud_user_key(&key)?;
+  let manager = upgrade_manager(manager)?;
+  let value = manager
+    .cloud_service()?
+    .get_user_service()?
+    .get_user_value(&key)
+    .await?;
+  data_result_ok(CloudUserValuePB {
+    key,
+    found: value.is_some(),
+    value: value.unwrap_or_default(),
+  })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub async fn set_cloud_user_value_handler(
+  data: AFPluginData<CloudUserValuePB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> Result<(), FlowyError> {
+  let params = data.into_inner();
+  check_cloud_user_key(&params.key)?;
+  let manager = upgrade_manager(manager)?;
+  manager
+    .cloud_service()?
+    .get_user_service()?
+    .set_user_value(&params.key, &params.value)
+    .await?;
+  Ok(())
+}

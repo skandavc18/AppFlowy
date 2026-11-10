@@ -2,7 +2,9 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/colors.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
+import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/loading.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/util/int64_extension.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -437,9 +439,16 @@ class _UsageBox extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const FlowySvg(
+                FlowySvg(
                   FlowySvgs.check_circle_outlined_s,
-                  color: Color(0xFF9C00FB),
+                  // Measured on the settings sheet itself, the lightest of
+                  // the dark surfaces; on the darker canvas it already read.
+                  color: LegibleColor.on(
+                    PremiumThemeExtension.maybeOf(context)?.floatingSurface ??
+                        Theme.of(context).colorScheme.surface,
+                    const Color(0xFF9C00FB),
+                    minimum: LegibleColor.glyph,
+                  ),
                 ),
                 const HSpace(4),
                 FlowyText(
@@ -500,10 +509,15 @@ class _ToggleMoreState extends State<_ToggleMore> {
           },
         ),
         const HSpace(10),
-        FlowyText.regular(
-          widget.label,
-          fontSize: 14,
-          color: AFThemeExtension.of(context).strongText,
+        // Shares the row with the badge, so on a phone it wraps rather than
+        // pushing the badge off the edge.
+        Flexible(
+          child: FlowyText.regular(
+            widget.label,
+            fontSize: 14,
+            color: AFThemeExtension.of(context).strongText,
+            maxLines: 2,
+          ),
         ),
         if (widget.badgeLabel != null && widget.badgeLabel!.isNotEmpty) ...[
           const HSpace(10),
@@ -605,7 +619,9 @@ class _AddOnBox extends StatelessWidget {
     final isLM = Theme.of(context).isLightMode;
 
     return Container(
-      height: 220,
+      // A floor rather than a fixed height: on a phone the description wraps
+      // and pushed the button out of the card.
+      constraints: const BoxConstraints(minHeight: 220),
       padding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 12,
@@ -617,92 +633,95 @@ class _AddOnBox extends StatelessWidget {
         color: const Color(0xFFF7F8FC).withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FlowyText.semibold(
-            title,
-            fontSize: 14,
-            color: AFThemeExtension.of(context).strongText,
-          ),
-          const VSpace(10),
-          FlowyText.regular(
-            description,
-            fontSize: 12,
-            color: AFThemeExtension.of(context).secondaryTextColor,
-            maxLines: 4,
-          ),
-          const VSpace(10),
-          FlowyText(
-            price,
-            fontSize: 24,
-            color: AFThemeExtension.of(context).strongText,
-          ),
-          FlowyText(
-            priceInfo,
-            fontSize: 12,
-            color: AFThemeExtension.of(context).strongText,
-          ),
-          const VSpace(12),
-          Row(
-            children: [
-              Expanded(
-                child: FlowyText(
-                  recommend,
-                  color: AFThemeExtension.of(context).secondaryTextColor,
-                  fontSize: 11,
-                  maxLines: 2,
+      child: IntrinsicHeight(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FlowyText.semibold(
+              title,
+              fontSize: 14,
+              color: AFThemeExtension.of(context).strongText,
+            ),
+            const VSpace(10),
+            FlowyText.regular(
+              description,
+              fontSize: 12,
+              color: AFThemeExtension.of(context).secondaryTextColor,
+              maxLines: 4,
+            ),
+            const VSpace(10),
+            FlowyText(
+              price,
+              fontSize: 24,
+              color: AFThemeExtension.of(context).strongText,
+            ),
+            FlowyText(
+              priceInfo,
+              fontSize: 12,
+              color: AFThemeExtension.of(context).strongText,
+            ),
+            const VSpace(12),
+            Row(
+              children: [
+                Expanded(
+                  child: FlowyText(
+                    recommend,
+                    color: AFThemeExtension.of(context).secondaryTextColor,
+                    fontSize: 11,
+                    maxLines: 2,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: FlowyTextButton(
-                  buttonText,
-                  heading: isActive
-                      ? const FlowySvg(
-                          FlowySvgs.check_circle_outlined_s,
-                          color: Color(0xFF9C00FB),
-                        )
-                      : null,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                  fillColor: isActive
-                      ? const Color(0xFFE8E2EE)
-                      : isLM
-                          ? Colors.transparent
-                          : const Color(0xFF5C3699),
-                  constraints: const BoxConstraints(minWidth: 115),
-                  radius: Corners.s16Border,
-                  hoverColor: isActive
-                      ? const Color(0xFFE8E2EE)
-                      : isLM
-                          ? const Color(0xFF5C3699)
-                          : const Color(0xFF4d3472),
-                  fontColor:
-                      isLM || isActive ? const Color(0xFF5C3699) : Colors.white,
-                  fontHoverColor:
-                      isActive ? const Color(0xFF5C3699) : Colors.white,
-                  borderColor: isActive
-                      ? const Color(0xFFE8E2EE)
-                      : isLM
-                          ? const Color(0xFF5C3699)
-                          : const Color(0xFF4d3472),
-                  fontSize: 12,
-                  onPressed: isActive
-                      ? null
-                      : () => context
-                          .read<SettingsPlanBloc>()
-                          .add(SettingsPlanEvent.addSubscription(plan)),
+              ],
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                Expanded(
+                  child: FlowyTextButton(
+                    buttonText,
+                    heading: isActive
+                        ? const FlowySvg(
+                            FlowySvgs.check_circle_outlined_s,
+                            color: Color(0xFF9C00FB),
+                          )
+                        : null,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                    fillColor: isActive
+                        ? const Color(0xFFE8E2EE)
+                        : isLM
+                            ? Colors.transparent
+                            : const Color(0xFF5C3699),
+                    constraints: const BoxConstraints(minWidth: 115),
+                    radius: Corners.s16Border,
+                    hoverColor: isActive
+                        ? const Color(0xFFE8E2EE)
+                        : isLM
+                            ? const Color(0xFF5C3699)
+                            : const Color(0xFF4d3472),
+                    fontColor: isLM || isActive
+                        ? const Color(0xFF5C3699)
+                        : Colors.white,
+                    fontHoverColor:
+                        isActive ? const Color(0xFF5C3699) : Colors.white,
+                    borderColor: isActive
+                        ? const Color(0xFFE8E2EE)
+                        : isLM
+                            ? const Color(0xFF5C3699)
+                            : const Color(0xFF4d3472),
+                    fontSize: 12,
+                    onPressed: isActive
+                        ? null
+                        : () => context
+                            .read<SettingsPlanBloc>()
+                            .add(SettingsPlanEvent.addSubscription(plan)),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

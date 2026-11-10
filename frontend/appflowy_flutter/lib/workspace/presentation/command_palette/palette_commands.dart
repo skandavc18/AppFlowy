@@ -516,7 +516,7 @@ List<(SettingsPage, String, IconData, List<String>)> _settingsPages() => [
         SettingsPage.backup,
         LocaleKeys.backup_settingsTitle.tr(),
         Icons.backup_rounded,
-        const ['backup', 'restore', 'export'],
+        const ['backup', 'restore', 'export', 'sync', 'google drive'],
       ),
       (
         SettingsPage.maps,

@@ -1,7 +1,8 @@
 import 'package:appflowy/mobile/presentation/selection_menu/mobile_selection_menu_item.dart';
 import 'package:appflowy/mobile/presentation/selection_menu/mobile_selection_menu_item_widget.dart';
 import 'package:appflowy/mobile/presentation/selection_menu/mobile_selection_menu_widget.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/slash_menu/slash_menu_items/mobile_items.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/slash_menu/slash_menu_metadata.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -19,14 +20,15 @@ void main() {
       await tester.createPageAndShowSlashMenu(title);
       final menuWidget = find.byType(MobileSelectionMenuWidget);
       expect(menuWidget, findsOneWidget);
-      final items =
-          (menuWidget.evaluate().first.widget as MobileSelectionMenuWidget)
-              .items;
-      int i = 0;
-      for (final item in items) {
-        final localItem = mobileItems[i];
-        expect(item.name, localItem.name);
-        i++;
+      // One group per desktop section, in the desktop's order.
+      final names = SlashMenuSection.values.map(slashMenuSectionLabel).toList();
+      var previous = -1;
+      for (final item in _menuItems(menuWidget)) {
+        expect(item, isA<MobileSelectionMenuItem>());
+        expect((item as MobileSelectionMenuItem).children, isNotEmpty);
+        final index = names.indexOf(item.name);
+        expect(index, greaterThan(previous));
+        previous = index;
       }
     });
 
@@ -37,7 +39,7 @@ void main() {
       await tester.ime.insertText(searchText);
       final itemWidgets = find.byType(MobileSelectionMenuItemWidget);
       int number = 0;
-      for (final item in mobileItems) {
+      for (final item in _menuItems(find.byType(MobileSelectionMenuWidget))) {
         if (item is MobileSelectionMenuItem) {
           for (final childItem in item.children) {
             if (childItem.name
@@ -63,9 +65,11 @@ void main() {
         of: find.byType(MobileSelectionMenuWidget),
         matching: find.byType(ListView),
       );
-      for (final item in mobileItems) {
+      await tester.editor.showSlashMenu();
+      final groups = _menuItems(find.byType(MobileSelectionMenuWidget));
+      for (final (index, item) in groups.indexed) {
         if (item is! MobileSelectionMenuItem) continue;
-        await tester.editor.showSlashMenu();
+        if (index > 0) await tester.editor.showSlashMenu();
         await tester.scrollUntilVisible(
           find.text(item.name),
           50,
@@ -82,3 +86,6 @@ void main() {
     });
   });
 }
+
+List<SelectionMenuItem> _menuItems(Finder menuWidget) =>
+    (menuWidget.evaluate().first.widget as MobileSelectionMenuWidget).items;
