@@ -8,8 +8,11 @@ import 'package:appflowy/plugins/collection/views/album/album_context_menu.dart'
 import 'package:appflowy/plugins/collection/views/album/album_host.dart';
 import 'package:appflowy/plugins/collection/views/album/album_lightbox.dart';
 import 'package:appflowy/plugins/collection/views/album/album_thumbnail.dart';
+import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_links.dart';
+import 'package:appflowy/shared/maps/map_marker.dart';
+import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_places.dart';
@@ -21,9 +24,10 @@ import 'package:flutter/services.dart';
 /// Where the album was made, read from the GPS each camera wrote into the
 /// picture.
 ///
-/// AppFlowy ships no map tiles and works offline, so this plots the pictures
-/// on a graticule rather than pretending to be a street map — and hands off
-/// to a real map when a place is worth looking at properly.
+/// With a Google key in Settings the places are pinned on Google's map.
+/// Without one this works offline, plotting the pictures on a graticule
+/// rather than pretending to be a street map — and handing off to a real map
+/// when a place is worth looking at properly.
 class AlbumMapView extends StatelessWidget {
   const AlbumMapView({super.key, required this.collection});
 
@@ -160,11 +164,20 @@ class _PlacesState extends State<_Places> {
                 AlbumMetrics.gutter,
                 8,
               ),
-              child: _WorldPlot(
-                places: widget.places,
-                palette: palette,
-                selected: selected,
-                onSelect: (index) => setState(() => selected = index),
+              child: ListenableBuilder(
+                listenable: MapsSettings.instance,
+                builder: (context, _) => MapsSettings.instance.hasGoogleKey
+                    ? _PlacesMap(
+                        places: widget.places,
+                        selected: selected,
+                        onSelect: (index) => setState(() => selected = index),
+                      )
+                    : _WorldPlot(
+                        places: widget.places,
+                        palette: palette,
+                        selected: selected,
+                        onSelect: (index) => setState(() => selected = index),
+                      ),
               ),
             ),
           ),
@@ -312,6 +325,44 @@ class _PlacesState extends State<_Places> {
 
   Future<void> _openInMaps(AlbumPlace place) =>
       openInMaps(LatLng(place.latitude, place.longitude), zoom: 13);
+}
+
+/// The places pinned on the app's map, which is Google's own with a key.
+class _PlacesMap extends StatelessWidget {
+  const _PlacesMap({
+    required this.places,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<AlbumPlace> places;
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: AppMapView(
+        pins: [
+          for (final (index, place) in places.indexed)
+            AppMapPin(
+              id: '$index',
+              point: LatLng(place.latitude, place.longitude),
+              title: place.label,
+              subtitle: place.count == 1
+                  ? LocaleKeys.collections_album_onePhoto.tr()
+                  : LocaleKeys.collections_album_itemCount
+                      .tr(args: ['${place.count}']),
+            ),
+        ],
+        selectedPinId: '$selected',
+        // The strip below already shows the chosen place.
+        showPopup: false,
+        onPinTap: (pin) => onSelect(int.tryParse(pin.id) ?? selected),
+      ),
+    );
+  }
 }
 
 class _WorldPlot extends StatelessWidget {

@@ -5,6 +5,7 @@ import 'package:appflowy/shared/maps/app_map_marker.dart';
 import 'package:appflowy/shared/maps/app_map_toolbar.dart';
 import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
+import 'package:appflowy/shared/maps/map_geocoder.dart';
 import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/maps/map_place_field.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
@@ -93,6 +94,25 @@ void main() {
       await tester.pump();
       expect(host.submitted, ['Atlantis']);
       expect(host.picked, [_paris]);
+    });
+    testWidgets("places found by Google carry Google's credit", (tester) async {
+      MapSuggestionCache.instance.debugRemember('akshaya', const [
+        MapSuggestion(
+          title: 'Akshaya Hall',
+          subtitle: 'Basavanagudi, Bengaluru',
+          point: LatLng(12.93293, 77.57145),
+          source: GeocodeSource.google,
+        ),
+      ]);
+      await _pumpField(tester);
+
+      await _type(tester, find.byType(TextField), 'Paris');
+      expect(find.byType(GoogleMapsCredit), findsNothing);
+
+      await _type(tester, find.byType(TextField), 'Akshaya');
+      expect(_row('Akshaya Hall'), findsOneWidget);
+      expect(find.byType(GoogleMapsCredit), findsOneWidget);
+      expect(find.text('Google Maps'), findsOneWidget);
     });
   });
 

@@ -310,8 +310,15 @@ class GoogleTileProvider extends MapTileProvider {
   /// Keys Google refused this session; they are not offered again.
   static final Set<String> _refusedKeys = {};
 
+  /// Whether Google will not serve its map tiles for [apiKey], as with a Maps
+  /// Demo Key, which has no Map Tiles API. Known once a map has asked.
+  static bool isRefusedKey(String apiKey) => _refusedKeys.contains(apiKey);
+
   @visibleForTesting
   static void debugForgetRefusals() => _refusedKeys.clear();
+
+  @visibleForTesting
+  static void debugRefuse(String apiKey) => _refusedKeys.add(apiKey);
 
   /// Any other failure is worth retrying, but not on every frame.
   static const _retryAfter = Duration(minutes: 1);

@@ -552,6 +552,10 @@ class BackupService extends ChangeNotifier {
           folderId: destination.folderId,
           folderName: destination.folderName,
         );
+      case BackupDestinationKind.selfHostedCloud:
+        throw const BackupError(
+          'A self-hosted AppFlowy Cloud holds sync folders, not copies.',
+        );
     }
   }
 

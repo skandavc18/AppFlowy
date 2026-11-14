@@ -42,7 +42,7 @@ void main() {
 
   testWidgets('the first screen offers every way to start, in every theme',
       (tester) async {
-    tester.view.physicalSize = const Size(1500, 560);
+    tester.view.physicalSize = const Size(1500, 760);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
@@ -58,10 +58,12 @@ void main() {
                     child: Builder(
                       builder: (context) => Material(
                         color: Theme.of(context).scaffoldBackgroundColor,
-                        child: const Padding(
-                          padding: EdgeInsets.all(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
                           child: Center(
-                            child: FirstRunSyncOptions(showLocalOption: false),
+                            child: FirstRunSyncOptions(
+                              startLocal: () async {},
+                            ),
                           ),
                         ),
                       ),
@@ -79,12 +81,19 @@ void main() {
       'first-run-googleDrive',
       'first-run-oneDrive',
       'first-run-box',
+      'first-run-selfHostedCloud',
       'first-run-self-hosted',
+      'first-run-local',
     ]) {
       expect(find.byKey(ValueKey(key)), findsNWidgets(3), reason: key);
     }
     expect(find.text('Sync with Google Drive'), findsNWidgets(3));
-    expect(find.text('Self-hosted AppFlowy'), findsNWidgets(3));
+    expect(
+      find.text('Sync with self-hosted AppFlowy Cloud'),
+      findsNWidgets(3),
+    );
+    expect(find.text('Work on an AppFlowy server'), findsNWidgets(3));
+    expect(find.text('Create local account (no sync)'), findsNWidgets(3));
 
     if (_shot.isNotEmpty) {
       final boundary = tester.renderObject<RenderRepaintBoundary>(

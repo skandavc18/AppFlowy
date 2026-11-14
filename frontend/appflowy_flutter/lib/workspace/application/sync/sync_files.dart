@@ -223,18 +223,34 @@ Future<SyncFileScan> scanSyncedFiles({
   required String dataPath,
   required SyncFileIndex index,
   int maximumBytes = -1,
+  List<String> folders = syncedDataFolders,
+  bool strict = false,
 }) async {
   final current = <String, SyncFileRecord>{};
   final changed = <SyncFileRecord>[];
   var skipped = 0;
 
-  for (final folder in syncedDataFolders) {
+  for (final folder in folders) {
     final directory = Directory(p.join(dataPath, folder));
+    if (strict &&
+        await FileSystemEntity.type(directory.path, followLinks: false) ==
+            FileSystemEntityType.link) {
+      throw FileSystemException(
+        'A synced folder is a symbolic link.',
+        directory.path,
+      );
+    }
     if (!directory.existsSync()) {
       continue;
     }
     final entities = directory.listSync(recursive: true, followLinks: false);
     for (final entity in entities) {
+      if (strict && entity is Link) {
+        throw FileSystemException(
+          'A synced file is a symbolic link.',
+          entity.path,
+        );
+      }
       if (entity is! File || _isScratch(p.basename(entity.path))) {
         continue;
       }
@@ -245,6 +261,7 @@ Future<SyncFileScan> scanSyncedFiles({
       try {
         stat = entity.statSync();
       } on FileSystemException {
+        if (strict) rethrow;
         continue;
       }
       if (stat.type != FileSystemEntityType.file) {
@@ -272,6 +289,7 @@ Future<SyncFileScan> scanSyncedFiles({
       try {
         hash = await hashFile(entity);
       } on FileSystemException {
+        if (strict) rethrow;
         continue;
       }
       final record = SyncFileRecord(
@@ -317,6 +335,7 @@ class SyncFileApplyResult {
     this.removed = 0,
     this.kept = 0,
     this.waiting = 0,
+    this.changedPaths = const {},
   });
 
   final int written;
@@ -328,6 +347,7 @@ class SyncFileApplyResult {
 
   /// Named, but their contents are not in the folder yet.
   final int waiting;
+  final Set<String> changedPaths;
 }
 
 /// Fetches the contents with [hash] into [destination]; false when they are
@@ -349,6 +369,7 @@ Future<SyncFileApplyResult> applyRemoteFiles({
   var written = 0;
   var removed = 0;
   var kept = 0;
+  final changedPaths = <String>{};
 
   // A version still waiting for its contents is dropped once a version at
   // least as late is here.
@@ -395,6 +416,7 @@ Future<SyncFileApplyResult> applyRemoteFiles({
     try {
       await local.delete();
       removed++;
+      changedPaths.add(record.path);
       index.entries.remove(record.path);
       index.noteRemoved(record.path, record.modified);
     } on FileSystemException catch (error) {
@@ -503,6 +525,7 @@ Future<SyncFileApplyResult> applyRemoteFiles({
       index.removed.remove(record.path);
       index.waiting.remove(record.path);
       written++;
+      changedPaths.add(record.path);
     } on Object catch (error) {
       Log.warn('A synced file could not be written: $error');
       if (staging.existsSync()) {
@@ -520,5 +543,6 @@ Future<SyncFileApplyResult> applyRemoteFiles({
     removed: removed,
     kept: kept,
     waiting: index.waiting.length,
+    changedPaths: changedPaths,
   );
 }

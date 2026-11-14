@@ -243,6 +243,7 @@ class AstrologyPlace {
     required this.longitude,
     required this.timeZone,
     this.isDeviceLocation = false,
+    this.fromGoogle = false,
   });
 
   factory AstrologyPlace.fromJson(Map<String, Object?> json) {
@@ -267,6 +268,9 @@ class AstrologyPlace {
   final double longitude;
   final String timeZone;
   final bool isDeviceLocation;
+
+  /// Found by Google, which is then the one to credit. Not stored.
+  final bool fromGoogle;
 
   void validate() {
     if (!latitude.isFinite ||

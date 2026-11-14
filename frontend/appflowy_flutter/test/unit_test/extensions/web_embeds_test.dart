@@ -5,12 +5,13 @@ import 'dart:io';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/document_embeds.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/google_maps_page.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/google_maps_view.dart';
-import 'package:appflowy/extensions/dart/built_in/web_embeds/google_maps_web_view.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/reading_embeds.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/web_embed_fetch.dart';
+import 'package:appflowy/extensions/dart/built_in/web_embeds/web_embed_site_base.dart';
 import 'package:appflowy/extensions/dart/built_in/web_embeds/web_embed_sites.dart';
 import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
+import 'package:appflowy/shared/maps/google/google_maps_pages.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -357,6 +358,40 @@ void main() {
       );
     });
 
+    test("Google's embedded map is held in an iframe, the only place it draws",
+        () {
+      const maps = GoogleMapsEmbeds();
+      const options = WebEmbedViewOptions();
+      for (final url in [
+        'https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2944813,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d48.8583701!4d2.2944813',
+        'https://www.google.com/maps/dir/Paris/Lyon/',
+      ]) {
+        final link = _read(url);
+        final frame = Uri.parse(maps.frameUrlFor(link, options));
+        expect(frame.scheme, 'data', reason: url);
+        final page = frame.data!.contentAsString();
+        final source = RegExp('<iframe src="([^"]+)"').firstMatch(page)!;
+        expect(
+          source
+              .group(1)!
+              .replaceAll('&quot;', '"')
+              .replaceAll('&lt;', '<')
+              .replaceAll('&gt;', '>')
+              .replaceAll('&amp;', '&'),
+          link.embedUrl,
+          reason: url,
+        );
+      }
+
+      // A site's whole page is a page, and loads as one.
+      final whole =
+          webEmbedAsFullPage(_read('https://maps.app.goo.gl/AbCdEf123'));
+      expect(maps.frameUrlFor(whole, options), whole.embedUrl);
+      // "Open in browser" opens the place, not the page that holds it.
+      final place = _read('https://www.google.com/maps/dir/Paris/Lyon/');
+      expect(maps.browserUrlFor(place), place.url);
+    });
+
     test('a shared place carries its pin, name and view', () {
       // The shape a share link lands on: the view's centre is beside the pin.
       final link = _read(
@@ -615,7 +650,8 @@ void main() {
 
       test('the page is served only at its own address, to its own host',
           () async {
-        final url = await GoogleMapsPageHost.instance.url;
+        final url = await GoogleMapsPageHost.instance
+            .urlFor('map.html', googleMapsPageHtml);
         expect(url.host, '127.0.0.1');
         final client = HttpClient();
         Future<int> status(Uri uri, {String? host}) async {
@@ -636,6 +672,13 @@ void main() {
             googleMapsPageHtml,
           );
           expect(await status(url.replace(path: '/elsewhere/map.html')), 404);
+          // Only pages the app serves are answered under the token.
+          expect(
+            await status(
+              url.replace(path: url.path.replaceFirst('map.html', 'x.html')),
+            ),
+            404,
+          );
           // A page that names another host, as a rebinding attack would.
           expect(await status(url, host: 'rebound.example'), 404);
         } finally {

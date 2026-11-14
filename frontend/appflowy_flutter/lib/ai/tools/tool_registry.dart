@@ -73,6 +73,9 @@ class AIToolRegistry extends ChangeNotifier {
 
   void removeServer(String serverId) {
     _local.remove(serverId);
+    _tools.removeWhere((tool) => tool.serverId == serverId);
+    failures.remove(serverId);
+    notifyListeners();
   }
 
   /// Reads every server's tool list. Safe to call again; a server that refuses
@@ -91,7 +94,8 @@ class AIToolRegistry extends ChangeNotifier {
       final collected = <AITool>[...await _workspace.listTools()];
       failures.clear();
 
-      for (final server in _local.values) {
+      final local = Map<String, AIToolServer>.of(_local);
+      for (final server in local.values) {
         if (!server.isAvailable) {
           continue;
         }
@@ -127,7 +131,12 @@ class AIToolRegistry extends ChangeNotifier {
         }
       }
 
-      _tools = collected;
+      _tools = [
+        for (final tool in collected)
+          if (!local.containsKey(tool.serverId) ||
+              identical(local[tool.serverId], _local[tool.serverId]))
+            tool,
+      ];
     } finally {
       _loading = false;
       notifyListeners();

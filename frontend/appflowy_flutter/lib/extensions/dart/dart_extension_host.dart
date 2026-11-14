@@ -33,12 +33,14 @@ List<AppFlowyExtension> builtInDartExtensions() => [
 
 /// Switches Dart extensions on and off, and remembers which are off.
 class DartExtensionHost extends ChangeNotifier {
-  DartExtensionHost();
+  DartExtensionHost({List<AppFlowyExtension> Function()? builtIns})
+      : _builtIns = builtIns ?? builtInDartExtensions;
 
   static final DartExtensionHost instance = DartExtensionHost();
 
   static const disabledKey = 'appflowy_dart_extensions_disabled';
   static const themeKey = 'appflowy_extension_theme';
+  final List<AppFlowyExtension> Function() _builtIns;
 
   final Map<String, AppFlowyExtension> _extensions = {};
   final Map<String, DartExtensionContext> _live = {};
@@ -60,7 +62,7 @@ class DartExtensionHost extends ChangeNotifier {
     _started = true;
     await _readDisabled();
 
-    for (final extension in builtInDartExtensions()) {
+    for (final extension in _builtIns()) {
       final id = extension.info.id;
       if (_extensions.containsKey(id)) {
         Log.warn('Two Dart extensions both call themselves "$id".');
@@ -165,10 +167,27 @@ class DartExtensionHost extends ChangeNotifier {
       await _deactivate(id);
     }
     _started = false;
+    _extensions.clear();
+    _disabled.clear();
+    notifyListeners();
+  }
+
+  Future<void> reload() async {
+    if (!_started) return start();
+    await _readDisabled();
+    for (final extension in _extensions.values) {
+      if (isEnabled(extension.info.id)) {
+        await _activate(extension);
+      } else {
+        await _deactivate(extension.info.id);
+      }
+    }
+    await _readSelectedTheme();
     notifyListeners();
   }
 
   Future<void> _readDisabled() async {
+    _disabled.clear();
     if (!getIt.isRegistered<KeyValueStorage>()) {
       return;
     }

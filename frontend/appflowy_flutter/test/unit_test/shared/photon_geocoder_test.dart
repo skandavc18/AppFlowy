@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/dart/built_in/astrology/astrology_location.d
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_geocoder.dart';
 import 'package:appflowy/shared/maps/map_location.dart';
+import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/maps/photon_geocoder.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -986,6 +987,38 @@ void main() {
   });
 
   group('AstrologyLocationService geocoder seam', () {
+    test('with a Google key in Settings, places come from Google, credited',
+        () async {
+      await MapsSettings.instance.setApiKey('astrology-google-key');
+      addTearDown(() => MapsSettings.instance.setApiKey(''));
+      await http.runWithClient(
+        () async {
+          final place =
+              (await AstrologyLocationService().search('Akshaya Hall')).single;
+          expect(place.name, 'Akshaya Hall, Basavanagudi, Bengaluru');
+          expect(place.latitude, 12.93293);
+          expect(place.timeZone, 'Asia/Kolkata');
+          expect(place.fromGoogle, isTrue);
+        },
+        () => MockClient((request) async {
+          expect(request.url.host, 'places.googleapis.com');
+          return http.Response(
+            jsonEncode({
+              'places': [
+                {
+                  'id': 'akshaya',
+                  'displayName': {'text': 'Akshaya Hall'},
+                  'formattedAddress': 'Akshaya Hall, Basavanagudi, Bengaluru',
+                  'location': {'latitude': 12.93293, 'longitude': 77.57145},
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+    });
+
     test('maps Photon longitude/latitude to the correct coordinate timezone',
         () async {
       const latitude = 40.7128123456789;

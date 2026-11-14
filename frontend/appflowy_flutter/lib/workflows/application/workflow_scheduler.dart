@@ -106,6 +106,8 @@ class WorkflowScheduler extends ChangeNotifier {
   bool _started = false;
   bool _appStartRaised = false;
   String _workspaceId = '';
+  bool _stopping = false;
+  Completer<void>? _idle;
 
   bool get isStarted => _started;
   String get workspaceId => _workspaceId;
@@ -124,6 +126,8 @@ class WorkflowScheduler extends ChangeNotifier {
       return;
     }
     _started = true;
+    _stopping = false;
+    runner.resumeAcceptingWork();
     await store.ensureLoaded();
     await log.ensureLoaded();
     _timer?.cancel();
@@ -137,10 +141,40 @@ class WorkflowScheduler extends ChangeNotifier {
     _timer = null;
   }
 
+  Future<void> stopAndDrain() async {
+    _stopping = true;
+    runner.pause();
+    stop();
+    for (final job in _queue) {
+      if (!job.done.isCompleted) job.done.complete();
+    }
+    _queue.clear();
+    _queuedKeys.clear();
+    if (_active.isNotEmpty || _polling.isNotEmpty || _ticking) {
+      await (_idle ??= Completer<void>()).future;
+    }
+    await runner.drain();
+  }
+
+  void resetAccount() {
+    _workspaceId = '';
+    _appStartRaised = false;
+    for (final id in _sampleListeners.keys.toList()) {
+      cancelWebhookSample(id);
+    }
+  }
+
+  void _checkIdle() {
+    if (_active.isEmpty && _polling.isEmpty && !_ticking) {
+      _idle?.complete();
+      _idle = null;
+    }
+  }
+
   /// One pass: resume parked runs, start due schedules, look at polling
   /// triggers, raise app-start triggers.
   Future<void> tick() async {
-    if (_ticking) {
+    if (_ticking || _stopping) {
       return;
     }
     _ticking = true;
@@ -155,6 +189,7 @@ class WorkflowScheduler extends ChangeNotifier {
         return;
       }
       final current = await services.currentWorkspaceId();
+      if (_stopping) return;
       if (current != _workspaceId) {
         _workspaceId = current;
         notifyListeners();
@@ -186,11 +221,13 @@ class WorkflowScheduler extends ChangeNotifier {
     } finally {
       _ticking = false;
       _pump();
+      _checkIdle();
     }
   }
 
   /// Whether [workflow] may start on its own right now.
   bool _eligible(Workflow workflow) =>
+      !_stopping &&
       workflow.enabled &&
       workflow.isComplete &&
       !isPaused &&
@@ -324,6 +361,7 @@ class WorkflowScheduler extends ChangeNotifier {
       _polling.remove(workflow.id);
       notifyListeners();
       _pump();
+      _checkIdle();
     }
   }
 
@@ -465,6 +503,10 @@ class WorkflowScheduler extends ChangeNotifier {
   }
 
   void _enqueue(_Job job, {bool first = false}) {
+    if (_stopping) {
+      if (!job.done.isCompleted) job.done.complete();
+      return;
+    }
     final key = job.key;
     if (key != null) {
       if (_queuedKeys.contains(key)) {
@@ -481,6 +523,7 @@ class WorkflowScheduler extends ChangeNotifier {
   }
 
   void _pump() {
+    if (_stopping) return;
     while (_active.length < maximumConcurrentRuns) {
       final job =
           _queue.firstWhereOrNull((job) => !_active.contains(job.workflowId));
@@ -510,7 +553,7 @@ class WorkflowScheduler extends ChangeNotifier {
                 cause: job.cause,
                 trigger: job.trigger,
               );
-        onRunFinished?.call(workflow, run);
+        if (!_stopping) onRunFinished?.call(workflow, run);
       }
     } on Object catch (error, stack) {
       Log.error('A workflow run stopped unexpectedly: $error\n$stack');
@@ -521,12 +564,16 @@ class WorkflowScheduler extends ChangeNotifier {
       }
       notifyListeners();
       _pump();
+      _checkIdle();
     }
   }
 
   /// Runs [workflow] now, ahead of anything waiting. Works while it is off
   /// and while everything is paused: a person asked for it.
   Future<WorkflowRun?> runNow(Workflow workflow) {
+    if (_stopping) {
+      throw StateError('Workflows are stopping.');
+    }
     final now = _clock();
     final trigger = switch (workflow.trigger.kind) {
       WorkflowTriggerKind.schedule => scheduleTriggerPayload(now),

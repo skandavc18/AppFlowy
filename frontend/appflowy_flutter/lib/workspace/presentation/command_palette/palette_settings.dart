@@ -565,7 +565,7 @@ List<PaletteSetting> buildPaletteSettings(BuildContext context) {
         section: PaletteSettingSection.privacy,
         icon: Icons.lock_rounded,
         keywords: const ['encryption', 'lock', 'private', 'passphrase'],
-        settingsPage: SettingsPage.encryption,
+        settingsPage: SettingsPage.account,
         control: PaletteAction(
           label: LocaleKeys.commandPalette_setting_lockNow.tr(),
           run: EncryptionVault.instance.lock,

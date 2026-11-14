@@ -307,6 +307,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   /// Asked when another computer restored the workspace, so the person here
   /// can be offered the restored workspace straight away.
   void Function(SyncEpochInfo restored)? onRestoredElsewhere;
+  Future<void> Function(Set<String> paths)? _onFilesApplied;
 
   SyncPhase _phase = SyncPhase.off;
   String _activity = '';
@@ -323,6 +324,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   Timer? _timer;
   bool _running = false;
   bool _again = false;
+  bool _suspended = false;
+  final Set<Future<void>> _attachments = {};
 
   // Completes when the rounds running now, and any asked for meanwhile, are
   // done.
@@ -381,6 +384,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   WorkspaceRestoreOutcome? get lastRestore => _lastRestore;
 
   bool get isBusy => _running || _busyWithSetup;
+  bool get isSuspended => _suspended;
 
   /// Whether the workspace that is open is a local one. A workspace on
   /// AppFlowy Cloud is already kept in step by the cloud.
@@ -405,11 +409,13 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     Future<void> Function()? restart,
     Future<void> Function(String reason)? safetyCopy,
     SyncedPreferencesSource? preferences,
+    Future<void> Function(Set<String> paths)? onFilesApplied,
   }) {
     _dataPath = dataPath ?? _dataPath;
     _restart = restart ?? _restart;
     _safetyCopy = safetyCopy ?? _safetyCopy;
     _preferences = preferences ?? _preferences;
+    _onFilesApplied = onFilesApplied ?? _onFilesApplied;
   }
 
   /// Where settings are read and put, or nowhere while this computer does
@@ -545,6 +551,28 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     required String workspaceName,
     required bool isLocalWorkspace,
   }) async {
+    if (_suspended && _uid != null) return;
+    _suspended = false;
+    final next = _attach(
+      workspaceId: workspaceId,
+      uid: uid,
+      workspaceName: workspaceName,
+      isLocalWorkspace: isLocalWorkspace,
+    );
+    _attachments.add(next);
+    try {
+      await next;
+    } finally {
+      _attachments.remove(next);
+    }
+  }
+
+  Future<void> _attach({
+    required String workspaceId,
+    required int uid,
+    required String workspaceName,
+    required bool isLocalWorkspace,
+  }) async {
     _workspaceId = workspaceId;
     _uid = uid;
     _workspaceName = workspaceName;
@@ -561,7 +589,9 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     }
     final pending = settings.pendingStart;
     if (pending != null && binding == null && canSyncThisWorkspace) {
-      unawaited(_startPending(pending));
+      unawaited(
+        _startPending(pending, encrypt: settings.pendingEncrypt),
+      );
     }
 
     final outcome = await _bridge.takeRestoreOutcome();
@@ -583,9 +613,45 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     _timer = null;
   }
 
+  Future<void> suspendForSignOut() async {
+    _suspended = true;
+    detach();
+    _again = false;
+    await Future.wait(_attachments.toList());
+    await _rounds?.future;
+    await _round();
+  }
+
+  void resumeAfterSignOutFailure() {
+    _suspended = false;
+    _schedule();
+  }
+
+  Future<void> forgetAccount() async {
+    final current = binding;
+    if (current != null && current.uid == _uid) {
+      final folder = await settings.epochFolder(current.epoch);
+      for (final name in ['files.json', 'prefs.json', 'collab_state.json']) {
+        final file = File(p.join(folder.path, name));
+        if (await file.exists()) await file.delete();
+      }
+      await settings
+          .update(current.copyWith(applied: const {}, baseApplied: false));
+    }
+    _uid = null;
+    _workspaceId = null;
+    _workspaceName = '';
+    _key = null;
+    _preferencesNow = null;
+    _preferences = null;
+    _onFilesApplied = null;
+    _set(SyncPhase.off);
+  }
+
   void _schedule() {
     _timer?.cancel();
     _timer = null;
+    if (_suspended) return;
     final binding = this.binding;
     if (binding == null || !isBoundHere) {
       _set(SyncPhase.off);
@@ -619,7 +685,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   /// Runs a round now, or right after the one that is running, and returns
   /// once a round that started after this was asked for has finished.
   Future<void> syncNow() {
-    if (_busyWithSetup) {
+    if (_suspended || _busyWithSetup) {
       return Future<void>.value();
     }
     final running = _rounds;
@@ -634,7 +700,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         do {
           _again = false;
           await _round();
-        } while (_again);
+        } while (_again && !_suspended);
       } finally {
         _running = false;
         rounds.complete();
@@ -1048,7 +1114,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     List<SyncFileRecord> deleted,
   ) async {
     final dataPath = await _resolveDataPath();
-    return applyRemoteFiles(
+    final result = await applyRemoteFiles(
       dataPath: dataPath,
       index: index,
       files: files,
@@ -1062,6 +1128,10 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         return true;
       },
     );
+    if (result.changedPaths.isNotEmpty) {
+      await _onFilesApplied?.call(result.changedPaths);
+    }
+    return result;
   }
 
   // --- Sending changes out --------------------------------------------------
@@ -1448,9 +1518,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       final file = epoch.vault;
       if (file != null) {
         vault = await _readVault(plain, file);
-        unlocked = key != null && vault.accepts(key)
-            ? key
-            : await _openVault(vault);
+        unlocked =
+            key != null && vault.accepts(key) ? key : await _openVault(vault);
       }
       if (vault != null && unlocked == null) {
         return SyncFolderInspection(
@@ -1509,10 +1578,15 @@ class WorkspaceSyncEngine extends ChangeNotifier {
 
   /// Keeps an empty folder, chosen before any workspace exists here, for the
   /// first workspace to start syncing into once it opens — sealed with the
-  /// AppFlowy password, which has to be known by then.
-  Future<void> startWhenReady(BackupDestination destination) async {
+  /// AppFlowy password by default, or unsealed when [encrypt] is false.
+  Future<void> startWhenReady(
+    BackupDestination destination, {
+    bool encrypt = true,
+  }) async {
     await settings.ensureLoaded();
-    await _requirePassword();
+    if (encrypt) {
+      await _requirePassword();
+    }
     final plain = await _openRemote(destination);
     try {
       await plain.ensureReady();
@@ -1522,12 +1596,18 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     } finally {
       plain.dispose();
     }
-    await settings.setPendingStart(destination);
+    await settings.setPendingStart(destination, encrypt: encrypt);
   }
 
   /// Starts syncing this workspace into an empty folder, sealed with the
-  /// AppFlowy password.
-  Future<void> startNew(BackupDestination destination) => _setup(() async {
+  /// AppFlowy password when [encrypt] is true (the default).
+  Future<void> startNew(
+    BackupDestination destination, {
+    bool encrypt = true,
+  }) =>
+      encrypt ? _startSealed(destination) : startUnsealed(destination);
+
+  Future<void> _startSealed(BackupDestination destination) => _setup(() async {
         _requireLocalWorkspace();
         final password = await _requirePassword();
         final plain = await _openRemote(destination);
@@ -1559,14 +1639,16 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         _schedule();
       });
 
-  /// Starts syncing into an empty folder without sealing it, the way folders
-  /// were written before they were sealed.
-  @visibleForTesting
+  /// Starts syncing into an empty folder without sealing it.
   Future<void> startUnsealed(BackupDestination destination) => _setup(() async {
         _requireLocalWorkspace();
         final plain = await _openRemote(destination);
         try {
           await plain.ensureReady();
+          final listing = SyncListing.of(await plain.list());
+          if (!listing.isEmpty) {
+            throw const SyncError('That folder already holds a workspace.');
+          }
           final epoch = newSyncEpoch(_clock());
           final binding = await _publishEpoch(
             remote: SealedSyncRemote(plain, null, scratch: _scratchFolder),
@@ -1578,15 +1660,20 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             snapshot: null,
           );
           await settings.update(binding);
+          await settings.sweepEpochFolders(keep: epoch);
+          await _removeFiles(plain, listing.legacyVaults);
         } finally {
           plain.dispose();
         }
         _schedule();
       });
 
-  Future<void> _startPending(BackupDestination destination) async {
+  Future<void> _startPending(
+    BackupDestination destination, {
+    bool encrypt = true,
+  }) async {
     try {
-      await startNew(destination);
+      await startNew(destination, encrypt: encrypt);
       await settings.setPendingStart(null);
       notify?.call('"$_workspaceName" is syncing.');
     } on Object catch (error) {
@@ -1771,7 +1858,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             }
           }
           _report('Taking in what the others sent…');
-          final previous = SealedSyncRemote(plain, key, scratch: _scratchFolder);
+          final previous =
+              SealedSyncRemote(plain, key, scratch: _scratchFolder);
           await _refreshDevices(previous, current);
           final pulled = await _pull(previous, listing, current, binding);
 
@@ -1794,6 +1882,72 @@ class WorkspaceSyncEngine extends ChangeNotifier {
           await settings.sweepEpochFolders(keep: epoch);
 
           // Nothing sealed the old way, or not at all, stays behind.
+          listing = SyncListing.of(await plain.list());
+          await _removeAllBut(plain, listing, epoch, keepBlobs: false);
+        } finally {
+          plain.dispose();
+        }
+        _schedule();
+      });
+
+  /// Turns encryption off for the sync folder, carrying the workspace on in an
+  /// unsealed epoch and removing sealed files from the folder.
+  ///
+  /// Requires the current key to be known first so nothing sent by other
+  /// computers is left behind and nobody without the AppFlowy password can
+  /// unseal the folder. Settings and credentials do not travel unsealed.
+  Future<void> unsealSyncFolder() => _setup(() async {
+        final binding = this.binding;
+        if (binding == null || !isBoundHere) {
+          throw const SyncError('Sync is not set up for this workspace.');
+        }
+        if (binding.vaultId.isEmpty) {
+          return;
+        }
+        final plain = await _openRemote(binding.destination);
+        try {
+          await plain.ensureReady();
+          var listing = SyncListing.of(await plain.list());
+          final current = listing.current;
+          if (current == null || current.id != binding.epoch) {
+            throw const SyncError(
+              'The sync folder changed. Sync once, then try again.',
+            );
+          }
+          final key = await _keyFor(plain, current);
+          if (_lockedBy != null || key == null) {
+            throw const SyncError('Type your AppFlowy password first.');
+          }
+          _report('Taking in what the others sent…');
+          final previous =
+              SealedSyncRemote(plain, key, scratch: _scratchFolder);
+          await _refreshDevices(previous, current);
+          final pulled = await _pull(previous, listing, current, binding);
+
+          _report('Updating the sync folder…');
+          final epoch = nextSyncEpoch(binding.epoch, _clock());
+          final next = await _publishEpoch(
+            remote: SealedSyncRemote(plain, null, scratch: _scratchFolder),
+            vault: null,
+            destination: binding.destination,
+            epoch: epoch,
+            reason: SyncEpochReason.continued,
+            filesRoot: await _resolveDataPath(),
+            snapshot: null,
+            intervalSeconds: pulled.intervalSeconds,
+            syncPreferences: pulled.syncPreferences,
+          );
+          final oldVaultId = binding.vaultId;
+          _key = null;
+          _vault = null;
+          _lockedBy = null;
+          _credentialsOn = false;
+          if (oldVaultId.isNotEmpty) {
+            await _keys.forget(oldVaultId);
+          }
+          await settings.update(next);
+          await settings.sweepEpochFolders(keep: epoch);
+
           listing = SyncListing.of(await plain.list());
           await _removeAllBut(plain, listing, epoch, keepBlobs: false);
         } finally {
@@ -2123,6 +2277,65 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     _devices = const [];
     await settings.update(null);
     await settings.sweepEpochFolders();
+    _set(SyncPhase.off);
+  }
+
+  /// Removes all AppFlowy sync files and synced blobs from [destination] (or
+  /// the currently bound destination), leaving any unrelated files untouched.
+  Future<void> clearRemoteSyncFolder([BackupDestination? override]) async {
+    final target = override ?? binding?.destination;
+    if (target == null || !target.isReady) {
+      return;
+    }
+    final plain = await _openRemote(target);
+    try {
+      await plain.ensureReady();
+      final files = [
+        ...await plain.list(),
+        ...await plain.list(blobs: true),
+      ];
+      for (final file in files) {
+        if (SyncFileName.parse(file.name) != null) {
+          await plain.delete(file);
+        }
+      }
+    } finally {
+      plain.dispose();
+    }
+  }
+
+  /// Clears all local sync state (and, when [clearRemote] is true, removes
+  /// synced data from the cloud sync folder first) for a fresh start.
+  Future<void> resetForFreshStart({bool clearRemote = false}) async {
+    _suspended = true;
+    detach();
+    _again = false;
+    await Future.wait(_attachments.toList());
+    await _rounds?.future;
+    final current = binding;
+    if (clearRemote && current != null) {
+      await clearRemoteSyncFolder(current.destination);
+    }
+    if (current != null && current.vaultId.isNotEmpty) {
+      try {
+        await _keys.forget(current.vaultId);
+      } on Object catch (error) {
+        Log.warn('Sync vault key could not be cleared: $error');
+      }
+    }
+    _uid = null;
+    _workspaceId = null;
+    _workspaceName = '';
+    _key = null;
+    _vault = null;
+    _lockedBy = null;
+    _restoredElsewhere = null;
+    _devices = const [];
+    _preferencesNow = null;
+    _preferences = null;
+    _onFilesApplied = null;
+    _suspended = false;
+    await settings.resetForFreshStart();
     _set(SyncPhase.off);
   }
 

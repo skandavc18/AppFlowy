@@ -17,6 +17,10 @@ abstract class FramedWebEmbedProvider extends WebEmbedProvider {
   String frameUrlFor(WebEmbedLink link, WebEmbedViewOptions options) =>
       link.embedUrl ?? link.url;
 
+  /// What "Open in browser" opens when the frame cannot show [link]. Null
+  /// opens the frame's own address.
+  String? browserUrlFor(WebEmbedLink link) => null;
+
   /// How the page is dressed. A whole page gets the phone layout, which reads
   /// far better than a desktop layout squeezed into a document column.
   WebEmbedPageStyle styleFor(WebEmbedLink link) => isWebEmbedFullPage(link)
@@ -34,6 +38,7 @@ abstract class FramedWebEmbedProvider extends WebEmbedProvider {
   ) =>
       WebEmbedFrame(
         url: frameUrlFor(link, options),
+        browserUrl: browserUrlFor(link),
         style: styleFor(link),
         options: options,
         placeholder: WebEmbedLoadingPlaceholder(link: link),

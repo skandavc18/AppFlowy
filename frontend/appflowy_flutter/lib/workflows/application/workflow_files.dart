@@ -97,4 +97,6 @@ class WorkflowFiles {
 
   /// Waits for every queued write.
   Future<void> settle() => _writes;
+
+  void resetRoot() => _root = null;
 }

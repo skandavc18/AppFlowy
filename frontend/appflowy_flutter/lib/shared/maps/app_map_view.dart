@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:appflowy/shared/maps/app_location_popup.dart';
 import 'package:appflowy/shared/maps/app_map_marker.dart';
 import 'package:appflowy/shared/maps/app_map_toolbar.dart';
+import 'package:appflowy/shared/maps/google/google_map_surface.dart';
+import 'package:appflowy/shared/maps/google/google_maps_pages.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
 import 'package:appflowy/shared/maps/map_marker.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
@@ -13,6 +15,7 @@ import 'package:appflowy/shared/maps/map_tile_layer.dart';
 import 'package:appflowy/shared/maps/map_tile_provider.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -59,6 +62,12 @@ class MapViewport {
 /// canvas and the markers are widgets, so it runs on every platform the app
 /// runs on — including Windows, where no Google Maps SDK exists — and animates
 /// at the display's own rate because nothing is crossing a platform boundary.
+///
+/// The one exception is a Google key that Google will not serve map tiles
+/// for, like a Maps Demo Key. Where a web view can show it (Linux), the map is
+/// then Google's own, drawn by the Maps JavaScript API under the same
+/// controls, search and preview cards ([GoogleMapSurface]); elsewhere, or
+/// once Google turns that away too, it is OpenStreetMap's.
 class AppMapView extends StatefulWidget {
   const AppMapView({
     super.key,
@@ -187,16 +196,50 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   MapTileProvider? _provider;
   MapStyleName _style = MapStyleName.light;
 
+  /// Google's own map, when that is what is drawn.
+  final GoogleMapSurfaceController _surface = GoogleMapSurfaceController();
+  bool _onSurface = false;
+
+  /// Set once Google's map could not be drawn here; the app's own is drawn
+  /// instead until the key changes.
+  bool _surfaceFailed = false;
+
+  String get _apiKey => widget.apiKey ?? MapsSettings.instance.apiKey;
+
   @override
   void initState() {
     super.initState();
     widget.controller?._view = this;
     MapsSettings.instance.addListener(_onSettingsChanged);
+    // Whether Google serves its tiles for the key is learnt by asking for
+    // them; a refusal is what sends the map to Google's own.
+    _cache.addListener(_reconsiderSurface);
+    unawaited(
+      GoogleMapSurface.checkSupport().then((_) => _reconsiderSurface()),
+    );
   }
 
   void _onSettingsChanged() {
     if (mounted && widget.apiKey == null) {
-      setState(() => _provider = null);
+      setState(() {
+        _provider = null;
+        _surfaceFailed = false;
+      });
+    }
+  }
+
+  bool _wantsSurface() {
+    final key = _apiKey;
+    return widget.provider == MapProviderKind.google &&
+        key.isNotEmpty &&
+        !_surfaceFailed &&
+        GoogleTileProvider.isRefusedKey(key) &&
+        GoogleMapSurface.canDraw(key);
+  }
+
+  void _reconsiderSurface() {
+    if (mounted && _wantsSurface() != _onSurface) {
+      setState(() {});
     }
   }
 
@@ -209,6 +252,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
     }
     if (old.provider != widget.provider || old.apiKey != widget.apiKey) {
       _provider = null;
+      _surfaceFailed = false;
     }
     if (!identical(old.pins, widget.pins) &&
         old.pins.length != widget.pins.length) {
@@ -223,6 +267,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   @override
   void dispose() {
     MapsSettings.instance.removeListener(_onSettingsChanged);
+    _cache.removeListener(_reconsiderSurface);
     widget.controller?._view = null;
     _hoverOut?.cancel();
     _flyController?.dispose();
@@ -234,6 +279,11 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   // ---------------------------------------------------------------- movement
 
   void _apply(MapCamera camera, {bool notify = true}) {
+    if (_onSurface) {
+      // Google's map owns its camera and reports where it comes to rest.
+      _surface.fly(camera, animate: false);
+      return;
+    }
     if (camera == _camera) {
       return;
     }
@@ -257,6 +307,10 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
 
   void _glideTo(MapCamera target) {
     if (!mounted) return;
+    if (_onSurface) {
+      _surface.fly(target);
+      return;
+    }
     _flyFrom = _camera;
     _flyTo = target;
     _fly
@@ -267,6 +321,10 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
 
   void _moveTo(LatLng center, {double? zoom, bool animate = true}) {
     final target = _camera.copyWith(center: center, zoom: zoom ?? _camera.zoom);
+    if (_onSurface) {
+      _surface.fly(target, animate: animate);
+      return;
+    }
     if (animate) {
       _glideTo(target);
     } else {
@@ -279,6 +337,10 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
       return;
     }
     final target = _camera.fittedTo(bounds.padded(0.16));
+    if (_onSurface) {
+      _surface.fly(target, animate: animate);
+      return;
+    }
     if (animate) {
       _glideTo(target);
     } else {
@@ -287,6 +349,11 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   }
 
   void _zoomBy(double delta, {Offset? focus}) {
+    if (_onSurface) {
+      // From wherever the map is heading, so quick presses add up.
+      _surface.zoomBy(delta);
+      return;
+    }
     _fly.stop();
     _apply(_camera.zoomedTo(_camera.zoom + delta, focus: focus));
   }
@@ -495,6 +562,99 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
     widget.onSuggestionPicked?.call(suggestion);
   }
 
+  // ----------------------------------------------------------- Google's map
+
+  AppMapPin? _pinById(String id) {
+    for (final pin in widget.pins) {
+      if (pin.id == id) {
+        return pin;
+      }
+    }
+    return null;
+  }
+
+  void _onSurfaceCamera(LatLng center, double zoom) {
+    final camera = _camera.copyWith(center: center, zoom: zoom);
+    // Coming to rest where it started is not a move worth remembering.
+    final moved =
+        (camera.center.latitude - _camera.center.latitude).abs() > 1e-7 ||
+            (camera.center.longitude - _camera.center.longitude).abs() > 1e-7 ||
+            (camera.zoom - _camera.zoom).abs() > 1e-6;
+    if (!moved) {
+      return;
+    }
+    setState(() => _camera = camera);
+    _settle();
+  }
+
+  void _onSurfaceHover(String? id, Offset? at) {
+    final pin = id == null ? null : _pinById(id);
+    if (pin == null || at == null) {
+      _onMarkerExit();
+      return;
+    }
+    final cluster = MapCluster(screen: at, center: pin.point, pins: [pin]);
+    if (_hovered?.id == cluster.id) {
+      // The card follows its pin while the map moves under it.
+      _hoverOut?.cancel();
+      setState(() => _hovered = cluster);
+      return;
+    }
+    _onMarkerEnter(cluster);
+  }
+
+  void _onSurfacePins(List<String> ids) {
+    final pins = ids.map(_pinById).nonNulls.toList();
+    if (pins.isEmpty) {
+      return;
+    }
+    final center = LatLngBounds.around(pins.map((pin) => pin.point)).center;
+    _onMarkerTap(MapCluster(screen: Offset.zero, center: center, pins: pins));
+  }
+
+  void _onSurfaceFailed(GoogleMapsFailure failure) {
+    if (!failure.refused) {
+      Log.warn(
+        "Google's map could not be shown (${failure.reason}); "
+        'drawing OpenStreetMap instead.',
+      );
+    } else if (GoogleMapsRefusals.remember(_apiKey, failure.reason)) {
+      Log.warn(
+        'Google refused the Maps key for its map (${failure.reason}); '
+        'drawing OpenStreetMap instead.',
+      );
+    }
+    if (mounted) {
+      setState(() {
+        _surfaceFailed = true;
+        _hovered = null;
+      });
+    }
+  }
+
+  Widget _buildSurface() {
+    final hovered = _hovered;
+    return GoogleMapSurface(
+      key: ValueKey('google-map:$_apiKey'),
+      apiKey: _apiKey,
+      controller: _surface,
+      camera: _camera,
+      pins: widget.pins,
+      style: _style,
+      clustering: widget.clustering,
+      selectedPinId: widget.selectedPinId,
+      highlightedPinIds: widget.highlightedPinIds,
+      heldPinId: hovered != null && hovered.isSingle ? hovered.first.id : null,
+      onCamera: _onSurfaceCamera,
+      onHover: _onSurfaceHover,
+      onPinTap: (id) => _onSurfacePins([id]),
+      onClusterTap: _onSurfacePins,
+      onPointTap: widget.onPointTap,
+      onContextMenu: widget.onContextMenu,
+      onFailed: _onSurfaceFailed,
+    );
+  }
+
   // ------------------------------------------------------------------ layout
 
   @override
@@ -504,9 +664,16 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
     _provider ??= resolveMapProvider(
       preferred: widget.provider,
       style: _style,
-      apiKey: widget.apiKey ?? MapsSettings.instance.apiKey,
+      apiKey: _apiKey,
     );
     final provider = _provider!;
+    final onSurface = _wantsSurface();
+    if (onSurface != _onSurface) {
+      _onSurface = onSurface;
+      _flyController?.stop();
+      _hoverOut?.cancel();
+      _hovered = null;
+    }
 
     // Scope the exclusion to the real viewport, not the host's header or
     // margins. History and premium wheel routing inspect the starting hit test.
@@ -530,17 +697,21 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
           });
         }
 
-        requestVisibleTiles(
-          camera: _camera,
-          provider: provider,
-          style: _style,
-          cache: _cache,
-        );
-        _clusters = clusterPins(
-          widget.pins,
-          _camera,
-          enabled: widget.clustering,
-        );
+        if (_onSurface) {
+          _clusters = const [];
+        } else {
+          requestVisibleTiles(
+            camera: _camera,
+            provider: provider,
+            style: _style,
+            cache: _cache,
+          );
+          _clusters = clusterPins(
+            widget.pins,
+            _camera,
+            enabled: widget.clustering,
+          );
+        }
 
         return Focus(
           focusNode: _focus,
@@ -554,7 +725,15 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Positioned.fill(child: _buildCanvas(palette, provider)),
+                    Positioned.fill(
+                      child: _onSurface
+                          ? _buildSurface()
+                          : _buildCanvas(palette, provider),
+                    ),
+                    if (_onSurface &&
+                        widget.pins.isEmpty &&
+                        widget.emptyHint.isNotEmpty)
+                      Positioned.fill(child: _buildEmpty(palette)),
                     if (widget.showPopup) _buildPopup(palette),
                     if (widget.showSearch && widget.onSearch != null)
                       Positioned(
@@ -599,15 +778,18 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
                           isFullscreen: widget.isFullscreen,
                         ),
                       ),
-                    Positioned(
-                      right: MapMetrics.attributionInset + widget.padding.right,
-                      bottom:
-                          MapMetrics.attributionInset + widget.padding.bottom,
-                      child: MapAttribution(
-                        text: provider.attribution,
-                        palette: palette,
+                    // Google's map carries its own logo and credits.
+                    if (!_onSurface)
+                      Positioned(
+                        right:
+                            MapMetrics.attributionInset + widget.padding.right,
+                        bottom:
+                            MapMetrics.attributionInset + widget.padding.bottom,
+                        child: MapAttribution(
+                          text: provider.attribution,
+                          palette: palette,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/shared/encryption/encryption.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/encryption/encryption_policy.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
@@ -38,7 +40,10 @@ class EncryptionVault extends ChangeNotifier {
   Uint8List? _key;
   Future<void>? _loading;
   bool _loaded = false;
+  bool _manuallyLocked = false;
   Timer? _idle;
+  AppPasswordSource _passwords = AppPassword.instance;
+  KeyValueStorage? _storageOverride;
 
   /// What has been opened since the application started.
   ///
@@ -82,7 +87,8 @@ class EncryptionVault extends ChangeNotifier {
   }
 
   KeyValueStorage? get _kv =>
-      getIt.isRegistered<KeyValueStorage>() ? getIt<KeyValueStorage>() : null;
+      _storageOverride ??
+      (getIt.isRegistered<KeyValueStorage>() ? getIt<KeyValueStorage>() : null);
 
   Future<void> ensureLoaded() => _loading ??= _load();
 
@@ -95,6 +101,7 @@ class EncryptionVault extends ChangeNotifier {
     await ensureLoaded();
     if (_policy.salt != before.salt || _policy.verifier != before.verifier) {
       lock();
+      await _tryAutoUnlock();
     }
     notifyListeners();
   }
@@ -116,6 +123,7 @@ class EncryptionVault extends ChangeNotifier {
           );
         }
       }
+      await _tryAutoUnlock();
       _loaded = true;
       notifyListeners();
     } on Object catch (error) {
@@ -123,6 +131,60 @@ class EncryptionVault extends ChangeNotifier {
       Log.warn('The workspace encryption settings could not be read: $error');
     }
   }
+
+  Future<void> _tryAutoUnlock() async {
+    if (!_policy.isConfigured ||
+        !_policy.usesAppPassword ||
+        _policy.gateWholeWorkspace ||
+        _manuallyLocked ||
+        _key != null) {
+      return;
+    }
+    final known = await _passwords.current();
+    if (known == null || known.isEmpty) {
+      return;
+    }
+    final key = await _unlockKeyAsync(_policy, known);
+    if (key != null && !_manuallyLocked && _key == null) {
+      _key = key;
+      _restartIdleTimer();
+    }
+  }
+
+  static Future<Uint8List?> _unlockKeyAsync(
+    EncryptionPolicy policy,
+    String passphrase,
+  ) =>
+      policy.iterations <= 2000
+          ? Future<Uint8List?>.value(
+              unlockEncryptionKey(policy: policy, passphrase: passphrase),
+            )
+          : Isolate.run(
+              () => unlockEncryptionKey(policy: policy, passphrase: passphrase),
+            );
+
+  static Future<EncryptionPolicy> _newPolicyAsync({
+    required String passphrase,
+    required String hint,
+    required EncryptionPolicy previous,
+  }) =>
+      previous.iterations <= 2000
+          ? Future<EncryptionPolicy>.value(
+              newEncryptionPolicy(
+                passphrase: passphrase,
+                hint: hint,
+                iterations: previous.iterations,
+                previous: previous,
+              ),
+            )
+          : Isolate.run(
+              () => newEncryptionPolicy(
+                passphrase: passphrase,
+                hint: hint,
+                iterations: previous.iterations,
+                previous: previous,
+              ),
+            );
 
   /// Chooses a passphrase for a workspace that had none.
   ///
@@ -134,22 +196,23 @@ class EncryptionVault extends ChangeNotifier {
     required String passphrase,
     String hint = '',
     bool gateWholeWorkspace = false,
-    bool usesAppPassword = false,
+    bool usesAppPassword = true,
   }) async {
     await ensureLoaded();
     if (passphrase.length < minimumPassphraseLength) {
       return false;
     }
 
-    final next = newEncryptionPolicy(
+    final next = (await _newPolicyAsync(
       passphrase: passphrase,
       hint: usesAppPassword ? '' : hint,
       previous: _policy,
-    ).copyWith(
+    ))
+        .copyWith(
       gateWholeWorkspace: gateWholeWorkspace,
       usesAppPassword: usesAppPassword,
     );
-    final key = unlockEncryptionKey(policy: next, passphrase: passphrase);
+    final key = await _unlockKeyAsync(next, passphrase);
     if (key == null) {
       // Cannot happen unless the policy and the derivation disagree, and if
       // they ever do, enabling must fail loudly rather than lock somebody out.
@@ -159,6 +222,7 @@ class EncryptionVault extends ChangeNotifier {
 
     _policy = next;
     _key = key;
+    _manuallyLocked = false;
     await _persist();
     _restartIdleTimer();
     notifyListeners();
@@ -168,11 +232,15 @@ class EncryptionVault extends ChangeNotifier {
   /// Puts the key in memory. False means the passphrase was wrong.
   Future<bool> unlock(String passphrase) async {
     await ensureLoaded();
-    final key = unlockEncryptionKey(policy: _policy, passphrase: passphrase);
+    final key = await _unlockKeyAsync(_policy, passphrase);
     if (key == null) {
       return false;
     }
     _key = key;
+    _manuallyLocked = false;
+    if (_policy.usesAppPassword) {
+      await _passwords.adopt(passphrase);
+    }
     _restartIdleTimer();
     notifyListeners();
     return true;
@@ -183,6 +251,7 @@ class EncryptionVault extends ChangeNotifier {
     if (_key == null) {
       return;
     }
+    _manuallyLocked = true;
     _wipe();
     _revealed.clear();
     _idle?.cancel();
@@ -210,18 +279,19 @@ class EncryptionVault extends ChangeNotifier {
     if (next.length < minimumPassphraseLength) {
       return false;
     }
-    final oldKey = unlockEncryptionKey(policy: _policy, passphrase: current);
+    final oldKey = await _unlockKeyAsync(_policy, current);
     if (oldKey == null) {
       return false;
     }
 
     final following = usesAppPassword ?? _policy.usesAppPassword;
-    final nextPolicy = newEncryptionPolicy(
+    final nextPolicy = (await _newPolicyAsync(
       passphrase: next,
       hint: following ? '' : (hint ?? _policy.hint),
       previous: _policy,
-    ).copyWith(usesAppPassword: following);
-    final newKey = unlockEncryptionKey(policy: nextPolicy, passphrase: next);
+    ))
+        .copyWith(usesAppPassword: following);
+    final newKey = await _unlockKeyAsync(nextPolicy, next);
     if (newKey == null) {
       return false;
     }
@@ -232,6 +302,7 @@ class EncryptionVault extends ChangeNotifier {
 
     _policy = nextPolicy;
     _key = newKey;
+    _manuallyLocked = false;
     await _persist();
     _restartIdleTimer();
     notifyListeners();
@@ -248,7 +319,7 @@ class EncryptionVault extends ChangeNotifier {
     Future<bool> Function(Uint8List key)? beforeRemoval,
   }) async {
     await ensureLoaded();
-    final key = unlockEncryptionKey(policy: _policy, passphrase: passphrase);
+    final key = await _unlockKeyAsync(_policy, passphrase);
     if (key == null) {
       return false;
     }
@@ -257,6 +328,7 @@ class EncryptionVault extends ChangeNotifier {
     }
 
     _policy = const EncryptionPolicy();
+    _manuallyLocked = false;
     _wipe();
     _revealed.clear();
     _idle?.cancel();
@@ -364,6 +436,36 @@ class EncryptionVault extends ChangeNotifier {
     _key = null;
   }
 
+  /// Clears all workspace encryption policy and in-memory keys for a full
+  /// local reset.
+  Future<void> resetForFreshStart() async {
+    _idle?.cancel();
+    _idle = null;
+    _wipe();
+    _revealed.clear();
+    _policy = const EncryptionPolicy();
+    _manuallyLocked = false;
+    _loaded = false;
+    _loading = null;
+    try {
+      await _kv?.remove(storageKey);
+    } on Object catch (error) {
+      Log.warn('Workspace encryption policy could not be removed: $error');
+    }
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void configureForTest({
+    KeyValueStorage? storage,
+    AppPasswordSource? passwords,
+  }) {
+    _storageOverride = storage;
+    _passwords = passwords ?? AppPassword.instance;
+    _loading = null;
+    _loaded = false;
+  }
+
   @visibleForTesting
   void seedForTest({
     EncryptionPolicy policy = const EncryptionPolicy(),
@@ -372,6 +474,7 @@ class EncryptionVault extends ChangeNotifier {
   }) {
     _policy = policy;
     _key = key;
+    _manuallyLocked = false;
     _revealed
       ..clear()
       ..addAll(revealed);
@@ -385,6 +488,9 @@ class EncryptionVault extends ChangeNotifier {
     _idle = null;
     _policy = const EncryptionPolicy();
     _key = null;
+    _manuallyLocked = false;
+    _storageOverride = null;
+    _passwords = AppPassword.instance;
     _revealed.clear();
     _loaded = false;
     _loading = null;

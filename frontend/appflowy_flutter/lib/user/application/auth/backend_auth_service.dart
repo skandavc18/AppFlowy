@@ -56,8 +56,8 @@ class BackendAuthService implements AuthService {
   Future<void> signOut({
     Map<String, String> params = const {},
   }) async {
-    await UserEventSignOut().send();
-    return;
+    final result = await UserBackendService.signOut();
+    result.fold((_) {}, (error) => throw error);
   }
 
   @override

@@ -21,7 +21,11 @@ enum BackupDestinationKind {
   googleDrive,
   oneDrive,
   box,
-  appflowyCloud;
+  appflowyCloud,
+
+  /// A sync folder on a self-hosted AppFlowy Cloud, reached with an account
+  /// there rather than by working on the server.
+  selfHostedCloud;
 
   /// The connected service this destination speaks to, when it is one.
   ProviderService? get providerService => switch (this) {
@@ -30,7 +34,8 @@ enum BackupDestinationKind {
         BackupDestinationKind.box => ProviderService.box,
         BackupDestinationKind.none ||
         BackupDestinationKind.folder ||
-        BackupDestinationKind.appflowyCloud =>
+        BackupDestinationKind.appflowyCloud ||
+        BackupDestinationKind.selfHostedCloud =>
           null,
       };
 
@@ -39,7 +44,8 @@ enum BackupDestinationKind {
       this != BackupDestinationKind.folder;
 
   /// Whether a copy in this place needs an account to have been signed in.
-  bool get needsConnection => providerService != null;
+  bool get needsConnection =>
+      providerService != null || this == BackupDestinationKind.selfHostedCloud;
 
   /// Whether the service can be asked what is already there.
   ///
@@ -187,6 +193,7 @@ class BackupDestination {
     this.folderId = '',
     this.folderName = '',
     this.localPath = '',
+    this.server = '',
   });
 
   factory BackupDestination.fromJson(Map<String, Object?> json) {
@@ -202,6 +209,7 @@ class BackupDestination {
       folderId: read('folder_id'),
       folderName: read('folder_name'),
       localPath: read('local_path'),
+      server: read('server'),
     );
   }
 
@@ -221,6 +229,10 @@ class BackupDestination {
   /// The folder on this computer, for [BackupDestinationKind.folder].
   final String localPath;
 
+  /// The server's address, for [BackupDestinationKind.selfHostedCloud], so
+  /// signing in again knows where even when the account was forgotten.
+  final String server;
+
   bool get isSet => kind != BackupDestinationKind.none;
 
   /// Whether a copy could actually be sent right now, as far as this side can
@@ -233,6 +245,8 @@ class BackupDestination {
         BackupDestinationKind.oneDrive ||
         BackupDestinationKind.box =>
           connectionId.isNotEmpty && folderId.isNotEmpty,
+        BackupDestinationKind.selfHostedCloud =>
+          connectionId.isNotEmpty && folderId.isNotEmpty && server.isNotEmpty,
       };
 
   BackupDestination copyWith({
@@ -242,6 +256,7 @@ class BackupDestination {
     String? folderId,
     String? folderName,
     String? localPath,
+    String? server,
   }) =>
       BackupDestination(
         kind: kind ?? this.kind,
@@ -250,6 +265,7 @@ class BackupDestination {
         folderId: folderId ?? this.folderId,
         folderName: folderName ?? this.folderName,
         localPath: localPath ?? this.localPath,
+        server: server ?? this.server,
       );
 
   Map<String, Object?> toJson() => {
@@ -259,6 +275,7 @@ class BackupDestination {
         if (folderId.isNotEmpty) 'folder_id': folderId,
         if (folderName.isNotEmpty) 'folder_name': folderName,
         if (localPath.isNotEmpty) 'local_path': localPath,
+        if (server.isNotEmpty) 'server': server,
       };
 
   @override
@@ -269,7 +286,8 @@ class BackupDestination {
       other.accountLabel == accountLabel &&
       other.folderId == folderId &&
       other.folderName == folderName &&
-      other.localPath == localPath;
+      other.localPath == localPath &&
+      other.server == server;
 
   @override
   int get hashCode => Object.hash(
@@ -279,6 +297,7 @@ class BackupDestination {
         folderId,
         folderName,
         localPath,
+        server,
       );
 }
 

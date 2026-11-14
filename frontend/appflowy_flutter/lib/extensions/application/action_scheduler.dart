@@ -70,10 +70,13 @@ class ActionScheduler extends ChangeNotifier {
   final Map<String, DateTime> _blockedUntil = {};
 
   Timer? _timer;
+  Timer? _startupTimer;
+  Completer<void>? _idle;
   AppLifecycleListener? _lifecycle;
   int _inFlight = 0;
   bool _started = false;
   bool _active = true;
+  bool _stopping = false;
 
   bool get isRunning => _inFlight > 0;
 
@@ -84,6 +87,12 @@ class ActionScheduler extends ChangeNotifier {
       return;
     }
     _started = true;
+    _stopping = false;
+    _runner.resumeAcceptingWork();
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _active = lifecycle == null ||
+        lifecycle == AppLifecycleState.resumed ||
+        lifecycle == AppLifecycleState.inactive;
 
     await _store.ensureLoaded();
     await _log.ensureLoaded();
@@ -107,19 +116,30 @@ class ActionScheduler extends ChangeNotifier {
     // ⚠️ Catch-up is ONE run per missed action, not one per interval that went
     // by. A poller left off for a week must not wake up and fire six hundred
     // times.
-    Timer(settleAfterStart, () {
+    _startupTimer = Timer(settleAfterStart, () {
+      _startupTimer = null;
       _raise(ActionEvent.appStart);
       _sweep();
     });
   }
 
   Future<void> stop() async {
+    _stopping = true;
+    _runner.pause();
     _timer?.cancel();
     _timer = null;
+    _startupTimer?.cancel();
+    _startupTimer = null;
+    _queue.clear();
+    _queued.clear();
     _lifecycle?.dispose();
     _lifecycle = null;
     _started = false;
     await _store.stopWatching();
+    await _runner.drain();
+    if (_inFlight > 0) await (_idle ??= Completer<void>()).future;
+    _failures.clear();
+    _blockedUntil.clear();
     await ExtensionDataStore.instance.flush();
     await _log.flush();
   }
@@ -129,7 +149,7 @@ class ActionScheduler extends ChangeNotifier {
       _raise(event, viewId: viewId, tag: tag);
 
   void _raise(ActionEvent event, {String viewId = '', String tag = ''}) {
-    if (event == ActionEvent.none) {
+    if (_stopping || event == ActionEvent.none) {
       return;
     }
     for (final extension in _store.active) {
@@ -159,7 +179,7 @@ class ActionScheduler extends ChangeNotifier {
   }
 
   void _sweep() {
-    if (!_active) {
+    if (_stopping || !_active) {
       return;
     }
     final now = DateTime.now();
@@ -231,7 +251,7 @@ class ActionScheduler extends ChangeNotifier {
   }
 
   void _pump() {
-    if (!_active) {
+    if (_stopping || !_active) {
       return;
     }
     while (_inFlight < maximumConcurrent && _queue.isNotEmpty) {
@@ -260,8 +280,16 @@ class ActionScheduler extends ChangeNotifier {
       _recordOutcome(extension.id, action, run);
     } finally {
       _inFlight--;
+      _checkIdle();
       notifyListeners();
       _pump();
+    }
+  }
+
+  void _checkIdle() {
+    if (_inFlight == 0) {
+      _idle?.complete();
+      _idle = null;
     }
   }
 
@@ -360,6 +388,16 @@ class ActionScheduler extends ChangeNotifier {
     ActionRunCause cause = ActionRunCause.manual,
   }) async {
     await _store.ensureLoaded();
+    if (_stopping) {
+      return ActionRun(
+        extensionId: extensionId,
+        actionId: actionId,
+        startedAt: DateTime.now(),
+        status: ActionRunStatus.refused,
+        cause: cause,
+        message: 'Extensions are stopping.',
+      );
+    }
     final extension = _store.byId(extensionId);
     final action = extension?.actionFor(actionId);
     if (extension == null || action == null) {
@@ -386,6 +424,7 @@ class ActionScheduler extends ChangeNotifier {
       return run;
     } finally {
       _inFlight--;
+      _checkIdle();
       notifyListeners();
       _pump();
     }

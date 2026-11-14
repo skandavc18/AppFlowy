@@ -48,7 +48,7 @@ class EncryptionPolicy {
     this.verifier = '',
     this.hint = '',
     this.iterations = defaultKeyIterations,
-    this.lockAfterMinutes = 15,
+    this.lockAfterMinutes = 0,
     this.gateWholeWorkspace = false,
     this.usesAppPassword = false,
   });
@@ -75,7 +75,7 @@ class EncryptionPolicy {
       verifier: readString('verifier'),
       hint: readString('hint'),
       iterations: readInt('iterations', defaultKeyIterations),
-      lockAfterMinutes: readInt('lock_after_minutes', 15),
+      lockAfterMinutes: readInt('lock_after_minutes', 0),
       // Deliberately a NEW key. An earlier build defaulted this to true and
       // wrote it whenever a passphrase was set, so a person protecting one
       // collection had the whole workspace closed behind them. Reading the old

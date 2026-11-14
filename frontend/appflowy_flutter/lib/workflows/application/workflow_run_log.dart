@@ -229,12 +229,22 @@ class WorkflowRunLog extends ChangeNotifier {
     await files.settle();
   }
 
-  @visibleForTesting
-  Future<void> reload() {
+  Future<void> resetAccount() async {
+    _persist?.cancel();
+    _persist = null;
+    await _loading;
+    await files.settle();
     _loaded = false;
     _runs = const [];
     _pending = const [];
-    return ensureLoaded();
+    _runsDirty = false;
+    files.resetRoot();
+    notifyListeners();
+  }
+
+  Future<void> reload() async {
+    await resetAccount();
+    await ensureLoaded();
   }
 
   @override

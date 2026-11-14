@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -1245,8 +1246,14 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
                   const SizedBox(height: 6),
                   _hint(
                     colors,
-                    'Place suggestions use Photon/OpenStreetMap. Only your place '
-                    'query is sent — never names or birth dates.',
+                    MapsSettings.instance.hasGoogleKey
+                        ? 'Place suggestions use Google Maps, or '
+                            'Photon/OpenStreetMap when Google cannot answer. '
+                            'Only your place query is sent — never names or '
+                            'birth dates.'
+                        : 'Place suggestions use Photon/OpenStreetMap. Only '
+                            'your place query is sent — never names or birth '
+                            'dates.',
                   ),
                   if (_error != null || _success != null)
                     Padding(

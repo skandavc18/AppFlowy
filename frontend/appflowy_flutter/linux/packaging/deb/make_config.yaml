@@ -39,3 +39,4 @@ supported_mime_type:
 dependencies:
   - libnotify-bin
   - libkeybinder-3.0-0
+  - libayatana-appindicator3-1

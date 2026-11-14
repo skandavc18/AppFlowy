@@ -80,6 +80,7 @@ class ExtensionDataStore extends ChangeNotifier {
   bool _loaded = false;
   Future<void>? _loading;
   String? _root;
+  Future<void> _writes = Future.value();
 
   /// Bumped whenever anything changes, for a view that watches the lot.
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
@@ -191,8 +192,11 @@ class ExtensionDataStore extends ChangeNotifier {
     String key,
     Object? value, {
     Duration? staleAfter,
+    bool Function()? isCurrent,
   }) async {
+    if (!_canWrite(isCurrent)) return;
     await ensureLoaded();
+    if (!_canWrite(isCurrent)) return;
     _entries[key] = ExtensionDataEntry(
       value: value,
       writtenAt: DateTime.now(),
@@ -204,8 +208,10 @@ class ExtensionDataStore extends ChangeNotifier {
     _raise();
   }
 
-  Future<void> remove(String key) async {
+  Future<void> remove(String key, {bool Function()? isCurrent}) async {
+    if (!_canWrite(isCurrent)) return;
     await ensureLoaded();
+    if (!_canWrite(isCurrent)) return;
     if (_entries.remove(key) == null) {
       return;
     }
@@ -213,6 +219,12 @@ class ExtensionDataStore extends ChangeNotifier {
     _dirty.add(_ownerOf(key));
     _schedulePersist();
     _raise();
+  }
+
+  bool _canWrite(bool Function()? isCurrent) {
+    if (isCurrent?.call() != false) return true;
+    Log.warn('Ignored data from a stopped extension.');
+    return false;
   }
 
   /// Throws away everything one extension wrote.
@@ -231,16 +243,38 @@ class ExtensionDataStore extends ChangeNotifier {
     _raise();
   }
 
-  Future<void> flush() async {
+  Future<void> flush() {
     _persist?.cancel();
     _persist = null;
-    if (_dirty.isEmpty) {
-      return;
-    }
     final owners = _dirty.toList();
     _dirty.clear();
-    for (final owner in owners) {
-      await _writeOwner(owner);
+    return _writes = _writes.then((_) async {
+      for (final owner in owners) {
+        await _writeOwner(owner);
+      }
+    });
+  }
+
+  Future<void> resetAccount() async {
+    _persist?.cancel();
+    _persist = null;
+    await _loading;
+    await _writes;
+    _entries.clear();
+    _dirty.clear();
+    _root = null;
+    _loaded = false;
+    for (final listener in _listeners.values) {
+      listener.value = null;
+    }
+    _raise();
+  }
+
+  Future<void> reload() async {
+    await resetAccount();
+    await ensureLoaded();
+    for (final entry in _listeners.entries) {
+      entry.value.value = read(entry.key);
     }
   }
 

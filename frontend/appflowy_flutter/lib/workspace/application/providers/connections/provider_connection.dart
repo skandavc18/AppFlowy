@@ -462,6 +462,28 @@ class ProviderConnections extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes every connected account and forgets all stored credentials, for a
+  /// full local reset.
+  Future<void> clearAll() async {
+    await ensureLoaded();
+    for (final connection in List<ProviderConnection>.of(_connections)) {
+      try {
+        await secrets.forget(connection.id);
+      } on Object catch (error) {
+        Log.warn('Provider secret could not be cleared: $error');
+      }
+    }
+    _connections.clear();
+    _loaded = false;
+    _loading = null;
+    try {
+      await _kv?.remove(storageKey);
+    } on Object catch (error) {
+      Log.warn('Provider connections could not be cleared: $error');
+    }
+    notifyListeners();
+  }
+
   Future<void> _write() async {
     try {
       await _kv?.set(

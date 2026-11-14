@@ -11,6 +11,9 @@ import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/application/user_listener.dart';
 import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy/workspace/application/menu/menu_user_bloc.dart';
@@ -20,6 +23,7 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sid
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/sidebar_workspace.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/account_user_profile.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/account/account_sign_in_out.dart';
 import 'package:appflowy/workspace/presentation/widgets/user_avatar.dart';
 import 'package:appflowy/workspace/presentation/widgets/user_avatar_button.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/code.pbenum.dart';
@@ -140,7 +144,7 @@ void main() {
           // profile boundary, but the same action/picker as account settings.
           final sidebarContext = tester.element(find.byType(SidebarUser));
           expect(sidebarContext.read<SettingsUserViewBloc?>(), isNull);
-          await tester.tap(_profileButton(SidebarUser));
+          await _openSidebarProfilePicker(tester);
           await tester.pumpAndSettle();
           _expectPicker(PickerTabType.icon, tester, owner: '7');
           expect(tester.takeException(), isNull);
@@ -164,6 +168,9 @@ void main() {
           await tester.pump();
           await tester.sendKeyEvent(key);
           await tester.pumpAndSettle();
+          expect(find.text('Log out'), findsOneWidget);
+          await tester.tap(find.text('Change profile picture'));
+          await tester.pumpAndSettle();
           _expectPicker(PickerTabType.emoji, tester, owner: '7');
           expect(fixture.backend.writes, isEmpty);
           expect(tester.takeException(), isNull);
@@ -175,6 +182,81 @@ void main() {
     );
   }
 
+  for (final appearance in vividIconTestAppearances) {
+    testWidgets(
+      '$appearance sidebar account menu offers logout with confirmation',
+      (tester) async {
+        final fixture = _ProfileFixture();
+        try {
+          await fixture.mount(tester, appearance);
+          await tester.tap(_profileButton(SidebarUser));
+          await tester.pumpAndSettle();
+          expect(find.text('Change profile picture'), findsOneWidget);
+          expect(find.text('Log out'), findsOneWidget);
+          expect(find.byType(FlowyIconEmojiPicker), findsNothing);
+          final style = AppMenuStyle.of(
+            tester.element(find.byType(AppMenuSurface)),
+          );
+          if (appearance == 'paper') {
+            expect(style.surface.r, greaterThan(style.surface.b));
+          }
+          await tester.tap(find.text('Log out'));
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Are you sure you want to log out?'),
+            findsOneWidget,
+          );
+          await tester.tap(find.text(LocaleKeys.button_cancel.tr()));
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Are you sure you want to log out?'),
+            findsNothing,
+          );
+          expect(fixture.backend.writes, isEmpty);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await fixture.dispose(tester);
+        }
+      },
+      timeout: homeProfileTestTimeout,
+    );
+  }
+
+  testWidgets(
+    'logout waits for the auth service before restarting',
+    (tester) async {
+      final fixture = _ProfileFixture();
+      final auth = _SignOutAuth();
+      getIt.registerSingleton<AuthService>(auth);
+      var loggedOut = false;
+      try {
+        await fixture.mount(tester, 'paper');
+        unawaited(
+          showAccountLogoutDialog(
+            tester.element(find.byType(SidebarUser)),
+            onLoggedOut: () => loggedOut = true,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(auth.calls, 0);
+        await tester.tap(find.text(LocaleKeys.button_yes.tr()));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(auth.calls, 1);
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(loggedOut, isFalse);
+        auth.completed.complete();
+        await tester.pumpAndSettle();
+        expect(loggedOut, isTrue);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await getIt.unregister<AuthService>();
+        await fixture.dispose(tester);
+      }
+    },
+    timeout: homeProfileTestTimeout,
+  );
+
   for (final entry in _choices.entries) {
     testWidgets(
       'profile ${entry.key}: persistence, failed ack, retry and broadcast',
@@ -182,7 +264,7 @@ void main() {
         final fixture = _ProfileFixture();
         try {
           await fixture.mount(tester, 'paper');
-          await tester.tap(_profileButton(SidebarUser));
+          await _openSidebarProfilePicker(tester);
           await tester.pumpAndSettle();
           await _select(tester, entry.key, entry.value);
           await tester.pump();
@@ -217,7 +299,7 @@ void main() {
           if (entry.value.type != FlowyIconType.custom) {
             await tester.pumpAndSettle();
             _expectProfileIcons(tester, entry.value.emoji);
-            await tester.tap(_profileButton(SidebarUser));
+            await _openSidebarProfilePicker(tester);
             await tester.pumpAndSettle();
             _expectPicker(entry.value.toPickerTabType()!, tester, owner: '7');
           }
@@ -339,7 +421,7 @@ void main() {
       final fixture = _ProfileFixture();
       try {
         await fixture.mount(tester, 'paper');
-        await tester.tap(_profileButton(SidebarUser));
+        await _openSidebarProfilePicker(tester);
         await tester.pumpAndSettle();
         final callback = tester
             .widget<FlowyIconEmojiPicker>(find.byType(FlowyIconEmojiPicker))
@@ -381,7 +463,7 @@ void main() {
         final fixture = _ProfileFixture();
         try {
           await fixture.mount(tester, 'light');
-          await tester.tap(_profileButton(SidebarUser));
+          await _openSidebarProfilePicker(tester);
           await tester.pumpAndSettle();
           final callback = tester
               .widget<FlowyIconEmojiPicker>(find.byType(FlowyIconEmojiPicker))
@@ -406,7 +488,7 @@ void main() {
           );
           expect(find.byType(FlowyIconEmojiPicker), findsNothing);
           if (reason == 'user change') {
-            await tester.tap(_profileButton(SidebarUser));
+            await _openSidebarProfilePicker(tester);
             await tester.pumpAndSettle();
             _expectPicker(PickerTabType.emoji, tester, owner: '8');
           }
@@ -426,14 +508,14 @@ void main() {
         final fixture = _ProfileFixture();
         try {
           await fixture.mount(tester, 'paper');
-          await tester.tap(_profileButton(SidebarUser));
+          await _openSidebarProfilePicker(tester);
           await tester.pumpAndSettle();
           await _select(tester, 'emoji', _choices['emoji']!);
           await tester.pump();
           final old = fixture.backend;
           fixture.rebind(_profile(id: 8, name: 'Grace'));
           await tester.pumpAndSettle();
-          await tester.tap(_profileButton(SidebarUser));
+          await _openSidebarProfilePicker(tester);
           await tester.pumpAndSettle();
           _expectPicker(PickerTabType.emoji, tester, owner: '8');
           if (succeeds) {
@@ -465,7 +547,7 @@ void main() {
         final fixture = _ProfileFixture();
         try {
           await fixture.mount(tester, 'light');
-          await tester.tap(_profileButton(SidebarUser));
+          await _openSidebarProfilePicker(tester);
           await tester.pumpAndSettle();
           await _select(tester, 'emoji', _choices['emoji']!);
           await tester.pump();
@@ -822,6 +904,12 @@ void main() {
   });
 }
 
+Future<void> _openSidebarProfilePicker(WidgetTester tester) async {
+  await tester.tap(_profileButton(SidebarUser));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Change profile picture'));
+}
+
 Finder _profileButton(Type host) => find.descendant(
       of: find.descendant(
         of: find.byType(host),
@@ -947,6 +1035,17 @@ UserWorkspacePB _workspace({
   AFRolePB role = AFRolePB.Owner,
 }) =>
     UserWorkspacePB(workspaceId: id, name: name, icon: _oldIcon, role: role);
+
+class _SignOutAuth extends Fake implements AuthService {
+  int calls = 0;
+  final completed = Completer<void>();
+
+  @override
+  Future<void> signOut() {
+    calls++;
+    return completed.future;
+  }
+}
 
 class _Write {
   _Write(this.icon);

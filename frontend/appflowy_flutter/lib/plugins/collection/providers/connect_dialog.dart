@@ -32,6 +32,7 @@ Future<ProviderConnection?> showProviderConnectDialog(
   bool requestWriteAccess = false,
   String? preferAccountId,
   String? reconnectId,
+  bool autoLaunchBrowser = false,
 }) =>
     showDialog<ProviderConnection>(
       context: context,
@@ -40,6 +41,7 @@ Future<ProviderConnection?> showProviderConnectDialog(
         requestWriteAccess: requestWriteAccess,
         preferAccountId: preferAccountId,
         reconnectId: reconnectId,
+        autoLaunchBrowser: autoLaunchBrowser,
       ),
     );
 
@@ -98,12 +100,14 @@ class _ConnectDialog extends StatefulWidget {
     required this.requestWriteAccess,
     this.preferAccountId,
     this.reconnectId,
+    this.autoLaunchBrowser = false,
   });
 
   final ProviderServiceInfo info;
   final bool requestWriteAccess;
   final String? preferAccountId;
   final String? reconnectId;
+  final bool autoLaunchBrowser;
 
   @override
   State<_ConnectDialog> createState() => _ConnectDialogState();
@@ -168,11 +172,15 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     if (!mounted) {
       return;
     }
+    final appMissing = app == null || !app.isConfigured;
     setState(() {
-      needsApp = app == null || !app.isConfigured;
+      needsApp = appMissing;
       clientId.text = app?.clientId ?? '';
       clientSecret.text = app?.clientSecret ?? '';
     });
+    if (widget.autoLaunchBrowser && !appMissing) {
+      unawaited(_connect());
+    }
   }
 
   @override

@@ -31,10 +31,19 @@ class ExtensionManager {
   final Map<String, ExtensionToolServer> _servers = {};
 
   bool _started = false;
+  Future<void>? _starting;
 
   bool get isStarted => _started;
 
-  Future<void> start() async {
+  Future<void> start() {
+    final running = _starting;
+    if (running != null) return running;
+    final next = _start().whenComplete(() => _starting = null);
+    _starting = next;
+    return next;
+  }
+
+  Future<void> _start() async {
     if (_started) {
       return;
     }
@@ -57,6 +66,7 @@ class ExtensionManager {
   }
 
   Future<void> stop() async {
+    await _starting;
     if (!_started) {
       return;
     }
@@ -66,10 +76,27 @@ class ExtensionManager {
       AIToolRegistry.instance.removeServer(id);
     }
     _servers.clear();
-    await _scheduler.stop();
-    await DartExtensionHost.instance.stop();
+    final stopped = _scheduler.stop();
     await ScriptHost.instance.dispose();
+    await stopped;
+    await DartExtensionHost.instance.stop();
     await IslandServer.disposeAll();
+  }
+
+  Future<void> resetAccount() async {
+    await _store.resetAccount();
+    await ExtensionDataStore.instance.resetAccount();
+    await ExtensionRunLog.instance.resetAccount();
+  }
+
+  Future<void> reloadSyncedFiles() async {
+    await _store.reload();
+    await ExtensionDataStore.instance.reload();
+    await ExtensionRunLog.instance.reload();
+    if (_started) {
+      await DartExtensionHost.instance.reload();
+      await _refreshTools();
+    }
   }
 
   void _syncServers() {

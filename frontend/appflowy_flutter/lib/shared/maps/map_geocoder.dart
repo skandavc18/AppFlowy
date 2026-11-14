@@ -10,6 +10,9 @@ import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+/// Who found a place, and so who has to be credited where it is shown.
+enum GeocodeSource { google, openStreetMap }
+
 /// A place that was found.
 @immutable
 class GeocodeResult {
@@ -18,12 +21,14 @@ class GeocodeResult {
     required this.name,
     this.address = '',
     this.placeId,
+    this.source = GeocodeSource.openStreetMap,
   });
 
   final LatLng point;
   final String name;
   final String address;
   final String? placeId;
+  final GeocodeSource source;
 
   Map<String, Object?> toJson() => {
         'lat': point.latitude,
@@ -31,6 +36,7 @@ class GeocodeResult {
         'name': name,
         if (address.isNotEmpty) 'address': address,
         if (placeId != null) 'place_id': placeId,
+        if (source == GeocodeSource.google) 'source': 'google',
       };
 
   static GeocodeResult? fromJson(Map<String, dynamic> values) {
@@ -44,6 +50,9 @@ class GeocodeResult {
       name: values['name'] as String? ?? '',
       address: values['address'] as String? ?? '',
       placeId: values['place_id'] as String?,
+      source: values['source'] == 'google'
+          ? GeocodeSource.google
+          : GeocodeSource.openStreetMap,
     );
   }
 }
@@ -55,7 +64,18 @@ abstract class MapGeocoder {
   Future<List<GeocodeResult>> search(String query, {int limit = 6});
 }
 
-/// Google's Geocoding API. Used whenever a key is configured.
+/// Google's place search. Used whenever a key is configured.
+///
+/// Three of Google's services can answer, and a key may be allowed some and
+/// not others: a Maps Demo Key has Places API (New) and Geocoding API v4 but
+/// not the legacy Geocoding API, and an older key can be the other way round.
+/// Each is asked in turn. One that turns the key away is not asked again, and
+/// one whose daily quota is spent is left to rest rather than asked on every
+/// keystroke.
+///
+/// Searches go to Places first, which ranks by relevance and by where the
+/// person is. Places written in a table go to Geocoding first, which is made
+/// for addresses, so the two share the work between their quotas.
 class GoogleGeocoder implements MapGeocoder {
   GoogleGeocoder({required this.apiKey, http.Client? client})
       : _client = client ?? http.Client();
@@ -63,37 +83,172 @@ class GoogleGeocoder implements MapGeocoder {
   final String apiKey;
   final http.Client _client;
 
-  /// Set once Google has turned the key away — a demo key, a key without the
-  /// Geocoding API, one restricted to another app. It is not asked again.
-  bool get isRefused => _refused;
-  bool _refused = false;
+  final _places = _GoogleService('Places API');
+  final _geocoding = _GoogleService('Geocoding API');
+  final _legacy = _GoogleService('legacy Geocoding API');
 
-  void _refuse(String reason) {
-    if (_refused) {
-      return;
-    }
-    _refused = true;
-    Log.warn('Google refused the maps key ($reason); searching OpenStreetMap.');
-  }
+  static const _timeout = Duration(seconds: 12);
+  static const _placeFields = 'id,displayName,formattedAddress,location';
+
+  /// Whether Google has turned the key away for every service that can
+  /// answer. It is not asked again.
+  bool get isRefused =>
+      _places.refused && _geocoding.refused && _legacy.refused;
 
   @override
   Future<GeocodeResult?> lookUp(MapLocation location) async {
-    final results = await _ask(
-      location.placeId != null
-          ? {'place_id': location.placeId!}
-          : {'address': location.query},
-    );
-    return results.isEmpty ? null : results.first;
+    final placeId = location.placeId;
+    if (placeId != null) {
+      final found = await _placeDetails(placeId) ??
+          await _geocodePlace(placeId) ??
+          _first(await _askLegacy({'place_id': placeId}));
+      if (found != null) {
+        return found;
+      }
+    }
+    final query = location.query.trim();
+    if (query.isEmpty) {
+      return null;
+    }
+    return _first(await _geocodeAddress(query)) ??
+        _first(await _searchText(query, 1)) ??
+        _first(await _askLegacy({'address': query}));
   }
 
   @override
   Future<List<GeocodeResult>> search(String query, {int limit = 6}) async {
-    final results = await _ask({'address': query});
-    return results.take(limit).toList();
+    final text = query.trim();
+    if (text.isEmpty) {
+      return const [];
+    }
+    for (final ask in [
+      () => _searchText(text, limit),
+      () => _geocodeAddress(text),
+      () => _askLegacy({'address': text}),
+    ]) {
+      final found = await ask();
+      if (found.isNotEmpty) {
+        return found.take(limit).toList();
+      }
+    }
+    return const [];
   }
 
-  Future<List<GeocodeResult>> _ask(Map<String, String> query) async {
-    if (apiKey.isEmpty || _refused) {
+  /// Places API (New) Text Search: names and addresses alike.
+  Future<List<GeocodeResult>> _searchText(String query, int limit) async {
+    final body = await _ask(
+      _places,
+      () => _client.post(
+        Uri.https('places.googleapis.com', '/v1/places:searchText'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask':
+              _placeFields.split(',').map((field) => 'places.$field').join(','),
+        },
+        body: jsonEncode({
+          'textQuery': query,
+          'maxResultCount': limit.clamp(1, 20),
+        }),
+      ),
+    );
+    final places = body is Map ? body['places'] : null;
+    if (places is! List) {
+      return const [];
+    }
+    return places.whereType<Map>().map(_readPlace).nonNulls.toList();
+  }
+
+  /// Places API (New) Place Details, for a place id from a pasted link.
+  Future<GeocodeResult?> _placeDetails(String placeId) async {
+    final body = await _ask(
+      _places,
+      () => _client.get(
+        Uri(
+          scheme: 'https',
+          host: 'places.googleapis.com',
+          pathSegments: ['v1', 'places', placeId],
+        ),
+        headers: {'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': _placeFields},
+      ),
+    );
+    return body is Map ? _readPlace(body) : null;
+  }
+
+  /// Geocoding API v4, for an address written out.
+  Future<List<GeocodeResult>> _geocodeAddress(String query) async {
+    final body = await _ask(
+      _geocoding,
+      () => _client.get(
+        Uri(
+          scheme: 'https',
+          host: 'geocode.googleapis.com',
+          // A path segment, so a slash in the address cannot change the path.
+          pathSegments: ['v4', 'geocode', 'address', query],
+        ),
+        headers: {'X-Goog-Api-Key': apiKey},
+      ),
+    );
+    final results = body is Map ? body['results'] : null;
+    if (results is! List) {
+      return const [];
+    }
+    return results.whereType<Map>().map(_readGeocode).nonNulls.toList();
+  }
+
+  /// Geocoding API v4, for a place id.
+  Future<GeocodeResult?> _geocodePlace(String placeId) async {
+    final body = await _ask(
+      _geocoding,
+      () => _client.get(
+        Uri(
+          scheme: 'https',
+          host: 'geocode.googleapis.com',
+          pathSegments: ['v4', 'geocode', 'places', placeId],
+        ),
+        headers: {'X-Goog-Api-Key': apiKey},
+      ),
+    );
+    return body is Map ? _readGeocode(body) : null;
+  }
+
+  /// Asks one of the newer services, which answer in plain HTTP statuses.
+  Future<Object?> _ask(
+    _GoogleService service,
+    Future<http.Response> Function() send,
+  ) async {
+    if (apiKey.isEmpty || !service.isAvailable) {
+      return null;
+    }
+    try {
+      final response = await send().timeout(_timeout);
+      final status = response.statusCode;
+      if (status == 200) {
+        return jsonDecode(response.body);
+      }
+      final reason = _errorOf(response.body) ?? 'HTTP $status';
+      if (status == 429) {
+        service.rest(_GoogleService.quotaRest, reason);
+      } else if (status == 401 ||
+          status == 403 ||
+          (status == 400 && reason.contains('API_KEY'))) {
+        service.refuse(reason);
+      } else if (status >= 500) {
+        service.rest(_GoogleService.troubleRest, reason);
+      }
+      // Otherwise a request it could not use, or a place it does not know:
+      // nothing was found.
+      return null;
+    } on Object catch (error) {
+      service.rest(_GoogleService.troubleRest, '$error');
+      return null;
+    }
+  }
+
+  /// The legacy Geocoding API, which reports most outcomes, refusals
+  /// included, inside a 200 response.
+  Future<List<GeocodeResult>> _askLegacy(Map<String, String> query) async {
+    if (apiKey.isEmpty || !_legacy.isAvailable) {
       return const [];
     }
     try {
@@ -101,13 +256,15 @@ class GoogleGeocoder implements MapGeocoder {
         ...query,
         'key': apiKey,
       });
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 12));
+      final response = await _client.get(uri).timeout(_timeout);
       if (response.statusCode != 200) {
-        if (response.statusCode >= 400 &&
-            response.statusCode < 500 &&
-            response.statusCode != 429) {
-          _refuse('HTTP ${response.statusCode}');
+        final status = response.statusCode;
+        if (status == 429) {
+          _legacy.rest(_GoogleService.quotaRest, 'HTTP $status');
+        } else if (status >= 400 && status < 500) {
+          _legacy.refuse('HTTP $status');
+        } else {
+          _legacy.rest(_GoogleService.troubleRest, 'HTTP $status');
         }
         return const [];
       }
@@ -117,8 +274,11 @@ class GoogleGeocoder implements MapGeocoder {
       }
       final status = body['status'];
       if (status != 'OK') {
+        final reason = '$status ${body['error_message'] ?? ''}'.trim();
         if (status == 'REQUEST_DENIED' || status == 'OVER_DAILY_LIMIT') {
-          _refuse('$status ${body['error_message'] ?? ''}'.trim());
+          _legacy.refuse(reason);
+        } else if (status == 'OVER_QUERY_LIMIT') {
+          _legacy.rest(_GoogleService.quotaRest, reason);
         }
         return const [];
       }
@@ -126,14 +286,49 @@ class GoogleGeocoder implements MapGeocoder {
       if (results is! List) {
         return const [];
       }
-      return results.whereType<Map>().map(_readResult).nonNulls.toList();
+      return results.whereType<Map>().map(_readLegacy).nonNulls.toList();
     } on Object catch (error) {
-      Log.warn('Google could not find a place: $error');
+      _legacy.rest(_GoogleService.troubleRest, '$error');
       return const [];
     }
   }
 
-  GeocodeResult? _readResult(Map result) {
+  static GeocodeResult? _first(List<GeocodeResult> found) =>
+      found.isEmpty ? null : found.first;
+
+  static GeocodeResult? _readPlace(Map place) {
+    final point = _pointOf(place['location']);
+    if (point == null) {
+      return null;
+    }
+    final displayName = place['displayName'];
+    final name = displayName is Map ? displayName['text'] as String? : null;
+    final address = place['formattedAddress'] as String? ?? '';
+    return GeocodeResult(
+      point: point,
+      name: name ?? address.split(',').first.trim(),
+      address: address,
+      placeId: place['id'] as String?,
+      source: GeocodeSource.google,
+    );
+  }
+
+  static GeocodeResult? _readGeocode(Map result) {
+    final point = _pointOf(result['location']);
+    if (point == null) {
+      return null;
+    }
+    final address = result['formattedAddress'] as String? ?? '';
+    return GeocodeResult(
+      point: point,
+      name: address.split(',').first.trim(),
+      address: address,
+      placeId: result['placeId'] as String?,
+      source: GeocodeSource.google,
+    );
+  }
+
+  static GeocodeResult? _readLegacy(Map result) {
     final geometry = result['geometry'];
     final location = geometry is Map ? geometry['location'] : null;
     if (location is! Map) {
@@ -150,7 +345,84 @@ class GoogleGeocoder implements MapGeocoder {
       name: address.split(',').first.trim(),
       address: address,
       placeId: result['place_id'] as String?,
+      source: GeocodeSource.google,
     );
+  }
+
+  static LatLng? _pointOf(Object? location) {
+    if (location is! Map) {
+      return null;
+    }
+    final lat = (location['latitude'] as num?)?.toDouble();
+    final lng = (location['longitude'] as num?)?.toDouble();
+    if (lat == null || lng == null) {
+      return null;
+    }
+    final point = LatLng(lat, lng);
+    return point.isValid ? point : null;
+  }
+
+  /// Google's own name for an error, like `PERMISSION_DENIED
+  /// SERVICE_DISABLED`, where the body gives one.
+  static String? _errorOf(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      final error = decoded is Map ? decoded['error'] : null;
+      if (error is! Map) {
+        return null;
+      }
+      final details = error['details'];
+      final reasons = [
+        if (error['status'] is String) error['status'] as String,
+        if (details is List)
+          for (final detail in details.whereType<Map>())
+            if (detail['reason'] is String) detail['reason'] as String,
+      ];
+      return reasons.isEmpty ? error['message'] as String? : reasons.join(' ');
+    } on FormatException {
+      return null;
+    }
+  }
+}
+
+/// What one of Google's services has said about the key so far.
+class _GoogleService {
+  _GoogleService(this.name);
+
+  final String name;
+
+  /// A spent daily quota comes back, but not within minutes.
+  static const quotaRest = Duration(minutes: 30);
+
+  /// Anything else that went wrong is worth trying again soon.
+  static const troubleRest = Duration(minutes: 1);
+
+  bool refused = false;
+  DateTime? _restingUntil;
+
+  bool get isAvailable {
+    final until = _restingUntil;
+    return !refused && (until == null || DateTime.now().isAfter(until));
+  }
+
+  void refuse(String reason) {
+    if (refused) {
+      return;
+    }
+    refused = true;
+    Log.warn('Google refused the maps key for the $name ($reason).');
+  }
+
+  void rest(Duration duration, String reason) {
+    final until = _restingUntil;
+    final resting = until != null && DateTime.now().isBefore(until);
+    _restingUntil = DateTime.now().add(duration);
+    if (!resting) {
+      Log.warn(
+        'The $name is not answering ($reason); asking again in '
+        '${duration.inMinutes} min.',
+      );
+    }
   }
 }
 
@@ -359,20 +631,24 @@ String geocodeKeyFor(MapLocation location) =>
 /// second from an application, and that budget is only kept if every caller
 /// queues behind the same instance — a fresh one per lookup means the search
 /// box and the map race each other into being turned away. A keyed geocoder
-/// falls back to that same keyless one.
-MapGeocoder resolveGeocoder({String? apiKey}) {
+/// falls back to that same keyless one, or to [keyless] where a caller needs
+/// another (search-as-you-type is not allowed on Nominatim), and every
+/// geocoder for a key shares what Google has said about it.
+MapGeocoder resolveGeocoder({String? apiKey, MapGeocoder? keyless}) {
   final key = apiKey ?? MapsSettings.instance.apiKey;
-  final keyless = _geocoders.putIfAbsent('', () => NominatimGeocoder());
+  final fallback = keyless ?? (_nominatim ??= NominatimGeocoder());
   if (key.isEmpty) {
-    return keyless;
+    return fallback;
   }
-  return _geocoders.putIfAbsent(
-    key,
+  return _keyed.putIfAbsent(
+    (key, fallback),
     () => FallbackGeocoder(
-      primary: GoogleGeocoder(apiKey: key),
-      fallback: keyless,
+      primary: _google.putIfAbsent(key, () => GoogleGeocoder(apiKey: key)),
+      fallback: fallback,
     ),
   );
 }
 
-final Map<String, MapGeocoder> _geocoders = {};
+NominatimGeocoder? _nominatim;
+final Map<String, GoogleGeocoder> _google = {};
+final Map<(String, MapGeocoder), FallbackGeocoder> _keyed = {};

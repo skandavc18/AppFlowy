@@ -214,6 +214,16 @@ class _PlacePickerState extends State<_PlacePicker> {
                       },
                     ),
             ),
+            // Places from Google, listed without its map, carry its credit.
+            if (_results.any((result) => result.source == GeocodeSource.google))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Text(
+                  'Google Maps',
+                  textAlign: TextAlign.end,
+                  style: DashboardType.caption(palette),
+                ),
+              ),
           ],
         ),
       ),

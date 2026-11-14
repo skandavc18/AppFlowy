@@ -76,6 +76,23 @@ void main() {
     expect(await again.current(), 'the second one');
     expect(await again.check('the first one'), isFalse);
   });
+
+  test('clear forgets both the keyring secret and the check record', () async {
+    final passwords = start(storage, keyring: keyring);
+    await passwords.choose('a fine password');
+    expect(passwords.isSet, isTrue);
+    expect(passwords.isKnown, isTrue);
+
+    await passwords.clear();
+    expect(passwords.isSet, isFalse);
+    expect(passwords.isKnown, isFalse);
+    expect(await passwords.current(), isNull);
+
+    final again = start(storage.restarted(), keyring: keyring);
+    await again.ensureLoaded();
+    expect(again.isSet, isFalse);
+    expect(await again.current(), isNull);
+  });
 }
 
 class _MemoryKeyring implements DesktopKeyring {

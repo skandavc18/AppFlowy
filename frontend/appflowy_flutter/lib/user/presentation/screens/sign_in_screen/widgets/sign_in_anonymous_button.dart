@@ -14,6 +14,7 @@ class SignInAnonymousButtonV2 extends StatelessWidget {
     super.key,
     this.label,
     this.beforeStart,
+    this.builder,
   });
 
   /// What the button says; anonymous mode when not given.
@@ -21,6 +22,14 @@ class SignInAnonymousButtonV2 extends StatelessWidget {
 
   /// Runs before the workspace is opened; false stays on this screen.
   final Future<bool> Function()? beforeStart;
+
+  /// Optional custom presentation (for instance an option card on the first
+  /// run screen) while preserving [SignInAnonymousButtonV2] in the widget tree.
+  final Widget Function(
+    BuildContext context,
+    VoidCallback onTap,
+    bool hasExistingLocal,
+  )? builder;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +68,14 @@ class SignInAnonymousButtonV2 extends StatelessWidget {
                           start();
                         }
                       };
+                final customBuilder = builder;
+                if (customBuilder != null) {
+                  return customBuilder(
+                    context,
+                    onTap,
+                    state.anonUsers.isNotEmpty,
+                  );
+                }
                 return AFGhostIconTextButton(
                   text: label ?? LocaleKeys.signIn_anonymousMode.tr(),
                   textColor: (context, isHovering, disabled) {

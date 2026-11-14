@@ -34,6 +34,7 @@ class ExtensionRunLog extends ChangeNotifier {
   Timer? _persist;
   bool _loaded = false;
   Future<void>? _loading;
+  Future<void> _writes = Future.value();
 
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
@@ -157,17 +158,32 @@ class ExtensionRunLog extends ChangeNotifier {
     _raise();
   }
 
-  Future<void> flush() async {
+  Future<void> flush() {
     _persist?.cancel();
     _persist = null;
-    if (_dirty.isEmpty) {
-      return;
-    }
     final owners = _dirty.toList();
     _dirty.clear();
-    for (final owner in owners) {
-      await _write(owner);
-    }
+    return _writes = _writes.then((_) async {
+      for (final owner in owners) {
+        await _write(owner);
+      }
+    });
+  }
+
+  Future<void> resetAccount() async {
+    _persist?.cancel();
+    _persist = null;
+    await _loading;
+    await _writes;
+    _runs.clear();
+    _dirty.clear();
+    _loaded = false;
+    _raise();
+  }
+
+  Future<void> reload() async {
+    await resetAccount();
+    await ensureLoaded();
   }
 
   void _schedulePersist() {

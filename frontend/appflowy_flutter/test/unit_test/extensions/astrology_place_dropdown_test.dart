@@ -622,6 +622,29 @@ void main() {
     expect(h.outsideTaps, 0);
   });
 
+  _case('places found by Google credit Google Maps, not a link',
+      (tester, h, launcher) async {
+    h.results = const [
+      AstrologyPlace(
+        name: 'Akshaya Hall, Basavanagudi, Bengaluru, India',
+        latitude: 12.93293,
+        longitude: 77.57145,
+        timeZone: 'Asia/Kolkata',
+        fromGoogle: true,
+      ),
+    ];
+    await h.mount(tester);
+    await _frames(tester);
+    expect(
+      tester.widget<Text>(_key('astrology-place-attribution')).data,
+      'Google Maps',
+    );
+    await tester.tap(_key('astrology-place-attribution'));
+    await _frames(tester);
+    expect(launcher.urls, isEmpty);
+    expect(h.selections, isEmpty);
+  });
+
   for (final throws in [false, true]) {
     _case('attribution handles ${throws ? 'platform errors' : 'false results'}',
         (tester, h, launcher) async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/workflows/application/workflow_model.dart';
 import 'package:appflowy/workflows/application/workflow_run.dart';
 import 'package:appflowy/workflows/application/workflow_run_log.dart';
@@ -49,6 +51,37 @@ void main() {
     await scheduler.tick();
     await scheduler.settle();
   }
+
+  test('logout drains an active run and prevents its remaining steps',
+      () async {
+    scheduler.dispose();
+    final pending = _PendingNotifications();
+    services = pending;
+    scheduler = WorkflowScheduler(store: store, log: log, services: services);
+    final workflow = readyWorkflow(
+      trigger: WorkflowTrigger.create(WorkflowTriggerKind.manual),
+      steps: [
+        step(1, WorkflowStepKind.notify, {'title': 'first'}),
+        step(2, WorkflowStepKind.notify, {'title': 'must not run'}),
+      ],
+    );
+    await store.save(workflow);
+    final running = scheduler.runNow(workflow);
+    await pending.entered.future;
+    var stopped = false;
+    final stopping = scheduler.stopAndDrain().then((_) => stopped = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(stopped, isFalse);
+    pending.release.complete();
+    await stopping;
+    await running;
+    expect(services.notifications.map((value) => value.$1), ['first']);
+    expect(scheduler.isRunning(workflow.id), isFalse);
+
+    await scheduler.start();
+    await scheduler.runNow(workflow);
+    expect(services.notifications.last.$1, 'must not run');
+  });
 
   test('a feed is first only read, then each new item runs once, oldest first',
       () async {
@@ -347,4 +380,15 @@ void main() {
     expect(services.notifications.single.$1, 'Resumed');
     expect(log.byId(parked.id)!.status, WorkflowRunStatus.succeeded);
   });
+}
+
+class _PendingNotifications extends FakeWorkflowServices {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  @override
+  Future<void> notify({required String title, required String body}) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    await super.notify(title: title, body: body);
+  }
 }

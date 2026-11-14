@@ -77,8 +77,11 @@ class InitAppWindowTask extends LaunchTask with WindowListener {
       });
     } else {
       await windowManager.waitUntilReadyToShow(windowOptions, () async {
-        await windowManager.show();
-        await windowManager.focus();
+        if (!(WorkflowBackground.isSupported &&
+            WorkflowBackground.startedInBackground)) {
+          await windowManager.show();
+          await windowManager.focus();
+        }
 
         if (position != null) {
           await windowManager.setPosition(position);

@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/shared/encryption/encryption.dart';
+import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -397,6 +399,84 @@ void main() {
       expect(source.contains('HardwareKeyboard.instance.addHandler'), isTrue);
     });
   });
+
+  group('single AppFlowy password auto-unlock', () {
+    tearDown(() => EncryptionVault.instance.resetForTest());
+
+    test(
+        'defaults idle lock to never and auto-unlocks from AppPassword unless gating launch',
+        () async {
+      final storage = _MemoryStorage();
+      final passwords = _FakePasswordSource('my-single-app-password');
+      final vault = EncryptionVault.instance
+        ..configureForTest(storage: storage, passwords: passwords)
+        ..seedForTest(policy: const EncryptionPolicy(iterations: 200));
+
+      final enabled = await vault.enable(passphrase: 'my-single-app-password');
+      expect(enabled, isTrue);
+      expect(vault.policy.usesAppPassword, isTrue);
+      expect(vault.policy.lockAfterMinutes, 0);
+      expect(vault.isUnlocked, isTrue);
+
+      // Simulate cold restart when gateWholeWorkspace is false: unlocked from
+      // the remembered AppFlowy password without asking again.
+      vault.resetForTest();
+      vault.configureForTest(storage: storage, passwords: passwords);
+      await vault.ensureLoaded();
+      expect(vault.isConfigured, isTrue);
+      expect(vault.isUnlocked, isTrue);
+
+      // When gateWholeWorkspace is true, cold start stays locked until typed.
+      await vault.update(vault.policy.copyWith(gateWholeWorkspace: true));
+      vault.resetForTest();
+      vault.configureForTest(storage: storage, passwords: passwords);
+      await vault.ensureLoaded();
+      expect(vault.isLocked, isTrue);
+
+      // Fresh reset wipes the policy and key completely.
+      await vault.resetForFreshStart();
+      expect(vault.isConfigured, isFalse);
+      expect(vault.isUnlocked, isFalse);
+      expect(await storage.get(EncryptionVault.storageKey), isNull);
+    });
+  });
+}
+
+class _MemoryStorage implements KeyValueStorage {
+  final Map<String, String> values = {};
+
+  @override
+  Future<String?> get(String key) async => values[key];
+
+  @override
+  Future<void> set(String key, String value) async => values[key] = value;
+
+  @override
+  Future<void> remove(String key) async => values.remove(key);
+
+  @override
+  Future<void> clear() async => values.clear();
+
+  @override
+  Future<T?> getWithFormat<T>(
+    String key,
+    T Function(String value) formatter,
+  ) async {
+    final v = values[key];
+    return v == null ? null : formatter(v);
+  }
+}
+
+class _FakePasswordSource implements AppPasswordSource {
+  _FakePasswordSource(this.value);
+
+  String? value;
+
+  @override
+  Future<String?> current() async => value;
+
+  @override
+  Future<void> adopt(String password) async => value = password;
 }
 
 ViewPB _viewWith(String extra) => ViewPB()

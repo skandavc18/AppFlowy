@@ -219,6 +219,7 @@ class StockFeed {
     StockRange range, {
     bool force = false,
   }) async {
+    if (_context.scope.isClosed) return;
     final wanted = normalise(symbol);
     final entry = _watchEntry(wanted, range);
     if (wanted.isEmpty || _inFlight.contains(entry)) {

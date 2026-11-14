@@ -43,6 +43,55 @@ We have detailed documentation on how to [get started](https://docs.appflowy.io/
 - [Making Your First PR](https://docs.appflowy.io/docs/documentation/software-contributions/submitting-code/submitting-your-first-pull-request)
 - [All AppFlowy Documentation](https://docs.appflowy.io/docs/documentation/appflowy) - Contribution guide, build and run, debugging, testing, localization, etc.
 
+### Account menu
+
+Click the avatar beside your name in the sidebar for **Change profile picture**
+or **Log out**. Logging out asks for confirmation before returning to sign-in.
+
+When account settings sync is enabled, workflow files, installed extension
+sources and assets, and extension data also follow the account, sealed with its
+AppFlowy password. Folder sync carries those same folders. Incoming files reload
+the running stores, so they do not require restarting AppFlowy.
+
+Logging out stops workflow clocks, webhooks, extension actions and their file
+watchers, disables workflow background startup, and clears local automation
+files and extension choices. It does not delete the synced copies: signing back
+in restores them instead of syncing the local logout cleanup as a deletion.
+Bundled extensions remain part of the application; their account data and
+choices are reset. If sign-out is rejected, local data is kept and automation
+resumes.
+
+### Background workflows on Linux
+
+In **Workflows > Background**, enable **Keep running after closing the window**
+to keep enabled workflows and their webhook listener running without a window.
+The notification-area menu can reopen AppFlowy, pause/resume workflows, or quit.
+**Start when I sign in** creates an XDG autostart entry that launches AppFlowy
+hidden with `--background`; disabling background mode also disables this entry.
+
+Linux needs `libayatana-appindicator3` (or `libappindicator3`) and a desktop
+notification area supporting StatusNotifier/AppIndicator. GNOME may need its
+AppIndicator extension enabled. If the tray cannot start, AppFlowy stays visible,
+turns background mode back off, and shows an error instead of hiding an
+unreachable window. Autostart is stored in
+`$XDG_CONFIG_HOME/autostart/io.appflowy.appflowy-background.desktop`
+(`~/.config/autostart` by default).
+
+The opt-in native regression test closes the real Linux window and verifies a
+scheduled workflow still runs, then checks reopening and XDG autostart. Run it
+on a desktop with a working notification area and no other AppFlowy instance:
+
+```sh
+test_config="$(mktemp -d)"
+XDG_CONFIG_HOME="$test_config" flutter test -d linux \
+  integration_test/desktop/workflow_background_native_test.dart \
+  --dart-define=WORKFLOW_BACKGROUND_NATIVE_TEST=true \
+  --dart-define=WORKFLOW_BACKGROUND_TEST_CONFIG="$test_config"
+```
+
+The test uses in-memory workflows and only changes autostart inside
+`test_config`; remove that temporary directory after the run.
+
 ### Native Markdown and HTML previews
 
 Linux renders Markdown and simplified HTML without a web view. Text blocks use
@@ -88,6 +137,77 @@ shared memory, the plugin gives the web processes Mesa's EGL wherever Mesa
 drives a GPU (the integrated one on a laptop, which also leaves the NVIDIA GPU
 asleep), and otherwise raises their open-file limit. An EGL vendor chosen with
 `__EGL_VENDOR_LIBRARY_FILENAMES` or `__EGL_VENDOR_LIBRARY_DIRS` is kept.
+
+### Google Maps
+
+With a Google Maps key in Settings > Maps (a Maps Demo Key is enough), maps and
+place searches use Google. On every platform, searches ask Places API (New) and
+Geocoding API v4, then the legacy Geocoding API, then OpenStreetMap
+(`lib/shared/maps/map_geocoder.dart`).
+
+The app draws its maps itself from map tiles, with its own pins on top
+(`lib/shared/maps/app_map_view.dart`). Google serves tiles to a renderer like
+this only through its Map Tiles API, which a Demo Key does not include, so with
+a Demo Key those tiles come from OpenStreetMap. On Linux the map is Google's own
+instead: the Maps JavaScript API, which a Demo Key does include, running in the
+`appflowy_linux_webview` plugin (`lib/shared/maps/google/`). The plugin draws
+the page into a Flutter texture, so the app's search box, controls and hover
+cards sit on top of it; it passes the page the wheel and trackpad; and it
+carries the page's messages back to the app.
+
+Windows, macOS, Android and iOS do not have Google's map yet, so with a Demo Key
+their maps use OpenStreetMap (a key with billing and the Map Tiles API enabled
+draws Google's tiles there). They all have web views in this app
+(`flutter_inappwebview`: WebView2 on Windows, WKWebView on macOS and iOS, the
+system WebView on Android), which already show a pasted Google Maps link as
+Google's embedded map, so it is possible, just not built. Each needs building
+and testing on its own system: Flutter builds Windows apps only on Windows and
+macOS apps only on a Mac, and the parts most likely to break (input, the app's
+controls over the web view, and the page reporting back to the app) need the
+real machine. Android builds on Linux, so it is the easiest place to start.
+
+The map reaches its page only through `GoogleMapsPages`
+(`lib/shared/maps/google/google_maps_pages.dart`), so porting leaves the map
+logic alone. It needs:
+
+- a `GoogleMapsPages` that opens the page in `flutter_inappwebview`;
+- the page's `post()` to also send through
+  `window.flutter_inappwebview.callHandler`;
+- wheel and trackpad handling for those web views, or Google's own gestures.
+
+Regression coverage: `flutter test test/widget_test/google_map_surface_test.dart test/unit_test/shared/map_geocoder_fallback_test.dart`.
+
+### Your own AppFlowy Cloud
+
+An AppFlowy Cloud deployment can be used in two ways. Both are offered on the
+first screen and in Settings > Account & App > Sync between computers, which
+replaced the old "Cloud server" setting.
+
+- **Sync through it**, like Google Drive, OneDrive or Box ("Sync with
+  self-hosted AppFlowy Cloud"). The workspace stays on each computer, and the
+  sync engine keeps it in step through a folder on the server, sealed with the
+  AppFlowy password. Setting it up asks for the server's address first, then an
+  account there (sign in, or create one), then the sync folder
+  (`lib/workspace/application/sync/self_hosted_cloud.dart`,
+  `lib/workspace/presentation/settings/pages/backup/self_hosted_cloud_dialogs.dart`).
+  The server needs the sync folders API (`/api/sync-folders`) from
+  [skandavc18/AppFlowy-Cloud](https://github.com/skandavc18/AppFlowy-Cloud);
+  AppFlowy's hosted service does not have it. Only the tokens the server's
+  GoTrue issues are kept, in the same store as other services' tokens (the
+  keyring on Linux, DPAPI on Windows, otherwise for the session); the password
+  is never stored.
+- **Work on it** ("Work on an AppFlowy server"). AppFlowy restarts on the
+  server's own sign in, and the server then holds the workspace, with live
+  co-editing, sharing and AI. Pick AppFlowy Cloud, or type your own server's
+  address; the web address for shared and published pages defaults to the
+  server's (`lib/workspace/presentation/settings/pages/backup/appflowy_server.dart`).
+  Each server has its own data folder, so the pages kept on this computer come
+  back after Leave.
+
+Regression coverage: `flutter test test/unit_test/workspace/self_hosted_cloud_test.dart test/unit_test/workspace/sync_test.dart test/widget_test/self_hosted_cloud_dialogs_test.dart`
+(against a stand-in server, `test/unit_test/workspace/self_hosted_cloud_stand_in.dart`),
+and `integration_test/desktop/settings/sign_in_page_settings_test.dart` for the
+first screen (on Linux, run it under `dbus-run-session` while AppFlowy is open).
 
 ### Need Help?
 

@@ -17,6 +17,8 @@ import 'package:appflowy/workspace/application/providers/collection_source.dart'
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_registry.dart';
+import 'package:appflowy/workspace/application/providers/provider_state.dart';
+import 'package:appflowy/workspace/application/sync/self_hosted_cloud.dart';
 import 'package:appflowy/workspace/application/sync/sync_protocol.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
@@ -78,6 +80,19 @@ Future<SyncRemote> openSyncRemote(BackupDestination destination) async {
         connection: connection,
         folderId: destination.folderId,
         folderName: destination.folderName,
+      );
+    case BackupDestinationKind.selfHostedCloud:
+      final accounts = SelfHostedCloudAccounts.instance;
+      await accounts.ensureLoaded();
+      final account = accounts.byId(destination.connectionId);
+      if (account == null) {
+        throw const ProviderFailure.authExpired(
+          'The account sync uses is no longer signed in.',
+        );
+      }
+      return SelfHostedCloudSyncRemote(
+        account: account,
+        folder: destination.folderId,
       );
     case BackupDestinationKind.none:
     case BackupDestinationKind.appflowyCloud:
@@ -366,4 +381,103 @@ class ProviderSyncRemote extends SyncRemote {
     _transfer?.close();
     _transfer = null;
   }
+}
+
+/// A sync folder on a self-hosted AppFlowy Cloud.
+///
+/// A file's [RemoteSyncFile.id] is its name, under `blobs/` for an attached
+/// file, which is all the server needs to find it again.
+class SelfHostedCloudSyncRemote extends SyncRemote {
+  SelfHostedCloudSyncRemote({
+    required this.account,
+    required this.folder,
+    SelfHostedCloud? cloud,
+  }) : _cloud = cloud ?? SelfHostedCloud.instance;
+
+  final SelfHostedCloudAccount account;
+  final String folder;
+  final SelfHostedCloud _cloud;
+
+  static const String _blobs = 'blobs/';
+
+  @override
+  String get label => '$folder · ${account.label}';
+
+  @override
+  Future<void> ensureReady() async {
+    if (!SelfHostedCloud.isValidFolderName(folder)) {
+      throw const BackupTargetError('No folder has been chosen.');
+    }
+    await _cloud.files(account, folder);
+  }
+
+  @override
+  Future<List<RemoteSyncFile>> list({bool blobs = false}) async => [
+        for (final file in await _cloud.files(account, folder, blobs: blobs))
+          if (file.name.startsWith(syncFilePrefix))
+            RemoteSyncFile(
+              name: file.name,
+              id: blobs ? '$_blobs${file.name}' : file.name,
+              bytes: file.bytes,
+              modifiedAt: file.modifiedAt,
+            ),
+      ];
+
+  @override
+  Future<RemoteSyncFile> upload(
+    String name,
+    File file, {
+    bool blob = false,
+    FileTransferProgress? onProgress,
+  }) async {
+    final stored = await _cloud.upload(
+      account,
+      folder,
+      name,
+      file,
+      blobs: blob,
+      onProgress: onProgress,
+    );
+    return RemoteSyncFile(
+      name: name,
+      id: blob ? '$_blobs$name' : name,
+      bytes: stored.bytes,
+      modifiedAt: stored.modifiedAt,
+    );
+  }
+
+  @override
+  Future<void> download(
+    RemoteSyncFile file,
+    File destination, {
+    FileTransferProgress? onProgress,
+  }) =>
+      _cloud.download(
+        account,
+        folder,
+        file.name,
+        destination,
+        blobs: file.id.startsWith(_blobs),
+        expectedBytes: file.bytes,
+        onProgress: onProgress,
+      );
+
+  @override
+  Future<String> readText(RemoteSyncFile file) async => utf8.decode(
+        await _cloud.read(
+          account,
+          folder,
+          file.name,
+          blobs: file.id.startsWith(_blobs),
+        ),
+        allowMalformed: true,
+      );
+
+  @override
+  Future<void> delete(RemoteSyncFile file) => _cloud.delete(
+        account,
+        folder,
+        file.name,
+        blobs: file.id.startsWith(_blobs),
+      );
 }

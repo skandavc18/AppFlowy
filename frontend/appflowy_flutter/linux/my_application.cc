@@ -7,6 +7,7 @@
 
 #include "display_vsync.h"
 #include "flutter/generated_plugin_registrant.h"
+#include "workflow_background.h"
 
 // Files the system asks AppFlowy to open reach Dart on this channel.
 static constexpr char kFileOpenChannel[] = "appflowy/file_open";
@@ -19,6 +20,7 @@ struct _MyApplication
   // Paths waiting for Dart, which asks for them once it is listening.
   GPtrArray *pending_files;
   gboolean dart_ready;
+  WorkflowBackground *background;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -78,7 +80,11 @@ static void my_application_activate(GApplication *application)
 
   GList* windows = gtk_application_get_windows(GTK_APPLICATION(application));
   if (windows) {
-    gtk_window_present(GTK_WINDOW(windows->data));
+    if (self->background != nullptr) {
+      self->background->ShowWindow();
+    } else {
+      gtk_window_present(GTK_WINDOW(windows->data));
+    }
     return;
   }
 
@@ -99,6 +105,11 @@ static void my_application_activate(GApplication *application)
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  delete self->background;
+  self->background = new WorkflowBackground(
+      window, fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      self->dart_entrypoint_arguments != nullptr &&
+          g_strv_contains(self->dart_entrypoint_arguments, "--background"));
 
   // A new window runs a new engine, which has to ask for files again.
   g_clear_object(&self->file_open_channel);
@@ -212,6 +223,8 @@ static gboolean my_application_local_command_line(GApplication *application, gch
 static void my_application_dispose(GObject *object)
 {
   MyApplication *self = MY_APPLICATION(object);
+  delete self->background;
+  self->background = nullptr;
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->file_open_channel);
   g_clear_pointer(&self->pending_files, g_ptr_array_unref);

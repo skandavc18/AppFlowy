@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/loading.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/application/password/password_bloc.dart';
@@ -14,6 +17,8 @@ import 'package:appflowy/workspace/presentation/settings/pages/account/password/
 import 'package:appflowy/workspace/presentation/settings/widgets/setting_third_party_login.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -133,26 +138,15 @@ class AccountSignInOutButton extends StatelessWidget {
       text: signIn
           ? LocaleKeys.settings_accountPage_login_loginLabel.tr()
           : LocaleKeys.settings_accountPage_login_logoutLabel.tr(),
-      onTap: () =>
-          signIn ? _showSignInDialog(context) : _showLogoutDialog(context),
+      onTap: () => signIn
+          ? showAccountSignInDialog(context)
+          : showAccountLogoutDialog(context, onLoggedOut: onAction),
     );
   }
+}
 
-  void _showLogoutDialog(BuildContext context) {
-    showCancelAndConfirmDialog(
-      context: context,
-      title: LocaleKeys.settings_accountPage_login_logoutLabel.tr(),
-      description: LocaleKeys.settings_menu_logoutPrompt.tr(),
-      confirmLabel: LocaleKeys.button_yes.tr(),
-      onConfirm: (_) async {
-        await getIt<AuthService>().signOut();
-        onAction();
-      },
-    );
-  }
-
-  Future<void> _showSignInDialog(BuildContext context) async {
-    await showDialog(
+/// Signs in to the chosen AppFlowy server without leaving the settings.
+Future<void> showAccountSignInDialog(BuildContext context) => showDialog(
       context: context,
       builder: (context) => BlocProvider<SignInBloc>(
         create: (context) => getIt<SignInBloc>(),
@@ -162,7 +156,44 @@ class AccountSignInOutButton extends StatelessWidget {
         ),
       ),
     );
-  }
+
+Future<void> showAccountLogoutDialog(
+  BuildContext context, {
+  required VoidCallback onLoggedOut,
+}) =>
+    showCancelAndConfirmDialog(
+      context: context,
+      title: LocaleKeys.settings_accountPage_login_logoutLabel.tr(),
+      description: LocaleKeys.settings_menu_logoutPrompt.tr(),
+      confirmLabel: LocaleKeys.button_yes.tr(),
+      onConfirm: (_) async {
+        // The confirmation closes before the blocking progress dialog opens.
+        await Future<void>.delayed(Duration.zero);
+        if (!context.mounted) return;
+        final loading = Loading(context)..start();
+        var signedOut = false;
+        try {
+          await getIt<AuthService>().signOut();
+          signedOut = true;
+        } on FlowyError catch (error) {
+          _reportLogoutFailure(error);
+        } on FileSystemException catch (error) {
+          _reportLogoutFailure(error);
+        } on StateError catch (error) {
+          _reportLogoutFailure(error);
+        } finally {
+          loading.stop();
+        }
+        if (signedOut) onLoggedOut();
+      },
+    );
+
+void _reportLogoutFailure(Object error) {
+  Log.error('Account logout failed (${error.runtimeType}).');
+  showToastNotification(
+    type: ToastificationType.error,
+    message: LocaleKeys.workspaceFolderExplorer_operationFailed.tr(),
+  );
 }
 
 class ChangePasswordSection extends StatelessWidget {

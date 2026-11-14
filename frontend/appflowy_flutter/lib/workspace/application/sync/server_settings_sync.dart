@@ -134,6 +134,8 @@ class ServerSettingsSync extends ChangeNotifier {
   Timer? _timer;
   bool _running = false;
   bool _again = false;
+  bool _suspended = false;
+  final Set<Future<void>> _attachments = {};
   Completer<void>? _rounds;
   bool _syncHere = true;
   bool _credentialsOn = true;
@@ -154,6 +156,7 @@ class ServerSettingsSync extends ChangeNotifier {
   bool get credentialsSynced => _credentialsOn;
 
   bool get isBusy => _running;
+  bool get isSuspended => _suspended;
 
   KeyValueStorage? get _kv =>
       _storage ??
@@ -167,6 +170,18 @@ class ServerSettingsSync extends ChangeNotifier {
   /// Starts following the settings of the account [uid] signed in to an
   /// AppFlowy server.
   Future<void> attach({required int uid}) async {
+    if (_suspended && _uid != null) return;
+    _suspended = false;
+    final next = _attach(uid: uid);
+    _attachments.add(next);
+    try {
+      await next;
+    } finally {
+      _attachments.remove(next);
+    }
+  }
+
+  Future<void> _attach({required int uid}) async {
     _uid = uid;
     _syncHere = (await _options())['$uid'] != false;
     try {
@@ -228,6 +243,69 @@ class ServerSettingsSync extends ChangeNotifier {
   void detach() {
     _timer?.cancel();
     _timer = null;
+  }
+
+  Future<void> suspendForSignOut() async {
+    _suspended = true;
+    detach();
+    _again = false;
+    await Future.wait(_attachments.toList());
+    await _rounds?.future;
+    await _round();
+  }
+
+  Future<void> resumeAfterSignOutFailure() async {
+    _suspended = false;
+    if (_key != null && _uid != null) await _schedule();
+  }
+
+  Future<void> forgetAccount() async {
+    if (_uid != null) {
+      final index = await _indexFile();
+      if (await index.exists()) await index.delete();
+    }
+    _uid = null;
+    _key = null;
+    _vault = null;
+    _preferences = null;
+    _outbox.clear();
+    _wasOpenHere = false;
+    _lastSyncedAt = null;
+    _lastError = '';
+    _set(ServerSettingsPhase.off);
+  }
+
+  /// Clears all local server-settings sync state for a fresh start.
+  Future<void> resetForFreshStart() async {
+    _suspended = true;
+    detach();
+    _again = false;
+    await Future.wait(_attachments.toList());
+    await _rounds?.future;
+    final vault = _vault;
+    if (vault != null) {
+      try {
+        await _keys.forget(vault.id);
+      } on Object catch (error) {
+        Log.warn('Server sync vault key could not be cleared: $error');
+      }
+    }
+    try {
+      final dir = Directory(p.join((await _home()).path, 'server_sync'));
+      if (dir.existsSync()) {
+        await dir.delete(recursive: true);
+      }
+    } on Object catch (error) {
+      Log.info('Server sync cache could not be cleared: $error');
+    }
+    try {
+      await _kv?.remove(optionsKey);
+      await _kv?.remove(vaultsKey);
+    } on Object catch (error) {
+      Log.warn('Server sync preferences could not be cleared: $error');
+    }
+    _suspended = false;
+    await forgetAccount();
   }
 
   /// Seals the account's settings with the AppFlowy password and starts — or
@@ -370,7 +448,7 @@ class ServerSettingsSync extends ChangeNotifier {
   /// Runs a round now, or right after the one that is running, and returns
   /// once a round that started after this was asked for has finished.
   Future<void> syncNow() {
-    if (_key == null) {
+    if (_suspended || _key == null) {
       return Future<void>.value();
     }
     final running = _rounds;
@@ -385,7 +463,7 @@ class ServerSettingsSync extends ChangeNotifier {
         do {
           _again = false;
           await _round();
-        } while (_again);
+        } while (_again && !_suspended);
       } finally {
         _running = false;
         rounds.complete();
@@ -399,6 +477,10 @@ class ServerSettingsSync extends ChangeNotifier {
   /// done.
   Future<void> _schedule() {
     _timer?.cancel();
+    if (_suspended) {
+      _timer = null;
+      return Future.value();
+    }
     _timer = Timer.periodic(interval, (_) => unawaited(syncNow()));
     _set(ServerSettingsPhase.idle);
     return syncNow();
@@ -629,8 +711,9 @@ class ServerSettingsSync extends ChangeNotifier {
     final before = vaults['$uid'];
     if (before is String && before.isNotEmpty && before != key.vaultId) {
       final held = _key;
-      final old =
-          held != null && held.vaultId == before ? held : await _keys.read(before);
+      final old = held != null && held.vaultId == before
+          ? held
+          : await _keys.read(before);
       if (old != null) {
         final file = await _indexFile();
         final index = await SyncPreferencesIndex.load(file, key: old);

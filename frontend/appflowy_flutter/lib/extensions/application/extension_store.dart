@@ -76,6 +76,7 @@ class ExtensionStore extends ChangeNotifier {
   String? _root;
   bool _loading = false;
   bool _loaded = false;
+  Future<void>? _reload;
 
   List<LoadedExtension> get extensions => List.unmodifiable(_extensions);
 
@@ -122,16 +123,21 @@ class ExtensionStore extends ChangeNotifier {
   }
 
   Future<void> ensureLoaded() async {
-    if (_loaded || _loading) {
+    if (_loaded) {
       return;
     }
     await reload();
   }
 
-  Future<void> reload() async {
-    if (_loading) {
-      return;
-    }
+  Future<void> reload() {
+    final running = _reload;
+    if (running != null) return running;
+    final next = _read().whenComplete(() => _reload = null);
+    _reload = next;
+    return next;
+  }
+
+  Future<void> _read() async {
     _loading = true;
     notifyListeners();
     try {
@@ -284,6 +290,7 @@ class ExtensionStore extends ChangeNotifier {
   }
 
   Future<void> _readDisabled() async {
+    _disabled.clear();
     if (!getIt.isRegistered<KeyValueStorage>()) {
       return;
     }
@@ -322,6 +329,16 @@ class ExtensionStore extends ChangeNotifier {
   static String _safeId(String name) {
     final cleaned = name.toLowerCase().replaceAll(RegExp('[^a-z0-9_-]'), '-');
     return cleaned.isEmpty ? 'extension' : cleaned;
+  }
+
+  Future<void> resetAccount() async {
+    await stopWatching();
+    await _reload;
+    _extensions.clear();
+    _disabled.clear();
+    _root = null;
+    _loaded = false;
+    notifyListeners();
   }
 
   @override

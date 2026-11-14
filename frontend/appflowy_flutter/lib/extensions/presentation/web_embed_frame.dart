@@ -62,12 +62,17 @@ class WebEmbedFrame extends StatefulWidget {
   const WebEmbedFrame({
     super.key,
     required this.url,
+    this.browserUrl,
     this.style = const WebEmbedPageStyle(),
     this.options = const WebEmbedViewOptions(),
     this.placeholder,
   });
 
   final String url;
+
+  /// What "Open in browser" opens when the page cannot be shown here, where
+  /// that is not [url] itself.
+  final String? browserUrl;
   final WebEmbedPageStyle style;
   final WebEmbedViewOptions options;
 
@@ -389,13 +394,13 @@ class _WebEmbedFrameState extends State<WebEmbedFrame> {
   Widget build(BuildContext context) {
     if (!canShowWebEmbedPages) {
       return WebEmbedFailure(
-        url: widget.url,
+        url: widget.browserUrl ?? widget.url,
         message: 'Pages cannot be shown in place on this device.',
       );
     }
     if (_failed) {
       return WebEmbedFailure(
-        url: widget.url,
+        url: widget.browserUrl ?? widget.url,
         message: 'This page could not be loaded.',
         onRetry: () => _restart(reload: false),
       );

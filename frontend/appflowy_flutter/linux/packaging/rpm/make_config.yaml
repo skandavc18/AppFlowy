@@ -36,3 +36,4 @@ supported_mime_type:
 requires:
   - libnotify
   - keybinder
+  - libayatana-appindicator-gtk3

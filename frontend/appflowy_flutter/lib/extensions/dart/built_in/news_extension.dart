@@ -153,6 +153,7 @@ class NewsFeed {
   }
 
   Future<void> refresh(String url, {bool force = false}) async {
+    if (_context.scope.isClosed) return;
     final wanted = url.trim();
     if (wanted.isEmpty || _inFlight.contains(wanted)) {
       return;

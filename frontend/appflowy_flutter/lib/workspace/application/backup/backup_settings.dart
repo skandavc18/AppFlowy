@@ -445,4 +445,31 @@ class BackupSettings extends ChangeNotifier {
     _loaded = true;
     _loading = Future<void>.value();
   }
+
+  /// Clears all backup settings, ledger, and remembered keys on this computer
+  /// for a fresh start.
+  Future<void> resetForFreshStart() async {
+    _wipeKey();
+    _policy = const BackupPolicy();
+    _ledger = const <BackupCopy>[];
+    _lastOutcome = null;
+    _lastRunAt = null;
+    _loaded = false;
+    _loading = null;
+    try {
+      await forgetRememberedPassphrase();
+    } on Object catch (error) {
+      Log.warn('Backup passphrase secret could not be cleared: $error');
+    }
+    final storage = _kv;
+    if (storage != null) {
+      try {
+        await storage.remove(policyKey);
+        await storage.remove(ledgerKey);
+      } on Object catch (error) {
+        Log.warn('Backup settings could not be cleared: $error');
+      }
+    }
+    notifyListeners();
+  }
 }

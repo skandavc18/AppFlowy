@@ -20,6 +20,9 @@ import 'package:appflowy/workspace/application/settings/appearance/appearance_cu
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
 import 'package:appflowy/workspace/application/settings/notifications/notification_settings_cubit.dart';
 import 'package:appflowy/workspace/application/sync/app_synced_preferences.dart';
+import 'package:appflowy/workspace/application/sync/synced_automation_files.dart';
+import 'package:appflowy/workflows/application/workflow_manager.dart';
+import 'package:appflowy/extensions/application/extension_manager.dart';
 import 'package:appflowy/workspace/application/sync/server_settings_sync.dart';
 import 'package:appflowy/workspace/application/sync/sync_engine.dart';
 import 'package:appflowy/workspace/application/view/local_page_store.dart';
@@ -77,6 +80,7 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
         writeNotifications: _writeNotifications,
         onApplied: _onSettingsArrived,
       ),
+      onFilesApplied: _onFilesArrived,
     );
     _engine.notify = (message, {bool isError = false}) {
       showToastNotification(
@@ -100,6 +104,7 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
   static bool _triedResealing = false;
 
   void _onEngineChanged() {
+    if (_engine.isSuspended) return;
     final phase = _engine.phase;
     if (phase == SyncPhase.locked &&
         !_askedForFolderPassword &&
@@ -174,7 +179,7 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
   /// Shows settings that arrived from another computer where something on
   /// screen holds them. The rest are read where they are used, or at the next
   /// start.
-  void _onSettingsArrived(Set<String> keys) {
+  Future<void> _onSettingsArrived(Set<String> keys) async {
     if (!mounted) {
       return;
     }
@@ -211,6 +216,27 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
       if (place != null) {
         unawaited(LocalPageStore.instance.reload(place));
       }
+    }
+    await _onFilesArrived({
+      for (final key in keys)
+        if (isAutomationFileSyncKey(key))
+          key.substring(automationFileSyncPrefix.length),
+    });
+    if (keys.contains(preferenceSyncKey('appflowy_extensions_disabled')) ||
+        keys.contains(preferenceSyncKey(DartExtensionHost.disabledKey))) {
+      await ExtensionManager.instance.reloadSyncedFiles();
+    }
+  }
+
+  Future<void> _onFilesArrived(Set<String> paths) async {
+    if (paths.any((path) => path.startsWith('workflows/'))) {
+      await WorkflowManager.instance.reloadSyncedFiles();
+    }
+    if (paths.any(
+      (path) =>
+          path.startsWith('extensions/') || path.startsWith('extension_data/'),
+    )) {
+      await ExtensionManager.instance.reloadSyncedFiles();
     }
   }
 
@@ -249,6 +275,7 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
         preferences: AppSyncedPreferences(
           dataPath: () => getIt<ApplicationDataStorage>().getPath(),
           workspaceId: () => widget.workspaceId,
+          syncAutomationFiles: true,
           writeAppearance: _writeAppearance,
           writeDateTime: _writeDateTime,
           writeNotifications: _writeNotifications,
@@ -258,6 +285,7 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
     await server.attach(uid: widget.userProfile.id.toInt());
     final phase = server.phase;
     if (!mounted ||
+        server.isSuspended ||
         _askedForServerPassword ||
         FlowyRunner.currentMode.isTest ||
         (phase != ServerSettingsPhase.locked &&

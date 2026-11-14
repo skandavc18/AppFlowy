@@ -19,13 +19,18 @@ import 'package:flutter/material.dart';
 /// when the extension is switched off, so an extension never has to write its
 /// own teardown.
 class DartExtensionContext implements ExtensionContext {
-  DartExtensionContext({required this.info}) : scope = ExtensionScope(info.id);
+  DartExtensionContext({
+    required this.info,
+    ExtensionDataStore? dataStore,
+  })  : scope = ExtensionScope(info.id),
+        _dataStore = dataStore ?? ExtensionDataStore.instance;
 
   @override
   final DartExtensionInfo info;
 
   @override
   final ExtensionScope scope;
+  final ExtensionDataStore _dataStore;
 
   late final ExtensionBlocks blocks = ExtensionBlocks._(this);
   late final ExtensionCommands commands = ExtensionCommands._(this);
@@ -235,28 +240,36 @@ class ExtensionData {
   ExtensionData._(this._context);
 
   final DartExtensionContext _context;
+  ExtensionDataStore get _store => _context._dataStore;
+  bool _isCurrent() => !_context.scope.isClosed;
 
   String _qualify(String key) =>
       ExtensionDataStore.qualify(_context.info.id, key);
 
-  Object? read(String key) => ExtensionDataStore.instance.read(_qualify(key));
+  Object? read(String key) => _isCurrent() ? _store.read(_qualify(key)) : null;
 
   ExtensionDataEntry? entryFor(String key) =>
-      ExtensionDataStore.instance.entryFor(_qualify(key));
+      _isCurrent() ? _store.entryFor(_qualify(key)) : null;
 
   Future<void> write(String key, Object? value, {Duration? staleAfter}) =>
-      ExtensionDataStore.instance
-          .write(_qualify(key), value, staleAfter: staleAfter);
+      _store.write(
+        _qualify(key),
+        value,
+        staleAfter: staleAfter,
+        isCurrent: _isCurrent,
+      );
 
   Future<void> remove(String key) =>
-      ExtensionDataStore.instance.remove(_qualify(key));
+      _store.remove(_qualify(key), isCurrent: _isCurrent);
 
   /// Rebuilds whatever listens when this key changes.
-  ValueListenable<Object?> listenable(String key) =>
-      ExtensionDataStore.instance.listenable(_qualify(key));
+  ValueListenable<Object?> listenable(String key) => _isCurrent()
+      ? _store.listenable(_qualify(key))
+      : const AlwaysStoppedAnimation<Object?>(null);
 
   /// Raised whenever anything in the store changes.
-  ValueListenable<int> get revision => ExtensionDataStore.instance.revision;
+  ValueListenable<int> get revision =>
+      _isCurrent() ? _store.revision : const AlwaysStoppedAnimation<int>(0);
 }
 
 /// Work on a clock, sharing the one scheduler every action already uses.

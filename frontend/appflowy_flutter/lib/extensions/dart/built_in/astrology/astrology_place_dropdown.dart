@@ -587,29 +587,49 @@ class _AstrologyPlaceDropdownState extends State<AstrologyPlaceDropdown>
                             maxHeight: placement.maxHeight / 2,
                           ),
                           child: ClipRect(
-                            child: Semantics(
-                              link: true,
-                              child: TextButton(
-                                onPressed: () => unawaited(_openAttribution()),
-                                style: TextButton.styleFrom(
-                                  alignment: Alignment.centerLeft,
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
+                            child: widget.results
+                                    .any((place) => place.fromGoogle)
+                                // Google asks for its name, not a link.
+                                ? Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    child: Text(
+                                      'Google Maps',
+                                      key: const ValueKey(
+                                        'astrology-place-attribution',
+                                      ),
+                                      style: menu.subtitleStyle
+                                          .copyWith(color: palette.muted),
+                                    ),
+                                  )
+                                : Semantics(
+                                    link: true,
+                                    child: TextButton(
+                                      onPressed: () =>
+                                          unawaited(_openAttribution()),
+                                      style: TextButton.styleFrom(
+                                        alignment: Alignment.centerLeft,
+                                        minimumSize: Size.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 8,
+                                        ),
+                                        foregroundColor: palette.muted,
+                                        overlayColor: palette.hover,
+                                        textStyle: menu.subtitleStyle,
+                                      ),
+                                      child: const Text(
+                                        'Photon · © OpenStreetMap contributors',
+                                        key: ValueKey(
+                                          'astrology-place-attribution',
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  foregroundColor: palette.muted,
-                                  overlayColor: palette.hover,
-                                  textStyle: menu.subtitleStyle,
-                                ),
-                                child: const Text(
-                                  'Photon · © OpenStreetMap contributors',
-                                  key: ValueKey('astrology-place-attribution'),
-                                ),
-                              ),
-                            ),
                           ),
                         ),
                       ],

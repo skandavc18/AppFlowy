@@ -15,6 +15,7 @@ class MapSuggestion {
     required this.point,
     this.subtitle = '',
     this.pinId,
+    this.source,
   });
 
   final String title;
@@ -23,6 +24,9 @@ class MapSuggestion {
 
   /// Set when the suggestion is a row already on the map.
   final String? pinId;
+
+  /// Who found the place, when it was looked up.
+  final GeocodeSource? source;
 
   bool get isPin => pinId != null;
 
@@ -69,6 +73,7 @@ class MapSuggestionCache {
                 title: result.name.isEmpty ? result.address : result.name,
                 subtitle: result.address,
                 point: result.point,
+                source: result.source,
               ),
             )
             .toList();
@@ -141,6 +146,11 @@ class MapSuggestionList extends StatelessWidget {
 
   /// The suggestion the keyboard is on, drawn as if hovered.
   final int? highlighted;
+
+  /// Places from Google, shown without Google's map, carry its credit.
+  bool get _fromGoogle => suggestions.any(
+        (suggestion) => suggestion.source == GeocodeSource.google,
+      );
 
   bool get _alreadyOffered => suggestions.any(
         (suggestion) =>
@@ -227,7 +237,31 @@ class MapSuggestionList extends StatelessWidget {
                   ],
                 ),
               ),
+            if (_fromGoogle) GoogleMapsCredit(palette: palette),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The credit Google asks for wherever its places are listed.
+class GoogleMapsCredit extends StatelessWidget {
+  const GoogleMapsCredit({super.key, required this.palette});
+
+  final MapPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 5),
+      child: Text(
+        'Google Maps',
+        textAlign: TextAlign.end,
+        style: TextStyle(
+          fontSize: 10.5,
+          height: 1.2,
+          color: palette.textMuted.withValues(alpha: 0.8),
         ),
       ),
     );

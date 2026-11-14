@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/billing_policy.dart';
+import 'package:appflowy/user/application/account_automation_session.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart';
@@ -95,7 +96,9 @@ class UserBackendService implements IUserBackendService {
   }
 
   static Future<FlowyResult<void, FlowyError>> signOut() {
-    return UserEventSignOut().send();
+    return AccountAutomationSession.instance.signOut(
+      () => UserEventSignOut().send(),
+    );
   }
 
   Future<FlowyResult<void, FlowyError>> initUser() async {
@@ -315,6 +318,8 @@ class UserBackendService implements IUserBackendService {
 
   // NOTE: This function is irreversible and will delete the current user's account.
   static Future<FlowyResult<void, FlowyError>> deleteCurrentAccount() {
-    return UserEventDeleteAccount().send();
+    return AccountAutomationSession.instance.signOut(
+      () => UserEventDeleteAccount().send(),
+    );
   }
 }

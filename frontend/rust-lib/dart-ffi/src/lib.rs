@@ -138,16 +138,21 @@ pub extern "C" fn init_sdk(_port: i64, data: *mut c_char) -> i64 {
 
   let config = AppFlowyCoreConfig::new(
     app_version,
-    configuration.custom_app_path,
-    configuration.origin_app_path,
+    configuration.custom_app_path.clone(),
+    configuration.origin_app_path.clone(),
     configuration.device_id,
     configuration.platform,
     DEFAULT_NAME.to_string(),
   );
 
-  if let Some(core) = &*DART_APPFLOWY_CORE.core.write().unwrap() {
+  // Drop the previous core and its worker channel before touching disk, so
+  // open SQLite / CollabKVDB / KVStorePreferences handles are released.
+  DART_APPFLOWY_CORE.sender.write().unwrap().take();
+  if let Some(core) = DART_APPFLOWY_CORE.core.write().unwrap().take() {
     core.close_db();
+    drop(core);
   }
+  apply_pending_app_reset(&configuration.root);
 
   let log_stream = LOG_STREAM_ISOLATE
     .write()
@@ -168,6 +173,49 @@ pub extern "C" fn init_sdk(_port: i64, data: *mut c_char) -> i64 {
   *DART_APPFLOWY_CORE.core.write().unwrap() = runtime
     .block_on(async move { Some(AppFlowyCore::new(config, cloned_runtime, log_stream).await) });
   0
+}
+
+const PENDING_APP_RESET_FILE: &str = "pending_app_reset.json";
+
+/// Applies a scheduled full local reset after the previous [AppFlowyCore] has
+/// dropped all database handles and before the next one opens them.
+fn apply_pending_app_reset(root: &str) {
+  let marker = std::path::Path::new(root).join(PENDING_APP_RESET_FILE);
+  if !marker.exists() {
+    return;
+  }
+  let raw = match std::fs::read(&marker) {
+    Ok(bytes) => bytes,
+    Err(err) => {
+      warn!("[Reset] could not read pending_app_reset.json: {}", err);
+      let _ = std::fs::remove_file(&marker);
+      return;
+    },
+  };
+  let _ = std::fs::remove_file(&marker);
+
+  let parsed: serde_json::Value = match serde_json::from_slice(&raw) {
+    Ok(value) => value,
+    Err(err) => {
+      warn!("[Reset] invalid pending_app_reset.json: {}", err);
+      return;
+    },
+  };
+
+  if let Some(paths) = parsed.get("paths").and_then(|v| v.as_array()) {
+    for entry in paths.iter().filter_map(|v| v.as_str()) {
+      let target = std::path::Path::new(entry);
+      if target.as_os_str().is_empty() || target.parent().is_none() || target.parent() == Some(target) {
+        continue;
+      }
+      if target.exists() {
+        info!("[Reset] removing data directory {:?}", target);
+        if let Err(err) = std::fs::remove_dir_all(target) {
+          warn!("[Reset] could not remove {:?}: {}", target, err);
+        }
+      }
+    }
+  }
 }
 
 #[no_mangle]

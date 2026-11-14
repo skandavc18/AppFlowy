@@ -32,8 +32,7 @@ class _DesktopSignInScreenState extends State<DesktopSignInScreen>
   Widget build(BuildContext context) {
     // A computer pointed at a self-hosted AppFlowy server signs in to it.
     // Everywhere else the first screen asks where the workspace should live.
-    final selfHosted = isAuthEnabled &&
-        currentCloudType() == AuthenticatorType.appflowyCloudSelfHost;
+    final selfHosted = isServerChosen;
 
     return BlocBuilder<SignInBloc, SignInState>(
       builder: (context, state) {
@@ -104,17 +103,18 @@ class _DesktopSignInScreenState extends State<DesktopSignInScreen>
         VSpace(theme.spacing.xxl),
         const SignInAgreement(),
         const Spacer(),
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 20,
+          runSpacing: 4,
           children: [
             const DesktopSignInSettingsButton(),
-            const HSpace(20),
             AFGhostTextButton(
               text: LocaleKeys.firstRun_anotherWay.tr(),
               size: AFButtonSize.s,
               onTap: () => chooseAnotherWayToStart(),
             ),
-            const HSpace(20),
             const SignInAnonymousButtonV2(),
           ],
         ),

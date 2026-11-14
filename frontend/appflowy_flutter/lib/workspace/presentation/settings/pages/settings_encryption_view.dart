@@ -6,23 +6,47 @@ import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/presentation/encryption/encryption_dialogs.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
+import 'package:appflowy/workspace/presentation/settings/shared/settings_category_spacer.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
-/// Settings ▸ Encryption.
-///
-/// One passphrase for the workspace, and the rules about when it is asked for.
-/// Everything protected anywhere — a page, a folder, a table, a block, a
-/// column — is protected with this one key, so there is one place to change it
-/// and one place to turn it off.
-class SettingsEncryptionView extends StatefulWidget {
+/// Settings ▸ Encryption (now embedded in the unified Account & App page).
+class SettingsEncryptionView extends StatelessWidget {
   const SettingsEncryptionView({super.key});
 
   @override
-  State<SettingsEncryptionView> createState() => _SettingsEncryptionViewState();
+  Widget build(BuildContext context) {
+    return SettingsBody(
+      title: LocaleKeys.encryption_settingsTitle.tr(),
+      description: LocaleKeys.encryption_settingsDescription.tr(),
+      children: const [
+        SettingsEncryptionSections(showPassphraseChange: true),
+      ],
+    );
+  }
 }
 
-class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
+/// Workspace and page protection controls, driven by the single AppFlowy
+/// password.
+class SettingsEncryptionSections extends StatefulWidget {
+  const SettingsEncryptionSections({
+    super.key,
+    this.showPassphraseChange = false,
+  });
+
+  /// When embedded below [AppPasswordSettingsSection], changing the AppFlowy
+  /// password already lives right above; only legacy separate-key workspaces
+  /// need a migration button here.
+  final bool showPassphraseChange;
+
+  @override
+  State<SettingsEncryptionSections> createState() =>
+      _SettingsEncryptionSectionsState();
+}
+
+class _SettingsEncryptionSectionsState
+    extends State<SettingsEncryptionSections> {
   EncryptionVault get _vault => EncryptionVault.instance;
 
   @override
@@ -51,9 +75,10 @@ class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
     final policy = _vault.policy;
     final configured = _vault.isConfigured;
 
-    return SettingsBody(
-      title: LocaleKeys.encryption_settingsTitle.tr(),
-      description: LocaleKeys.encryption_settingsDescription.tr(),
+    return SeparatedColumn(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      separatorBuilder: () => const SettingsCategorySpacer(),
       children: [
         SettingsCategory(
           title: LocaleKeys.encryption_keyTitle.tr(),
@@ -71,10 +96,7 @@ class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
                 description: LocaleKeys.encryption_setBody.tr(),
                 icon: Icons.lock_outline_rounded,
                 onPressed: () async {
-                  final done = await showSetWorkspacePassphraseDialog(
-                    context,
-                    gateWholeWorkspace: true,
-                  );
+                  final done = await showSetWorkspacePassphraseDialog(context);
                   if (done && context.mounted) {
                     reportEncryptionOutcome(
                       context: context,
@@ -103,25 +125,29 @@ class _SettingsEncryptionViewState extends State<SettingsEncryptionView> {
                   }
                 },
               ),
-              const SizedBox(height: 12),
-              _Action(
-                label: LocaleKeys.encryption_changeTitle.tr(),
-                description: policy.usesAppPassword
-                    ? LocaleKeys.encryption_changeBodyApp.tr()
-                    : LocaleKeys.encryption_changeBody.tr(),
-                icon: Icons.password_rounded,
-                onPressed: () async {
-                  final done =
-                      await showChangeWorkspacePassphraseDialog(context);
-                  if (done && context.mounted) {
-                    reportEncryptionOutcome(
-                      context: context,
-                      succeeded: true,
-                      succeededMessage: LocaleKeys.encryption_changed.tr(),
-                    );
-                  }
-                },
-              ),
+              if (widget.showPassphraseChange || !policy.usesAppPassword) ...[
+                const SizedBox(height: 12),
+                _Action(
+                  label: policy.usesAppPassword
+                      ? LocaleKeys.encryption_changeTitle.tr()
+                      : LocaleKeys.encryption_useAppPassword.tr(),
+                  description: policy.usesAppPassword
+                      ? LocaleKeys.encryption_changeBodyApp.tr()
+                      : LocaleKeys.encryption_useAppPasswordHint.tr(),
+                  icon: Icons.password_rounded,
+                  onPressed: () async {
+                    final done =
+                        await showChangeWorkspacePassphraseDialog(context);
+                    if (done && context.mounted) {
+                      reportEncryptionOutcome(
+                        context: context,
+                        succeeded: true,
+                        succeededMessage: LocaleKeys.encryption_changed.tr(),
+                      );
+                    }
+                  },
+                ),
+              ],
               const SizedBox(height: 12),
               _Action(
                 label: LocaleKeys.encryption_removeTitle.tr(),

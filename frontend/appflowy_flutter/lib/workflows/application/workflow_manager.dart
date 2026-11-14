@@ -47,15 +47,29 @@ class WorkflowManager extends ChangeNotifier {
   late final WorkflowWebhookServer webhooks;
 
   bool _started = false;
+  Future<void>? _starting;
+  Timer? _backgroundTimer;
   bool _launchAtLogin = false;
+  bool _launchAtLoginBeforeStop = false;
   bool _quitting = false;
+  String? _backgroundErrorKey;
 
   bool get isStarted => _started;
 
-  /// Whether Windows starts AppFlowy, hidden, when somebody signs in.
+  /// Whether the operating system starts AppFlowy hidden at sign-in.
   bool get launchAtLogin => _launchAtLogin;
 
-  Future<void> start() async {
+  String? get backgroundErrorKey => _backgroundErrorKey;
+
+  Future<void> start() {
+    final running = _starting;
+    if (running != null) return running;
+    final next = _start().whenComplete(() => _starting = null);
+    _starting = next;
+    return next;
+  }
+
+  Future<void> _start() async {
     if (_started) {
       return;
     }
@@ -78,6 +92,9 @@ class WorkflowManager extends ChangeNotifier {
       await applyBackgroundSettings();
       _launchAtLogin =
           await WorkflowBackground.instance.isLaunchAtLoginEnabled();
+      if (_backgroundErrorKey != null && _launchAtLogin) {
+        await setLaunchAtLogin(false);
+      }
       // Started hidden at sign-in, but nobody asked to keep running: a hidden
       // process with no icon could never be found again.
       if (WorkflowBackground.startedInBackground &&
@@ -85,7 +102,7 @@ class WorkflowManager extends ChangeNotifier {
         await WorkflowBackground.instance.showWindow();
       }
       // The labels were written before translations finished loading.
-      Timer(
+      _backgroundTimer = Timer(
         const Duration(seconds: 4),
         () => unawaited(applyBackgroundSettings()),
       );
@@ -98,6 +115,59 @@ class WorkflowManager extends ChangeNotifier {
 
   // ------------------------------------------------------------- background
 
+  Future<void> stop() async {
+    await _starting;
+    _started = false;
+    _backgroundTimer?.cancel();
+    _backgroundTimer = null;
+    store.removeListener(_syncWebhookServer);
+    scheduler.removeListener(_syncWebhookServer);
+    await webhooks.stop();
+    await scheduler.stopAndDrain();
+    await Future.wait([store.flush(), log.flush()]);
+    if (WorkflowBackground.isSupported) {
+      _launchAtLoginBeforeStop = _launchAtLogin ||
+          await WorkflowBackground.instance.isLaunchAtLoginEnabled();
+      await WorkflowBackground.instance.configure(
+        keepRunning: false,
+        tooltip: 'AppFlowy',
+        menu: const [],
+      );
+      if (!await WorkflowBackground.instance.setLaunchAtLogin(false)) {
+        throw StateError('AppFlowy could not disable workflow startup.');
+      }
+    }
+    _launchAtLogin = false;
+  }
+
+  Future<void> resumeAfterSignOutFailure() async {
+    final restoreStartup = _launchAtLoginBeforeStop;
+    await start();
+    if (restoreStartup && store.settings.keepRunningInBackground) {
+      if (!await setLaunchAtLogin(true)) {
+        throw StateError('AppFlowy could not restore workflow startup.');
+      }
+    }
+    _launchAtLoginBeforeStop = false;
+  }
+
+  Future<void> resetAccount() async {
+    scheduler.resetAccount();
+    await store.resetAccount();
+    await log.resetAccount();
+    _backgroundErrorKey = null;
+    _launchAtLoginBeforeStop = false;
+    _quitting = false;
+    notifyListeners();
+  }
+
+  Future<void> reloadSyncedFiles() async {
+    await store.reload();
+    await log.reload();
+    if (_started) await applyBackgroundSettings();
+    notifyListeners();
+  }
+
   Future<void> applyBackgroundSettings() async {
     if (!WorkflowBackground.isSupported) {
       return;
@@ -105,7 +175,7 @@ class WorkflowManager extends ChangeNotifier {
     final settings = store.settings;
     final enabled =
         store.workflows.where((workflow) => workflow.enabled).length;
-    await WorkflowBackground.instance.configure(
+    final configured = await WorkflowBackground.instance.configure(
       keepRunning: settings.keepRunningInBackground,
       tooltip: settings.pausedAll
           ? _label(
@@ -136,6 +206,20 @@ class WorkflowManager extends ChangeNotifier {
         ),
       ],
     );
+    final previousError = _backgroundErrorKey;
+    if (settings.keepRunningInBackground) {
+      if (configured) {
+        _backgroundErrorKey = null;
+      } else {
+        _backgroundErrorKey =
+            LocaleKeys.workflows_background_configurationFailed;
+        await store.updateSettings(
+          store.settings.copyWith(keepRunningInBackground: false),
+        );
+        await WorkflowBackground.instance.showWindow();
+      }
+    }
+    if (_backgroundErrorKey != previousError) notifyListeners();
   }
 
   /// A translation, or [fallback] while translations are not loaded yet.
@@ -222,7 +306,7 @@ class WorkflowManager extends ChangeNotifier {
         before.pausedAll != settings.pausedAll) {
       await applyBackgroundSettings();
     }
-    if (!settings.keepRunningInBackground && _launchAtLogin) {
+    if (!store.settings.keepRunningInBackground && _launchAtLogin) {
       await setLaunchAtLogin(false);
     }
     if (before.pausedAll && !settings.pausedAll) {
@@ -234,6 +318,12 @@ class WorkflowManager extends ChangeNotifier {
   Future<bool> setLaunchAtLogin(bool enabled) async {
     final done = await WorkflowBackground.instance.setLaunchAtLogin(enabled);
     _launchAtLogin = await WorkflowBackground.instance.isLaunchAtLoginEnabled();
+    if (!done) {
+      _backgroundErrorKey = LocaleKeys.workflows_background_launchAtLoginFailed;
+    } else if (_backgroundErrorKey ==
+        LocaleKeys.workflows_background_launchAtLoginFailed) {
+      _backgroundErrorKey = null;
+    }
     notifyListeners();
     return done;
   }

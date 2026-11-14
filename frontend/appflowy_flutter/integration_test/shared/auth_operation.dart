@@ -1,7 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/widgets.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/account.dart';
-import 'package:appflowy/workspace/presentation/settings/widgets/setting_appflowy_cloud.dart';
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -50,24 +49,5 @@ extension AppFlowyAuthTest on WidgetTester {
     final Toggle switchWidget = widget(finder);
     final isSwitched = switchWidget.value;
     assert(isSwitched == value);
-  }
-
-  void assertAppFlowyCloudEnableSyncSwitchValue(bool value) {
-    assertToggleValue(
-      find.descendant(
-        of: find.byType(AppFlowyCloudEnableSync),
-        matching: find.byWidgetPredicate((widget) => widget is Toggle),
-      ),
-      value,
-    );
-  }
-
-  Future<void> toggleEnableSync(Type syncButton) async {
-    final finder = find.descendant(
-      of: find.byType(syncButton),
-      matching: find.byWidgetPredicate((widget) => widget is Toggle),
-    );
-
-    await tapButton(finder);
   }
 }

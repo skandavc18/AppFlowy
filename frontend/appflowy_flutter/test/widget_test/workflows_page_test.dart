@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
+import 'package:appflowy/workflows/application/workflow_background.dart';
 import 'package:appflowy/workflows/application/workflow_manager.dart';
 import 'package:appflowy/workflows/application/workflow_model.dart';
 import 'package:appflowy/workflows/application/workflow_run_log.dart';
@@ -15,6 +14,7 @@ import 'package:appflowy/workspace/application/settings/appearance/desktop_appea
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,6 +26,35 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     EasyLocalization.logger.enableLevels = [];
     await EasyLocalization.ensureInitialized();
+  });
+
+  setUp(() {
+    var launchAtLogin = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel(WorkflowBackground.channelName),
+      (call) async {
+        switch (call.method) {
+          case 'configure':
+            return true;
+          case 'setLaunchAtLogin':
+            launchAtLogin =
+                (call.arguments as Map<Object?, Object?>)['enabled']! as bool;
+            return true;
+          case 'isLaunchAtLoginEnabled':
+            return launchAtLogin;
+        }
+        return null;
+      },
+    );
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel(WorkflowBackground.channelName),
+      null,
+    );
   });
 
   Future<WorkflowManager> manager() async {
@@ -91,7 +120,7 @@ void main() {
       final enabled = workflows.store.byId(created.id)!;
       expect(enabled.enabled, isTrue);
       expect(enabled.enabledAt, isNotNull);
-      if (Platform.isWindows) {
+      if (WorkflowBackground.isSupported) {
         expect(
           find.text('Workflows only run while AppFlowy is open.'),
           findsOneWidget,
@@ -146,6 +175,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final appearance in ['light', 'dark', 'paper']) {
+    testWidgets('$appearance: a tray failure leaves background mode off',
+        (tester) async {
+      if (!WorkflowBackground.isSupported) return;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel(WorkflowBackground.channelName),
+        (call) async => call.method == 'configure' ? false : null,
+      );
+      wide(tester);
+      final workflows = await manager();
+      await tester.pumpWidget(
+        _app(appearance, WorkflowsPage(manager: workflows)),
+      );
+      await tester.pumpAndSettle();
+      await tester
+          .tap(find.byKey(const ValueKey('workflow-background-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('workflow-keep-running')),
+          matching: find.byType(WorkflowSwitch),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(workflows.store.settings.keepRunningInBackground, isFalse);
+      expect(
+        find.textContaining('Background mode could not start.'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<WorkflowSwitch>(
+              find.descendant(
+                of: find.byKey(const ValueKey('workflow-launch-at-login')),
+                matching: find.byType(WorkflowSwitch),
+              ),
+            )
+            .onChanged,
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('background settings are kept and shown on the page',
       (tester) async {
     wide(tester);
@@ -166,13 +240,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(workflows.store.settings.pausedAll, isTrue);
 
-    if (Platform.isWindows) {
+    if (WorkflowBackground.isSupported) {
       expect(
         tester
             .widget<WorkflowSwitch>(switchIn('workflow-launch-at-login'))
             .onChanged,
         isNull,
-        reason: 'starting with Windows only makes sense when kept running',
+        reason: 'starting at sign-in only makes sense when kept running',
       );
       await tester.tap(switchIn('workflow-keep-running'));
       await tester.pumpAndSettle();

@@ -1,18 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
 import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/shared/maps/app_map_toolbar.dart';
+import 'package:appflowy/shared/maps/google/google_maps_pages.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_backend/log.dart';
-import 'package:appflowy_linux_webview/appflowy_linux_webview.dart';
 import 'package:flutter/material.dart';
 
 import 'google_maps_page.dart';
@@ -40,13 +38,8 @@ class GoogleMapsEmbedView extends StatefulWidget {
   @visibleForTesting
   static GoogleMapsPages? debugPages;
 
-  /// Keys Google refused this session, with its reason. A spent daily quota
-  /// is not worth asking about again on every map, so the app's own map is
-  /// drawn for them until the key changes or the app starts again.
-  static final Map<String, String> _refused = {};
-
-  @visibleForTesting
-  static void debugForgetRefusals() => _refused.clear();
+  static final GoogleMapsPages _linux =
+      GoogleMapsPages.linux(name: 'map.html', html: googleMapsPageHtml);
 
   @override
   State<GoogleMapsEmbedView> createState() => _GoogleMapsEmbedViewState();
@@ -54,7 +47,7 @@ class GoogleMapsEmbedView extends StatefulWidget {
 
 class _GoogleMapsEmbedViewState extends State<GoogleMapsEmbedView> {
   GoogleMapsPages get _pages =>
-      GoogleMapsEmbedView.debugPages ?? GoogleMapsPages.linux;
+      GoogleMapsEmbedView.debugPages ?? GoogleMapsEmbedView._linux;
 
   bool? _supported;
 
@@ -105,14 +98,11 @@ class _GoogleMapsEmbedViewState extends State<GoogleMapsEmbedView> {
         "Google's map could not be shown (${failure.reason}); "
         "drawing the app's own map instead.",
       );
-    } else if (GoogleMapsEmbedView._refused[key] == null) {
+    } else if (GoogleMapsRefusals.remember(key, failure.reason)) {
       Log.warn(
         'Google refused the Maps key for its map (${failure.reason}); '
         "drawing the app's own map instead.",
       );
-    }
-    if (failure.refused) {
-      GoogleMapsEmbedView._refused[key] = failure.reason;
     }
     setState(() => _unavailable = true);
   }
@@ -120,9 +110,8 @@ class _GoogleMapsEmbedViewState extends State<GoogleMapsEmbedView> {
   @override
   Widget build(BuildContext context) {
     final key = MapsSettings.instance.apiKey;
-    final wanted = key.isNotEmpty &&
-        !_unavailable &&
-        !GoogleMapsEmbedView._refused.containsKey(key);
+    final wanted =
+        key.isNotEmpty && !_unavailable && !GoogleMapsRefusals.isRefused(key);
     if (wanted && _supported == null) {
       return WebEmbedLoadingPlaceholder(link: widget.link);
     }
@@ -141,146 +130,6 @@ class _GoogleMapsEmbedViewState extends State<GoogleMapsEmbedView> {
       target: widget.target,
       options: widget.options,
     );
-  }
-}
-
-/// Why Google's map could not be shown.
-@immutable
-class GoogleMapsFailure {
-  const GoogleMapsFailure(this.reason, {required this.refused});
-
-  /// Google's own name for it where it gave one, like `OverQuotaMapError`.
-  final String reason;
-
-  /// Whether Google turned the key away, rather than not being reached.
-  final bool refused;
-}
-
-/// A page Google's map is drawn in.
-abstract class GoogleMapsPage {
-  /// What the page posts.
-  Stream<String> get messages;
-
-  /// Runs [script] in the page, without waiting for a result.
-  Future<void> run(String script);
-
-  /// Loads the page again from [url].
-  Future<void> reload(Uri url);
-
-  Widget build(BuildContext context);
-
-  Future<void> dispose();
-}
-
-/// Where Google's maps are drawn: the page's address and the view that shows
-/// it.
-@immutable
-class GoogleMapsPages {
-  const GoogleMapsPages({
-    required this.address,
-    required this.open,
-    required this.isSupported,
-  });
-
-  final Future<Uri> Function() address;
-  final Future<GoogleMapsPage> Function(Uri url) open;
-  final Future<bool> Function() isSupported;
-
-  /// WebKitGTK, through the Linux web view, with the page on a loopback port.
-  static final GoogleMapsPages linux = GoogleMapsPages(
-    address: () => GoogleMapsPageHost.instance.url,
-    open: _LinuxGoogleMapsPage.open,
-    isSupported: () => _linuxSupported ??= LinuxWebViewController.isSupported(),
-  );
-
-  static Future<bool>? _linuxSupported;
-}
-
-class _LinuxGoogleMapsPage implements GoogleMapsPage {
-  _LinuxGoogleMapsPage(this._view);
-
-  static Future<GoogleMapsPage> open(Uri url) async =>
-      _LinuxGoogleMapsPage(await LinuxWebViewController.create(url: url));
-
-  final LinuxWebViewController _view;
-
-  @override
-  Stream<String> get messages => _view.messages;
-
-  @override
-  Future<void> run(String script) => _view.evaluateJavascript(script);
-
-  @override
-  Future<void> reload(Uri url) => _view.load(url);
-
-  @override
-  Widget build(BuildContext context) => LinuxWebView(controller: _view);
-
-  @override
-  Future<void> dispose() => _view.dispose();
-}
-
-/// Serves [googleMapsPageHtml] on a loopback port, as the Linux web view only
-/// starts on an http(s) address.
-///
-/// The page is the same for every map and carries nothing private; only its
-/// own address, under a random token, is answered.
-class GoogleMapsPageHost {
-  GoogleMapsPageHost._();
-
-  static final GoogleMapsPageHost instance = GoogleMapsPageHost._();
-
-  static const _name = 'map.html';
-
-  final String _token = base64UrlEncode(
-    List<int>.generate(18, (_) => Random.secure().nextInt(256)),
-  ).replaceAll('=', '');
-
-  Future<HttpServer>? _server;
-
-  Future<Uri> get url async {
-    final server = await (_server ??= _start());
-    return Uri(
-      scheme: 'http',
-      host: InternetAddress.loopbackIPv4.address,
-      port: server.port,
-      pathSegments: [_token, _name],
-    );
-  }
-
-  Future<HttpServer> _start() async {
-    try {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      server.listen(_serve, onError: (Object _) {});
-      return server;
-    } on Object {
-      // The next map tries again.
-      _server = null;
-      rethrow;
-    }
-  }
-
-  void _serve(HttpRequest request) {
-    final response = request.response;
-    try {
-      final host = '${InternetAddress.loopbackIPv4.address}:'
-          '${request.connectionInfo?.localPort}';
-      if (request.method != 'GET' ||
-          request.headers.value(HttpHeaders.hostHeader) != host ||
-          request.uri.path != '/$_token/$_name') {
-        response.statusCode = HttpStatus.notFound;
-        return;
-      }
-      response.headers
-        ..contentType = ContentType.html
-        ..set(HttpHeaders.cacheControlHeader, 'no-store')
-        ..set('X-Content-Type-Options', 'nosniff');
-      response.write(googleMapsPageHtml);
-    } on Object {
-      // A view can drop a request while it changes pages.
-    } finally {
-      unawaited(response.close().then<void>((_) {}, onError: (Object _) {}));
-    }
   }
 }
 

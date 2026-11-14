@@ -1,16 +1,76 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/ai/skills/ai_skill.dart';
 import 'package:appflowy/ai/tools/ai_tool.dart';
 import 'package:appflowy/ai/tools/mcp_server_config.dart';
 import 'package:appflowy/ai/tools/tool_permissions.dart';
+import 'package:appflowy/ai/tools/tool_registry.dart';
 import 'package:appflowy/ai/tools/workspace_tools.dart';
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_text_selection.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+class _ExtensionServer extends AIToolServer {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  @override
+  String get id => 'extension-demo';
+  @override
+  String get label => 'Private extension';
+  @override
+  Future<List<AITool>> listTools() async {
+    entered.complete();
+    await release.future;
+    return [
+      AITool(
+        serverId: id,
+        serverLabel: label,
+        name: 'private-action',
+        description: 'Private extension action',
+        schema: const {'type': 'object'},
+      ),
+    ];
+  }
+
+  @override
+  Future<AIToolResult> call(
+    String name,
+    Map<String, dynamic> arguments,
+  ) async =>
+      const AIToolResult.error('Not called in this test.');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  group('account extension tools', () {
+    test('removing an extension also removes its cached tool definitions',
+        () async {
+      final registry = AIToolRegistry();
+      final server = _ExtensionServer();
+      registry.addServer(server);
+      server.release.complete();
+      await registry.refresh();
+      expect(registry.tools.any((tool) => tool.serverId == server.id), isTrue);
+      registry.removeServer(server.id);
+      expect(registry.tools.any((tool) => tool.serverId == server.id), isFalse);
+      registry.dispose();
+    });
+
+    test('an in-flight refresh cannot resurrect a removed extension', () async {
+      final registry = AIToolRegistry();
+      final server = _ExtensionServer();
+      registry.addServer(server);
+      final refreshing = registry.refresh();
+      await server.entered.future;
+      registry.removeServer(server.id);
+      server.release.complete();
+      await refreshing;
+      expect(registry.tools.any((tool) => tool.serverId == server.id), isFalse);
+      registry.dispose();
+    });
+  });
+
   group('naming a tool', () {
     test('a qualified name survives a round trip', () {
       const tool = AITool(

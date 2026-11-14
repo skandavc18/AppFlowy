@@ -8,6 +8,7 @@ import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
 import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/shared/maps/app_map_toolbar.dart';
+import 'package:appflowy/shared/maps/google/google_maps_pages.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -114,7 +115,7 @@ void main() {
     ExtensionWebEmbedRegistry.unregisterAll(_extension);
     debugCanShowWebEmbedPagesOverride = null;
     GoogleMapsEmbedView.debugPages = null;
-    GoogleMapsEmbedView.debugForgetRefusals();
+    GoogleMapsRefusals.debugForget();
     await MapsSettings.instance.setApiKey('');
   });
 

@@ -76,7 +76,7 @@ class SettingsDialogBloc
             emit(state.copyWith(userProfile: newUserProfile));
           },
           setSelectedPage: (SettingsPage page) {
-            emit(state.copyWith(page: page));
+            emit(state.copyWith(page: normalizeSettingsPage(page)));
           },
         );
       },
@@ -142,7 +142,16 @@ class SettingsDialogState with _$SettingsDialogState {
   ) =>
       SettingsDialogState(
         userProfile: userProfile,
-        page: page ?? SettingsPage.account,
+        page: normalizeSettingsPage(page ?? SettingsPage.account),
         isBillingEnabled: false,
       );
 }
+
+/// Cloud Settings, Encryption, and Backup & Sync are merged into Account & App.
+SettingsPage normalizeSettingsPage(SettingsPage page) => switch (page) {
+      SettingsPage.cloud ||
+      SettingsPage.encryption ||
+      SettingsPage.backup =>
+        SettingsPage.account,
+      _ => page,
+    };

@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup_policy.dart';
 import 'package:appflowy/workspace/application/sync/server_settings_sync.dart';
 import 'package:appflowy/workspace/application/sync/sync_engine.dart';
@@ -18,7 +19,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 class SyncSettingsSection extends StatefulWidget {
-  const SyncSettingsSection({super.key});
+  const SyncSettingsSection({super.key, this.serverPanel});
+
+  /// The AppFlowy server card: right under the note on a workspace kept on
+  /// the server, and after folder sync otherwise.
+  final Widget? serverPanel;
 
   @override
   State<SyncSettingsSection> createState() => _SyncSettingsSectionState();
@@ -56,15 +61,21 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final binding = _engine.binding;
+    final serverPanel = widget.serverPanel;
+    final onServer = !_engine.canSyncThisWorkspace && binding == null;
     return SettingsCategory(
       title: LocaleKeys.sync_title.tr(),
       description: LocaleKeys.sync_description.tr(),
       children: [
-        if (!_engine.canSyncThisWorkspace && binding == null) ...[
+        if (onServer) ...[
           SyncNoteBox(
             text: LocaleKeys.sync_cloudWorkspace.tr(),
             icon: Icons.cloud_done_outlined,
           ),
+          if (serverPanel != null) ...[
+            const SizedBox(height: 14),
+            serverPanel,
+          ],
           const SizedBox(height: 14),
           const _ServerSettingsPanel(),
         ] else if (binding == null)
@@ -96,6 +107,10 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
           )
         else
           ..._bound(context, binding),
+        if (!onServer && serverPanel != null) ...[
+          const SizedBox(height: 18),
+          serverPanel,
+        ],
       ],
     );
   }
@@ -184,6 +199,14 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
         seconds: binding.intervalSeconds,
         enabled: !binding.paused,
         onChanged: (seconds) => unawaited(_engine.setInterval(seconds)),
+      ),
+      const SizedBox(height: 12),
+      _ToggleRow(
+        label: LocaleKeys.sync_encryptToggle.tr(),
+        hint: LocaleKeys.sync_encryptToggleHint.tr(),
+        value: binding.vaultId.isNotEmpty,
+        enabled: !_engine.isBusy && phase != SyncPhase.locked,
+        onChanged: (on) => unawaited(on ? _seal() : _unseal()),
       ),
       const SizedBox(height: 12),
       _ToggleRow(
@@ -297,6 +320,54 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
         context: context,
         succeeded: true,
         message: LocaleKeys.sync_sealed.tr(),
+      );
+    }
+  }
+
+  /// Turns sync folder encryption off after confirming and verifying the
+  /// AppFlowy password when one is set.
+  Future<void> _unseal() async {
+    final confirmed = await confirmSyncStep(
+      context,
+      title: LocaleKeys.sync_unsealTitle.tr(),
+      body: LocaleKeys.sync_unsealBody.tr(),
+      note: LocaleKeys.sync_unsealWarning.tr(),
+      confirm: LocaleKeys.sync_unsealConfirm.tr(),
+      destructive: true,
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+    final passwords = AppPassword.instance;
+    await passwords.ensureLoaded();
+    if (!mounted) {
+      return;
+    }
+    if (passwords.isSet) {
+      final verified = await askAppPassword(
+        context,
+        question: AppPasswordQuestion.typeHere,
+        check: (password) async => await passwords.check(password)
+            ? null
+            : LocaleKeys.appPassword_wrong.tr(),
+      );
+      if (verified == null || !mounted) {
+        return;
+      }
+    }
+    final unsealed = await runWithSyncProgress(
+      context,
+      title: LocaleKeys.sync_unsealing.tr(),
+      work: () async {
+        await _engine.unsealSyncFolder();
+        return true;
+      },
+    );
+    if (unsealed == true && mounted) {
+      reportBackupOutcome(
+        context: context,
+        succeeded: true,
+        message: LocaleKeys.sync_unsealed.tr(),
       );
     }
   }

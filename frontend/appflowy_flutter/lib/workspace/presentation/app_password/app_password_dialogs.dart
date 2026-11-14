@@ -84,6 +84,58 @@ Future<String?> askAppPassword(
       ),
     );
 
+/// Sentinel returned by [AppPasswordDialog] when cloud encryption was toggled
+/// off by the user.
+const String _unencryptedSentinel = '__appflowy_sync_unencrypted__';
+
+/// Resolves whether a new synced folder should be encrypted (`true`), started
+/// unencrypted (`false`), or cancelled (`null`).
+///
+/// Encryption is ON by default. If this computer already knows the AppFlowy
+/// password, `true` is returned without asking again unless [alwaysShow] is
+/// set; otherwise the AppFlowy password dialog opens with an optional toggle
+/// to turn cloud sync encryption off.
+Future<bool?> ensureAppPasswordForNewSync(
+  BuildContext context, {
+  bool alwaysShow = false,
+}) async {
+  final passwords = AppPassword.instance;
+  final known = await passwords.current();
+  if (known != null && !alwaysShow) {
+    return true;
+  }
+  if (!context.mounted) {
+    return null;
+  }
+  if (known != null && alwaysShow) {
+    return true;
+  }
+  final question = passwords.isSet
+      ? AppPasswordQuestion.typeHere
+      : AppPasswordQuestion.choose;
+  final answer = await showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AppPasswordDialog(
+      question: question,
+      allowUnencryptedSync: true,
+      check: (password) async {
+        if (passwords.isSet) {
+          return await passwords.unlock(password)
+              ? null
+              : LocaleKeys.appPassword_wrong.tr();
+        }
+        await passwords.choose(password);
+        return null;
+      },
+    ),
+  );
+  if (answer == null) {
+    return null;
+  }
+  return answer != _unencryptedSentinel;
+}
+
 /// Changes the AppFlowy password, sealing everything that follows it again.
 /// True when it was changed.
 Future<bool> showChangeAppPasswordDialog(BuildContext context) async =>
@@ -101,11 +153,16 @@ class AppPasswordDialog extends StatefulWidget {
     required this.question,
     required this.check,
     this.skipLabel,
+    this.allowUnencryptedSync = false,
   });
 
   final AppPasswordQuestion question;
   final Future<String?> Function(String password) check;
   final String? skipLabel;
+
+  /// When true, shows a default-on toggle to encrypt synced cloud data,
+  /// allowing the user to opt out of sync encryption if desired.
+  final bool allowUnencryptedSync;
 
   @override
   State<AppPasswordDialog> createState() => _AppPasswordDialogState();
@@ -116,6 +173,7 @@ class _AppPasswordDialogState extends State<AppPasswordDialog> {
   final TextEditingController _again = TextEditingController();
   String? _error;
   bool _working = false;
+  bool _encryptSync = true;
 
   bool get _choosing => widget.question == AppPasswordQuestion.choose;
 
@@ -128,6 +186,10 @@ class _AppPasswordDialogState extends State<AppPasswordDialog> {
 
   Future<void> _submit() async {
     if (_working) {
+      return;
+    }
+    if (widget.allowUnencryptedSync && !_encryptSync) {
+      Navigator.of(context).pop(_unencryptedSentinel);
       return;
     }
     final password = _password.text;
@@ -209,29 +271,76 @@ class _AppPasswordDialogState extends State<AppPasswordDialog> {
                   color: premium.textSecondary,
                 ),
               ),
-              const SizedBox(height: 18),
-              ProviderTextField(
-                label: LocaleKeys.appPassword_field.tr(),
-                controller: _password,
-                palette: palette,
-                obscure: true,
-                autofocus: true,
-                onSubmitted: (_) =>
-                    _choosing ? setState(() {}) : unawaited(_submit()),
-              ),
-              if (_choosing) ...[
-                const SizedBox(height: 8),
-                _Strength(controller: _password),
+              if (widget.allowUnencryptedSync) ...[
                 const SizedBox(height: 14),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            LocaleKeys.sync_encryptToggle.tr(),
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500,
+                              color: premium.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            LocaleKeys.sync_encryptToggleHint.tr(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: premium.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Switch.adaptive(
+                      value: _encryptSync,
+                      onChanged: _working
+                          ? null
+                          : (value) => setState(() {
+                                _encryptSync = value;
+                                _error = null;
+                              }),
+                    ),
+                  ],
+                ),
+              ],
+              if (!widget.allowUnencryptedSync || _encryptSync) ...[
+                const SizedBox(height: 18),
                 ProviderTextField(
-                  label: LocaleKeys.appPassword_fieldAgain.tr(),
-                  controller: _again,
+                  label: LocaleKeys.appPassword_field.tr(),
+                  controller: _password,
                   palette: palette,
                   obscure: true,
-                  onSubmitted: (_) => unawaited(_submit()),
+                  autofocus: true,
+                  onSubmitted: (_) =>
+                      _choosing ? setState(() {}) : unawaited(_submit()),
                 ),
+                if (_choosing) ...[
+                  const SizedBox(height: 8),
+                  _Strength(controller: _password),
+                  const SizedBox(height: 14),
+                  ProviderTextField(
+                    label: LocaleKeys.appPassword_fieldAgain.tr(),
+                    controller: _again,
+                    palette: palette,
+                    obscure: true,
+                    onSubmitted: (_) => unawaited(_submit()),
+                  ),
+                  const SizedBox(height: 14),
+                  AppPasswordNote(text: LocaleKeys.appPassword_warning.tr()),
+                ],
+              ] else ...[
                 const SizedBox(height: 14),
-                AppPasswordNote(text: LocaleKeys.appPassword_warning.tr()),
+                AppPasswordNote(text: LocaleKeys.sync_unsealWarning.tr()),
               ],
               if (_error != null) _ErrorText(text: _error!),
             ],
@@ -248,9 +357,11 @@ class _AppPasswordDialogState extends State<AppPasswordDialog> {
           child: _working
               ? const _Spinner()
               : Text(
-                  _choosing
-                      ? LocaleKeys.appPassword_chooseConfirm.tr()
-                      : LocaleKeys.appPassword_typeConfirm.tr(),
+                  widget.allowUnencryptedSync && !_encryptSync
+                      ? LocaleKeys.appPassword_typeConfirm.tr()
+                      : _choosing
+                          ? LocaleKeys.appPassword_chooseConfirm.tr()
+                          : LocaleKeys.appPassword_typeConfirm.tr(),
                 ),
         ),
       ],

@@ -12,6 +12,7 @@
 // A setting not named here is never sent, so one added later stays local until
 // it is added.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -28,6 +29,7 @@ import 'package:appflowy/workspace/application/providers/connections/provider_co
 import 'package:appflowy/workspace/application/providers/connections/provider_secret_store.dart';
 import 'package:appflowy/workspace/application/sync/sync_preferences.dart';
 import 'package:appflowy/workspace/application/sync/sync_vault.dart';
+import 'package:appflowy/workspace/application/sync/synced_automation_files.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:path/path.dart' as p;
@@ -169,10 +171,14 @@ class AppSyncedPreferences implements SyncedPreferencesSource {
     this.writeDateTime,
     this.writeNotifications,
     this.onApplied,
+    bool syncAutomationFiles = false,
     UserSettingsBackendService settingsService =
         const UserSettingsBackendService(),
     CredentialHolders? credentials,
   })  : _service = settingsService,
+        _automationFiles = syncAutomationFiles
+            ? SyncedAutomationFiles(dataPath: dataPath)
+            : null,
         _credentials = credentials ?? AppCredentialHolders();
 
   final Future<String> Function() dataPath;
@@ -184,7 +190,8 @@ class AppSyncedPreferences implements SyncedPreferencesSource {
   final Future<void> Function(DateTimeSettingsPB settings)? writeDateTime;
   final Future<void> Function(NotificationSettingsPB settings)?
       writeNotifications;
-  final void Function(Set<String> keys)? onApplied;
+  final FutureOr<void> Function(Set<String> keys)? onApplied;
+  final SyncedAutomationFiles? _automationFiles;
   final UserSettingsBackendService _service;
   final CredentialHolders _credentials;
 
@@ -209,6 +216,9 @@ class AppSyncedPreferences implements SyncedPreferencesSource {
 
   @override
   bool handles(String key) {
+    if (_automationFiles != null && isAutomationFileSyncKey(key)) {
+      return true;
+    }
     if (key.startsWith('pref:')) {
       return isSyncedPreference(key.substring(5));
     }
@@ -327,12 +337,31 @@ class AppSyncedPreferences implements SyncedPreferencesSource {
         values[shortcutsSyncKey()] = _string(content);
       }
     }
+    final automation = _automationFiles;
+    if (automation != null) {
+      for (final entry in (await automation.read()).entries) {
+        values[entry.key] = _string(entry.value);
+      }
+    }
     return values;
   }
 
   @override
   Future<void> apply(Map<String, String?> changes) async {
     final applied = <String>{};
+    final automationChanges = <String, String?>{};
+    if (_automationFiles != null) {
+      for (final entry in changes.entries) {
+        if (!isAutomationFileSyncKey(entry.key)) continue;
+        final value = decodeSyncedValue(entry.value);
+        if (entry.value != null && value is! String) {
+          throw const FormatException(
+            'Synced automation contents are invalid.',
+          );
+        }
+        automationChanges[entry.key] = value as String?;
+      }
+    }
 
     final preferences = await SharedPreferences.getInstance();
     final credentialNames = <String>{};
@@ -391,9 +420,12 @@ class AppSyncedPreferences implements SyncedPreferencesSource {
         applied.add(shortcuts);
       }
     }
+    if (_automationFiles case final automation?) {
+      applied.addAll(await automation.apply(automationChanges));
+    }
 
     if (applied.isNotEmpty) {
-      onApplied?.call(applied);
+      await onApplied?.call(applied);
     }
   }
 

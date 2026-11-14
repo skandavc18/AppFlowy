@@ -1,10 +1,19 @@
+import 'dart:async';
+
 import 'package:appflowy/env/cloud_env.dart';
+import 'package:appflowy/env/env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/user/settings_user_bloc.dart';
+import 'package:appflowy/workspace/presentation/app_password/app_password_section.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/about/app_version.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/account.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/email/email_section.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/account/reset_everything_section.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/appflowy_server.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_section.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/settings_backup_view.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/settings_encryption_view.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -19,6 +28,7 @@ class SettingsAccountView extends StatefulWidget {
     required this.userProfile,
     required this.didLogin,
     required this.didLogout,
+    this.restartApp,
   });
 
   final UserProfilePB userProfile;
@@ -28,6 +38,9 @@ class SettingsAccountView extends StatefulWidget {
 
   // Called when the user logout in the setting dialog
   final VoidCallback didLogout;
+
+  // Called when a cloud server switch requests restarting AppFlowy
+  final VoidCallback? restartApp;
 
   @override
   State<SettingsAccountView> createState() => _SettingsAccountViewState();
@@ -46,6 +59,7 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
 
   @override
   Widget build(BuildContext context) {
+    final restart = widget.restartApp ?? () => unawaited(runAppFlowy());
     return BlocProvider<SettingsUserViewBloc>(
       key: ValueKey(widget.userProfile.id),
       create: (context) =>
@@ -54,9 +68,9 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
       child: BlocBuilder<SettingsUserViewBloc, SettingsUserState>(
         builder: (context, state) {
           return SettingsBody(
-            title: LocaleKeys.newSettings_myAccount_title.tr(),
+            title: LocaleKeys.settings_accountPage_menuLabel.tr(),
             children: [
-              // user profile
+              // 1. User profile
               SettingsCategory(
                 title: LocaleKeys.newSettings_myAccount_myProfile.tr(),
                 children: [
@@ -64,9 +78,6 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
                     name: userName,
                     iconUrl: state.userProfile.iconUrl,
                     onSave: (newName) {
-                      // Pseudo change the name to update the UI before the backend
-                      // processes the request. This is to give the user a sense of
-                      // immediate feedback, and avoid UI flickering.
                       setState(() => userName = newName);
                       context
                           .read<SettingsUserViewBloc>()
@@ -76,8 +87,7 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
                 ],
               ),
 
-              // user email
-              // Only show email if the user is authenticated and not using local auth
+              // 2. Server account sign-in / sign-out when authenticated
               if (isAuthEnabled &&
                   state.userProfile.userAuthType != AuthTypePB.Local) ...[
                 SettingsCategory(
@@ -86,52 +96,37 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
                     SettingsEmailSection(
                       userProfile: state.userProfile,
                     ),
-                    ChangePasswordSection(
-                      userProfile: state.userProfile,
-                    ),
                     AccountSignInOutSection(
                       userProfile: state.userProfile,
-                      onAction:
-                          state.userProfile.userAuthType == AuthTypePB.Local
-                              ? widget.didLogin
-                              : widget.didLogout,
-                      signIn:
-                          state.userProfile.userAuthType == AuthTypePB.Local,
+                      onAction: widget.didLogout,
+                      signIn: false,
                     ),
                   ],
                 ),
               ],
 
-              if (isAuthEnabled &&
-                  state.userProfile.userAuthType == AuthTypePB.Local) ...[
-                SettingsCategory(
-                  title: LocaleKeys.settings_accountPage_login_title.tr(),
-                  children: [
-                    AccountSignInOutSection(
-                      userProfile: state.userProfile,
-                      onAction:
-                          state.userProfile.userAuthType == AuthTypePB.Local
-                              ? widget.didLogin
-                              : widget.didLogout,
-                      signIn:
-                          state.userProfile.userAuthType == AuthTypePB.Local,
-                    ),
-                  ],
-                ),
-              ],
+              // 3. Single unified AppFlowy password
+              const AppPasswordSettingsSection(),
 
-              // In local mode there is no server to log in to, but an account
-              // can still be created on this device.
-              if (!isAuthEnabled) ...[
-                SettingsCategory(
-                  title: LocaleKeys.settings_accountPage_login_title.tr(),
-                  children: const [
-                    AccountSignUpSection(),
-                  ],
-                ),
-              ],
+              // 4. Workspace & page encryption / lock
+              const SettingsEncryptionSections(),
 
-              // App version
+              // 5. Sync between computers (Google Drive, OneDrive, Box, a
+              // self-hosted AppFlowy Cloud, a folder), and the AppFlowy server
+              // the workspace is worked on, when it is
+              SyncSettingsSection(
+                serverPanel: Env.enableCustomCloud
+                    ? AppFlowyServerPanel(
+                        userProfile: state.userProfile,
+                        restart: restart,
+                      )
+                    : null,
+              ),
+
+              // 6. Backups & restore
+              const BackupOnlySettingsSections(),
+
+              // 7. About AppFlowy
               SettingsCategory(
                 title: LocaleKeys.newSettings_myAccount_aboutAppFlowy.tr(),
                 children: const [
@@ -139,7 +134,10 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
                 ],
               ),
 
-              // user deletion
+              // 8. Reset everything & start fresh (always offered, local or synced)
+              ResetEverythingSection(onBeforeRestart: widget.didLogin),
+
+              // 9. Server account deletion (only when signed into a server)
               if (widget.userProfile.userAuthType == AuthTypePB.Server)
                 const AccountDeletionButton(),
             ],

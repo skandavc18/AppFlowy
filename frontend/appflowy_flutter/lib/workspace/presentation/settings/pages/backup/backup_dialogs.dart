@@ -13,7 +13,11 @@ import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup.dart';
+import 'package:appflowy/workspace/application/providers/connections/oauth_config.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_secret_store.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/self_hosted_cloud_dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -53,11 +57,13 @@ Future<Uint8List?> askForBackupPassphrase(
 /// Returns null when nothing was chosen, so a cancelled pick leaves the
 /// existing destination alone rather than clearing it. Sync passes its own
 /// [title] and [body], and leaves AppFlowy Cloud out: a folder there cannot be
-/// listed, which sync depends on.
+/// listed, which sync depends on. Only sync offers a self-hosted AppFlowy
+/// Cloud, whose sync folders are not a place for copies.
 Future<BackupDestination?> chooseBackupDestination(
   BuildContext context, {
   required BackupDestination current,
   bool allowAppFlowyCloud = true,
+  bool allowSelfHostedCloud = false,
   String? title,
   String? body,
 }) async {
@@ -66,6 +72,7 @@ Future<BackupDestination?> chooseBackupDestination(
     builder: (context) => _DestinationKindDialog(
       current: current.kind,
       allowAppFlowyCloud: allowAppFlowyCloud,
+      allowSelfHostedCloud: allowSelfHostedCloud,
       title: title,
       body: body,
     ),
@@ -91,32 +98,65 @@ Future<BackupDestination?> chooseBackupDestination(
     case BackupDestinationKind.googleDrive:
     case BackupDestinationKind.oneDrive:
     case BackupDestinationKind.box:
+    case BackupDestinationKind.selfHostedCloud:
       return chooseProviderFolder(context, kind);
   }
 }
 
-/// Signs in to Google Drive, OneDrive or Box when needed, and picks a folder
-/// there that AppFlowy may write to.
+/// Signs in to Google Drive, OneDrive or Box via the browser when needed
+/// (asking for write access up front so only one sign-in round trip is ever
+/// required), and picks a folder there that AppFlowy may write to. For a
+/// self-hosted AppFlowy Cloud, asks for its address and an account there.
 Future<BackupDestination?> chooseProviderFolder(
   BuildContext context,
   BackupDestinationKind kind,
 ) async {
+  if (kind == BackupDestinationKind.selfHostedCloud) {
+    return chooseSelfHostedCloudDestination(context);
+  }
   final service = kind.providerService;
   if (service == null) {
     return null;
   }
-  // The picker already knows how to sign an account in when there is not one
-  // yet, so there is no separate "connect first" step.
+  final info = ProviderServices.of(service);
+  await ProviderConnections.instance.ensureLoaded();
+  final accounts = ProviderConnections.instance.forService(service);
+  final secrets = ProviderSecretStore();
+  ProviderConnection? readyAccount;
+  for (final account in accounts) {
+    if (OAuthServices.grantsWrite(service, account.scopes) &&
+        await secrets.has(account.id)) {
+      readyAccount = account;
+      break;
+    }
+  }
+  if (readyAccount == null) {
+    if (!context.mounted) {
+      return null;
+    }
+    final connected = await showProviderConnectDialog(
+      context,
+      info: info,
+      requestWriteAccess: true,
+      reconnectId: accounts.isEmpty ? null : accounts.first.id,
+      autoLaunchBrowser: true,
+    );
+    if (connected == null) {
+      return null;
+    }
+  }
+  if (!context.mounted) {
+    return null;
+  }
+
   final picked = await showExternalPicker(
     context,
-    info: ProviderServices.of(service),
+    info: info,
     containersOnly: true,
   );
   if (picked == null) {
     return null;
   }
-  // A copy cannot be stored by an account that was only signed in to read, and
-  // finding that out at the first copy would be too late.
   if (context.mounted) {
     await ensureProviderWriteAccess(context, source: picked.source);
   }
@@ -136,6 +176,9 @@ Future<bool> signInAgainForDestination(
   BuildContext context,
   BackupDestination destination,
 ) async {
+  if (destination.kind == BackupDestinationKind.selfHostedCloud) {
+    return signInAgainToSelfHostedCloud(context, destination);
+  }
   final service = destination.kind.providerService;
   if (service == null) {
     return false;
@@ -292,12 +335,14 @@ class _DestinationKindDialog extends StatelessWidget {
   const _DestinationKindDialog({
     required this.current,
     this.allowAppFlowyCloud = true,
+    this.allowSelfHostedCloud = false,
     this.title,
     this.body,
   });
 
   final BackupDestinationKind current;
   final bool allowAppFlowyCloud;
+  final bool allowSelfHostedCloud;
   final String? title;
   final String? body;
 
@@ -349,6 +394,7 @@ class _DestinationKindDialog extends StatelessWidget {
                 BackupDestinationKind.googleDrive,
                 BackupDestinationKind.oneDrive,
                 BackupDestinationKind.box,
+                if (allowSelfHostedCloud) BackupDestinationKind.selfHostedCloud,
                 if (allowAppFlowyCloud) BackupDestinationKind.appflowyCloud,
               ])
                 _DestinationRow(
@@ -461,6 +507,8 @@ String backupDestinationLabel(BackupDestinationKind kind) => switch (kind) {
       BackupDestinationKind.oneDrive => 'OneDrive',
       BackupDestinationKind.box => 'Box',
       BackupDestinationKind.appflowyCloud => 'AppFlowy Cloud',
+      BackupDestinationKind.selfHostedCloud =>
+        LocaleKeys.selfHostedSync_label.tr(),
     };
 
 String backupDestinationDescription(BackupDestinationKind kind) =>
@@ -476,6 +524,8 @@ String backupDestinationDescription(BackupDestinationKind kind) =>
         LocaleKeys.backup_destinationServiceHint.tr(args: ['Box']),
       BackupDestinationKind.appflowyCloud =>
         LocaleKeys.backup_destinationCloudHint.tr(),
+      BackupDestinationKind.selfHostedCloud =>
+        LocaleKeys.selfHostedSync_hint.tr(),
     };
 
 IconData backupDestinationIcon(BackupDestinationKind kind) => switch (kind) {
@@ -485,6 +535,7 @@ IconData backupDestinationIcon(BackupDestinationKind kind) => switch (kind) {
       BackupDestinationKind.oneDrive => Icons.cloud_rounded,
       BackupDestinationKind.box => Icons.inbox_rounded,
       BackupDestinationKind.appflowyCloud => Icons.cloud_done_rounded,
+      BackupDestinationKind.selfHostedCloud => Icons.dns_rounded,
     };
 
 Color backupDestinationAccent(BackupDestinationKind kind) => switch (kind) {
@@ -494,6 +545,7 @@ Color backupDestinationAccent(BackupDestinationKind kind) => switch (kind) {
       BackupDestinationKind.oneDrive => const Color(0xFF0364B8),
       BackupDestinationKind.box => const Color(0xFF0061D5),
       BackupDestinationKind.appflowyCloud => const Color(0xFF00BCF0),
+      BackupDestinationKind.selfHostedCloud => const Color(0xFF7B61FF),
     };
 
 // --- Shared bits ---------------------------------------------------------------

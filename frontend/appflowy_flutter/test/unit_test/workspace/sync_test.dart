@@ -3,19 +3,25 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:appflowy/core/config/kv.dart';
+import 'package:appflowy/shared/linux_keyring.dart';
 import 'package:appflowy/shared/workspace_file_path.dart';
 import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup_policy.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_secret_store.dart';
+import 'package:appflowy/workspace/application/sync/self_hosted_cloud.dart';
 import 'package:appflowy/workspace/application/sync/sync_engine.dart';
 import 'package:appflowy/workspace/application/sync/sync_files.dart';
 import 'package:appflowy/workspace/application/sync/sync_pack.dart';
 import 'package:appflowy/workspace/application/sync/sync_preferences.dart';
 import 'package:appflowy/workspace/application/sync/sync_protocol.dart';
+import 'package:appflowy/workspace/application/sync/sync_remote.dart';
 import 'package:appflowy/workspace/application/sync/sync_settings.dart';
 import 'package:appflowy/workspace/application/sync/sync_vault.dart';
 import 'package:appflowy/workspace/application/sync/workspace_bundle_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+
+import 'self_hosted_cloud_stand_in.dart';
 
 const _passphrase = 'correct horse battery staple';
 
@@ -1493,18 +1499,17 @@ void main() {
       expect(other().waiting, isFalse);
 
       // Only the epoch sealed with the new password is left.
-      final vaults = folder
-          .listSync()
-          .map((entity) => p.basename(entity.path))
-          .where((name) => SyncFileName.parse(name)?.kind == SyncFileKind.vault);
+      final vaults =
+          folder.listSync().map((entity) => p.basename(entity.path)).where(
+                (name) => SyncFileName.parse(name)?.kind == SyncFileKind.vault,
+              );
       expect(vaults, hasLength(1));
 
       a.engine.detach();
       b.engine.detach();
     });
 
-    test('a record left by a seal that never finished seals nothing',
-        () async {
+    test('a record left by a seal that never finished seals nothing', () async {
       final a = _Computer(root, 'a', uid: 1, workspaceId: 'workspace-a');
       await a.attach();
       a.bridge.add('page', 'hello');
@@ -1532,6 +1537,59 @@ void main() {
       a.engine.detach();
     });
 
+    test(
+        'logout cleanup rehydrates automation instead of syncing its local removal',
+        () async {
+      final a = _Computer(root, 'a', uid: 1, workspaceId: 'workspace-a');
+      await a.attach();
+      final workflow = File(p.join(a.data.path, 'workflows/workflows.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('original workflow');
+      await a.engine.startNew(destination());
+      workflow.writeAsStringSync('updated private workflow');
+      final extension = File(p.join(a.data.path, 'extensions/demo/widget.js'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('private extension');
+      await a.engine.syncNow();
+      await a.engine.suspendForSignOut();
+      await a.engine.forgetAccount();
+      await workflow.parent.delete(recursive: true);
+      await Directory(p.join(a.data.path, 'extensions'))
+          .delete(recursive: true);
+      final arrived = <String>{};
+      a.engine.configure(
+        onFilesApplied: (paths) async => arrived.addAll(paths),
+      );
+      await a.attach();
+      await a.engine.syncNow();
+      expect(workflow.readAsStringSync(), 'updated private workflow');
+      expect(extension.readAsStringSync(), 'private extension');
+      expect(
+        arrived,
+        containsAll([
+          'workflows/workflows.json',
+          'extensions/demo/widget.js',
+        ]),
+      );
+
+      final b = _Computer(root, 'b', uid: 2, workspaceId: 'workspace-b');
+      await b.attach();
+      await b.joinSealed(destination());
+      await b.engine.syncNow();
+      expect(
+        File(p.join(b.data.path, 'workflows/workflows.json'))
+            .readAsStringSync(),
+        'updated private workflow',
+      );
+      expect(
+        File(p.join(b.data.path, 'extensions/demo/widget.js'))
+            .readAsStringSync(),
+        'private extension',
+      );
+      a.engine.detach();
+      b.engine.detach();
+    });
+
     test('linked devices are listed, and known again before the first round',
         () async {
       final a = _Computer(root, 'a', uid: 1, workspaceId: 'workspace-a');
@@ -1544,7 +1602,10 @@ void main() {
       await a.engine.syncNow();
 
       final devices = a.engine.devices;
-      expect(devices.map((device) => device.name), ['Computer a', 'Computer b']);
+      expect(
+        devices.map((device) => device.name),
+        ['Computer a', 'Computer b'],
+      );
       expect(devices.first.isThisComputer, isTrue);
       expect(devices.last.platform, Platform.operatingSystem);
       expect(devices.last.lastSeen, isNotNull);
@@ -1577,6 +1638,181 @@ void main() {
       restarted.detach();
       b.engine.detach();
     });
+
+    test(
+        'sync encryption can be toggled off and back on, and clearRemoteSyncFolder spares personal files',
+        () async {
+      final a = _Computer(root, 'a', uid: 1, workspaceId: 'workspace-a');
+      await a.attach();
+      a.bridge.add('page', 'sealed first');
+      File(p.join(a.data.path, 'images', 'diagram.png'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([9, 8, 7, 6]);
+      await a.engine.startNew(destination());
+      expect(a.engine.isSealed, isTrue);
+
+      // Toggle cloud sync encryption off: moves to an unsealed epoch and keeps
+      // pages and attached files intact.
+      await a.engine.unsealSyncFolder();
+      expect(a.engine.isSealed, isFalse);
+      expect(a.engine.binding!.vaultId, isEmpty);
+
+      final b = _Computer(
+        root,
+        'b',
+        uid: 2,
+        workspaceId: 'workspace-b',
+        password: null,
+      );
+      await b.attach();
+      final unsealedSeen = await b.engine.inspect(destination());
+      expect(unsealedSeen.needsPassword, isFalse);
+      await b.engine.join(destination(), unsealedSeen);
+      await b.engine.syncNow();
+      expect(b.bridge.objects['page'], {'sealed first'});
+      expect(
+        File(p.join(b.data.path, 'images', 'diagram.png')).readAsBytesSync(),
+        [9, 8, 7, 6],
+      );
+      b.engine.detach();
+
+      // Toggle encryption back on with the single AppFlowy password.
+      await a.engine.sealWithAppPassword();
+      expect(a.engine.isSealed, isTrue);
+
+      // Personal unrelated file in the folder is preserved when clearing sync
+      // files during a fresh reset.
+      final unrelated = File(p.join(folder.path, 'personal_notes.txt'))
+        ..writeAsStringSync('keep me');
+      await a.engine.resetForFreshStart(clearRemote: true);
+      expect(a.engine.binding, isNull);
+      expect(a.engine.phase, SyncPhase.off);
+      expect(unrelated.existsSync(), isTrue);
+      final remainingSyncFiles = folder
+          .listSync()
+          .where(
+            (entity) => SyncFileName.parse(p.basename(entity.path)) != null,
+          )
+          .toList();
+      expect(remainingSyncFiles, isEmpty);
+    });
+  });
+
+  group('a folder on a self-hosted AppFlowy Cloud', () {
+    late Directory root;
+    late SelfHostedCloudStandIn server;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('sync_self_hosted');
+      server = await SelfHostedCloudStandIn.start(
+        users: {'me@example.com': 'password'},
+      );
+    });
+    tearDown(() async {
+      await server.close();
+      await root.delete(recursive: true);
+    });
+
+    /// One computer's own sign in, and the folder it syncs through.
+    Future<(SelfHostedCloud, SelfHostedCloudAccount, BackupDestination)>
+        signIn() async {
+      final storage = _MemoryStorage();
+      final cloud = SelfHostedCloud(
+        accounts: SelfHostedCloudAccounts(
+          storage: storage,
+          secrets: ProviderSecretStore(storage: storage, keyring: _NoKeyring()),
+        ),
+      );
+      final account = await cloud.signIn(
+        server: server.url,
+        email: 'me@example.com',
+        password: 'password',
+      );
+      return (
+        cloud,
+        account,
+        BackupDestination(
+          kind: BackupDestinationKind.selfHostedCloud,
+          connectionId: account.id,
+          accountLabel: account.label,
+          folderId: 'AppFlowy',
+          folderName: 'AppFlowy',
+          server: account.server,
+        ),
+      );
+    }
+
+    test('keeps two computers in step, sealed, across a lapsed sign in',
+        () async {
+      final (cloudA, accountA, onA) = await signIn();
+      final (cloudB, accountB, onB) = await signIn();
+      final a = _Computer(
+        root,
+        'a',
+        uid: 1,
+        workspaceId: 'workspace-a',
+        openRemote: (destination) async => SelfHostedCloudSyncRemote(
+          account: accountA,
+          folder: destination.folderId,
+          cloud: cloudA,
+        ),
+      );
+      final b = _Computer(
+        root,
+        'b',
+        uid: 2,
+        workspaceId: 'workspace-b',
+        openRemote: (destination) async => SelfHostedCloudSyncRemote(
+          account: accountB,
+          folder: destination.folderId,
+          cloud: cloudB,
+        ),
+      );
+      a.bridge.add('page', 'hello from A');
+      File(p.join(a.data.path, 'images', 'cat.png'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([1, 2, 3, 4]);
+      await a.attach();
+      await b.attach();
+
+      expect((await a.engine.inspect(onA)).state, SyncFolderState.empty);
+      await a.engine.startNew(onA);
+      await b.joinSealed(onB);
+      expect(b.bridge.objects['page'], {'hello from A'});
+      expect(
+        File(p.join(b.data.path, 'images', 'cat.png')).readAsBytesSync(),
+        [1, 2, 3, 4],
+      );
+
+      server.expireAccessTokens();
+      b.bridge.add('page', 'and from B');
+      await b.engine.syncNow();
+      await a.engine.syncNow();
+      expect(a.engine.phase, SyncPhase.idle);
+      expect(a.bridge.objects['page'], {'hello from A', 'and from B'});
+
+      final kept = server.filesOf('me@example.com', 'AppFlowy');
+      expect(kept.keys, everyElement(startsWith(syncFilePrefix)));
+      expect(
+        server.filesOf('me@example.com', 'AppFlowy', blobs: true),
+        isNotEmpty,
+      );
+      for (final bytes in kept.values) {
+        expect(
+          utf8.decode(bytes, allowMalformed: true),
+          isNot(contains('hello from A')),
+        );
+      }
+
+      // Signed out on the server: sync asks to sign in again.
+      server.revokeSignIns();
+      a.bridge.add('page', 'while signed out');
+      await a.engine.syncNow();
+      expect(a.engine.needsSignIn, isTrue);
+
+      a.engine.detach();
+      b.engine.detach();
+    });
   });
 }
 
@@ -1591,6 +1827,7 @@ class _Computer {
     int checkpointAfter = 3,
     String keyboard = 'desktop',
     String? password = _passphrase,
+    Future<SyncRemote> Function(BackupDestination destination)? openRemote,
   })  : data = Directory(p.join(root.path, name, 'data'))
           ..createSync(recursive: true),
         bridge = _FakeBridge(uid: uid, workspaceId: workspaceId),
@@ -1602,6 +1839,7 @@ class _Computer {
     engine = WorkspaceSyncEngine(
       bridge: bridge,
       settings: settings,
+      openRemote: openRemote,
       dataPath: () async => data.path,
       scratch: () async => Directory(p.join(root.path, name, 'scratch')),
       restart: restart,
@@ -1910,4 +2148,25 @@ class _MemoryStorage implements KeyValueStorage {
 
   @override
   Future<void> clear() async => _values.clear();
+}
+
+/// A computer with no keyring: tokens are kept for the session.
+class _NoKeyring implements DesktopKeyring {
+  @override
+  bool get isAvailable => false;
+
+  @override
+  Future<void> store({
+    required String scope,
+    required String id,
+    required String label,
+    required String secret,
+  }) async {}
+
+  @override
+  Future<String?> lookup({required String scope, required String id}) async =>
+      null;
+
+  @override
+  Future<void> clear({required String scope, required String id}) async {}
 }

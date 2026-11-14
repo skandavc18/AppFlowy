@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
+import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/menu/menu_user_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/notifications/widgets/notification_button.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/account/account_sign_in_out.dart';
 import 'package:appflowy/workspace/presentation/widgets/user_avatar_button.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart'
     show UserProfilePB;
@@ -75,6 +80,22 @@ class _SidebarUserState extends State<SidebarUser> {
                     isCurrent: () =>
                         !user.isClosed && user.state.userProfile.id == userId,
                     size: AFAvatarSize.s,
+                    additionalActions: [
+                      AppMenuItem(
+                        label: LocaleKeys.button_logout.tr(),
+                        icon: Icons.logout_rounded,
+                        onSelected: () {
+                          if (context.mounted && !user.isClosed) {
+                            unawaited(
+                              showAccountLogoutDialog(
+                                context,
+                                onLoggedOut: () => unawaited(runAppFlowy()),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
                     borderRadius: _avatarCorners,
                     decoration: ShapeDecoration(
                       color: palette.selected,

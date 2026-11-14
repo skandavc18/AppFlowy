@@ -31,10 +31,8 @@ class WorkflowTrayItem {
 }
 
 /// The window's life outside the window: the notification-area icon, closing
-/// to it instead of quitting, and starting with Windows.
-///
-/// ⚠️ Windows only. The runner implements the channel; everywhere else every
-/// call is a quiet no-op, so callers never need to check twice.
+/// to it instead of quitting, and starting at sign-in on Windows and Linux.
+/// Other platforms leave window lifetime to their existing runners.
 class WorkflowBackground {
   WorkflowBackground._();
 
@@ -42,7 +40,7 @@ class WorkflowBackground {
 
   static const channelName = 'appflowy/background';
 
-  /// Passed by the runner when Windows starts AppFlowy at sign-in.
+  /// Passed when the operating system starts AppFlowy at sign-in.
   static const backgroundFlag = '--background';
 
   /// Tray menu ids the runner also understands on its own.
@@ -53,7 +51,8 @@ class WorkflowBackground {
 
   static List<String> _launchArguments = const [];
 
-  static bool get isSupported => !kIsWeb && Platform.isWindows;
+  static bool get isSupported =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux);
 
   static void recordLaunchArguments(List<String> arguments) {
     _launchArguments = List.unmodifiable(arguments);
@@ -140,7 +139,8 @@ class WorkflowBackground {
     }
     try {
       return await _channel.invokeMethod<T>(method, arguments);
-    } on MissingPluginException {
+    } on MissingPluginException catch (error) {
+      Log.warn('The background channel is unavailable for $method: $error');
       return null;
     } on PlatformException catch (error) {
       Log.warn('The background channel refused $method: ${error.message}');

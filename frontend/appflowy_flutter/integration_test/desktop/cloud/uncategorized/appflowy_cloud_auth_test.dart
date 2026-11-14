@@ -2,8 +2,8 @@ import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/settings/prelude.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/account.dart';
-import 'package:appflowy/workspace/presentation/settings/widgets/setting_appflowy_cloud.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -53,39 +53,15 @@ void main() {
       );
       await tester.tapSignInAsGuest();
 
-      // should not see the sync setting page when sign in as anonymous
+      // signing in from Settings happens on the AppFlowy server card
       await tester.openSettings();
       await tester.openSettingsPage(SettingsPage.account);
 
-      await tester.tapButton(find.byType(AccountSignInOutButton));
+      final signIn = find.byKey(const ValueKey('appflowy-server-action'));
+      await tester.ensureVisible(signIn);
+      await tester.tapButton(signIn);
 
       tester.expectToSeeGoogleLoginButton();
-    });
-
-    testWidgets('enable sync', (tester) async {
-      await tester.initializeAppFlowy(
-        cloudType: AuthenticatorType.appflowyCloudSelfHost,
-      );
-
-      await tester.tapGoogleLoginInButton();
-      // Open the setting page and sign out
-      await tester.openSettings();
-      await tester.openSettingsPage(SettingsPage.cloud);
-      await tester.pumpAndSettle();
-
-      // the switch should be on by default
-      tester.assertAppFlowyCloudEnableSyncSwitchValue(true);
-      await tester.toggleEnableSync(AppFlowyCloudEnableSync);
-      // wait for the switch animation
-      await tester.wait(250);
-
-      // the switch should be off
-      tester.assertAppFlowyCloudEnableSyncSwitchValue(false);
-
-      // the switch should be on after toggling
-      await tester.toggleEnableSync(AppFlowyCloudEnableSync);
-      tester.assertAppFlowyCloudEnableSyncSwitchValue(true);
-      await tester.wait(250);
     });
   });
 }

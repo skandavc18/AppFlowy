@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'workflow_style.dart';
 
 /// How workflows live alongside the window: closing to the notification area,
-/// starting with Windows, failure notices and the master pause.
+/// starting at sign-in, failure notices and the master pause.
 Future<void> showWorkflowBackgroundDialog(
   BuildContext context, {
   WorkflowManager? manager,
@@ -121,6 +121,11 @@ class WorkflowBackgroundDialog extends StatelessWidget {
                         LocaleKeys.workflows_background_unsupported.tr(),
                         glyph: 'info',
                       ),
+                    ),
+                  if (manager.backgroundErrorKey case final errorKey?)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: WorkflowHint(errorKey.tr(), glyph: 'warning'),
                     ),
                   _SettingRow(
                     key: const ValueKey('workflow-notify-failure'),

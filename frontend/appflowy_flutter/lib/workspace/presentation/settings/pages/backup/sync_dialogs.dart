@@ -24,6 +24,7 @@ Future<void> setUpWorkspaceSync(BuildContext context) async {
     context,
     current: _sync.binding?.destination ?? const BackupDestination(),
     allowAppFlowyCloud: false,
+    allowSelfHostedCloud: true,
     title: LocaleKeys.sync_chooseTitle.tr(),
     body: LocaleKeys.sync_chooseBody.tr(),
   );
@@ -43,7 +44,7 @@ Future<void> setUpWorkspaceSync(BuildContext context) async {
 Future<void> continueSyncSetup(
   BuildContext context,
   BackupDestination destination, {
-  Future<void> Function()? onEmptyFolder,
+  Future<void> Function(bool encrypt)? onEmptyFolder,
 }) async {
   var inspection = await runWithSyncProgress(
     context,
@@ -87,29 +88,32 @@ Future<void> continueSyncSetup(
         body: LocaleKeys.sync_unreadable.tr(),
       );
     case SyncFolderState.empty:
-      // Sealed with the AppFlowy password, chosen now when there is none.
-      final password = await ensureAppPassword(context);
-      if (password == null || !context.mounted) {
-        return;
-      }
       if (onEmptyFolder != null) {
-        await onEmptyFolder();
+        final encrypt = await ensureAppPasswordForNewSync(context);
+        if (encrypt == null || !context.mounted) {
+          return;
+        }
+        await onEmptyFolder(encrypt);
         return;
       }
-      final confirmed = await confirmSyncStep(
+      final encrypt = await _confirmStartSyncStep(
         context,
-        title: LocaleKeys.sync_startTitle.tr(),
-        body: LocaleKeys.sync_startBody.tr(args: [_sync.workspaceName, where]),
-        confirm: LocaleKeys.sync_startConfirm.tr(),
+        where: where,
       );
-      if (!confirmed || !context.mounted) {
+      if (encrypt == null || !context.mounted) {
         return;
+      }
+      if (encrypt) {
+        final password = await ensureAppPassword(context);
+        if (password == null || !context.mounted) {
+          return;
+        }
       }
       final done = await runWithSyncProgress(
         context,
         title: LocaleKeys.sync_startConfirm.tr(),
         work: () async {
-          await _sync.startNew(destination);
+          await _sync.startNew(destination, encrypt: encrypt);
           return true;
         },
       );
@@ -175,6 +179,123 @@ Future<void> continueSyncSetup(
           return true;
         },
       );
+  }
+}
+
+/// Asks before starting sync into an empty folder, with cloud encryption ON by
+/// default and toggleable. Returns `true` for encrypted, `false` for
+/// unencrypted, or `null` when cancelled.
+Future<bool?> _confirmStartSyncStep(
+  BuildContext context, {
+  required String where,
+}) =>
+    showDialog<bool>(
+      context: context,
+      builder: (context) => _StartSyncQuestion(
+        workspaceName: _sync.workspaceName,
+        where: where,
+      ),
+    );
+
+class _StartSyncQuestion extends StatefulWidget {
+  const _StartSyncQuestion({
+    required this.workspaceName,
+    required this.where,
+  });
+
+  final String workspaceName;
+  final String where;
+
+  @override
+  State<_StartSyncQuestion> createState() => _StartSyncQuestionState();
+}
+
+class _StartSyncQuestionState extends State<_StartSyncQuestion> {
+  bool _encrypt = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final premium = PremiumThemeExtension.of(context);
+    return AlertDialog(
+      backgroundColor: premium.floatingSurface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Text(
+        LocaleKeys.sync_startTitle.tr(),
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          color: premium.textPrimary,
+        ),
+      ),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              LocaleKeys.sync_startBody
+                  .tr(args: [widget.workspaceName, widget.where]),
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: premium.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        LocaleKeys.sync_encryptToggle.tr(),
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: premium.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        LocaleKeys.sync_encryptToggleHint.tr(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: premium.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Switch.adaptive(
+                  value: _encrypt,
+                  onChanged: (value) => setState(() => _encrypt = value),
+                ),
+              ],
+            ),
+            if (!_encrypt) ...[
+              const SizedBox(height: 12),
+              SyncNoteBox(text: LocaleKeys.sync_unsealWarning.tr()),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(LocaleKeys.button_cancel.tr()),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_encrypt),
+          style: TextButton.styleFrom(foregroundColor: premium.accent),
+          child: Text(LocaleKeys.sync_startConfirm.tr()),
+        ),
+      ],
+    );
   }
 }
 

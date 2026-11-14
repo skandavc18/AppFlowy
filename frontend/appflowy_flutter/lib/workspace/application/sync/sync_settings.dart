@@ -197,14 +197,18 @@ class SyncSettings extends ChangeNotifier {
 
   SyncBinding? _binding;
   BackupDestination? _pendingStart;
+  bool _pendingEncrypt = true;
   String _deviceId = '';
   Future<void>? _loading;
 
   SyncBinding? get binding => _binding;
 
-  /// A folder chosen before any workspace existed here, sealed and waiting
-  /// for the first workspace to start syncing into it.
+  /// A folder chosen before any workspace existed here, waiting for the first
+  /// workspace to start syncing into it.
   BackupDestination? get pendingStart => _pendingStart;
+
+  /// Whether [pendingStart] should be sealed with the AppFlowy password.
+  bool get pendingEncrypt => _pendingEncrypt;
 
   /// This computer's name in every sync folder. Kept for good, so a computer
   /// that reconnects carries on its own numbering rather than starting a new
@@ -244,9 +248,10 @@ class SyncSettings extends ChangeNotifier {
       if (pending != null && pending.isNotEmpty) {
         final decoded = jsonDecode(pending);
         if (decoded is Map) {
-          final destination =
-              BackupDestination.fromJson(Map<String, Object?>.from(decoded));
+          final map = Map<String, Object?>.from(decoded);
+          final destination = BackupDestination.fromJson(map);
           _pendingStart = destination.isReady ? destination : null;
+          _pendingEncrypt = map['encrypt'] != false;
         }
       }
       notifyListeners();
@@ -275,9 +280,13 @@ class SyncSettings extends ChangeNotifier {
     }
   }
 
-  Future<void> setPendingStart(BackupDestination? destination) async {
+  Future<void> setPendingStart(
+    BackupDestination? destination, {
+    bool encrypt = true,
+  }) async {
     await ensureLoaded();
     _pendingStart = destination;
+    _pendingEncrypt = destination == null || encrypt;
     final storage = _kv;
     if (storage == null) {
       return;
@@ -286,11 +295,38 @@ class SyncSettings extends ChangeNotifier {
       if (destination == null) {
         await storage.remove(pendingStartKey);
       } else {
-        await storage.set(pendingStartKey, jsonEncode(destination.toJson()));
+        await storage.set(
+          pendingStartKey,
+          jsonEncode({
+            ...destination.toJson(),
+            if (!encrypt) 'encrypt': false,
+          }),
+        );
       }
     } on Object catch (error) {
       Log.warn('The folder to sync into could not be kept: $error');
     }
+  }
+
+  /// Clears all local sync bindings and epoch bookkeeping for a fresh start.
+  Future<void> resetForFreshStart() async {
+    _binding = null;
+    _pendingStart = null;
+    _pendingEncrypt = true;
+    _deviceId = '';
+    _loading = null;
+    final storage = _kv;
+    if (storage != null) {
+      try {
+        await storage.remove(bindingKey);
+        await storage.remove(pendingStartKey);
+        await storage.remove(deviceKey);
+      } on Object catch (error) {
+        Log.warn('Sync settings could not be cleared: $error');
+      }
+    }
+    await sweepEpochFolders();
+    notifyListeners();
   }
 
   /// Where this computer keeps its bookkeeping for [epoch].

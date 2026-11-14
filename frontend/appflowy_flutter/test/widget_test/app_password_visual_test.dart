@@ -9,7 +9,7 @@ import 'package:appflowy/workspace/application/settings/appearance/base_appearan
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy/workspace/presentation/app_password/app_password_dialogs.dart';
 import 'package:appflowy/workspace/presentation/app_password/app_password_section.dart';
-import 'package:appflowy/workspace/presentation/encryption/encryption_dialogs.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/account/reset_everything_section.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_section.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme.dart';
@@ -46,7 +46,7 @@ void main() {
 
   testWidgets('the AppFlowy password and linked devices, in every theme',
       (tester) async {
-    tester.view.physicalSize = const Size(1560, 1000);
+    tester.view.physicalSize = const Size(1560, 1280);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final now = DateTime.now();
@@ -91,7 +91,7 @@ void main() {
                     child: Builder(
                       builder: (context) => Material(
                         color: Theme.of(context).scaffoldBackgroundColor,
-                        child: Padding(
+                        child: SingleChildScrollView(
                           padding: const EdgeInsets.all(18),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -102,17 +102,27 @@ void main() {
                                 devices: devices,
                                 thisComputer: 'skanda-desktop',
                               ),
-                              const SizedBox(height: 18),
-                              WorkspaceKeyKindChoice(
-                                useAppPassword: true,
-                                onChanged: (_) {},
-                              ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 14),
                               SizedBox(
-                                height: 470,
+                                height: 610,
                                 child: AppPasswordDialog(
                                   question: AppPasswordQuestion.choose,
+                                  allowUnencryptedSync: true,
                                   check: (_) async => null,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                height: 510,
+                                child: ResetEverythingDialog(
+                                  requiresPassword: true,
+                                  syncDestinationLabel:
+                                      'Google Drive (AppFlowy)',
+                                  onConfirm: ({
+                                    required password,
+                                    required clearCloudSync,
+                                  }) async =>
+                                      null,
                                 ),
                               ),
                             ],
@@ -131,8 +141,17 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Linked devices (3)'), findsNWidgets(3));
     expect(find.text('Waiting to catch up'), findsNWidgets(3));
-    expect(find.text('Use your AppFlowy password'), findsNWidgets(3));
+    expect(find.text('Encrypt synced data on cloud'), findsNWidgets(3));
     expect(find.text('Choose your AppFlowy password'), findsNWidgets(3));
+    expect(find.text('Reset everything and start fresh?'), findsNWidgets(3));
+    expect(
+      find.byKey(const ValueKey('reset-app-password-field')),
+      findsNWidgets(3),
+    );
+    expect(
+      find.byKey(const ValueKey('reset-clear-cloud-checkbox')),
+      findsNWidgets(3),
+    );
 
     if (_shot.isNotEmpty) {
       final boundary = tester.renderObject<RenderRepaintBoundary>(
@@ -146,6 +165,30 @@ void main() {
       File(_shot).writeAsBytesSync(bytes!);
     }
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'reset dialog omits password field when no AppFlowy password is set',
+      (tester) async {
+    var confirmed = false;
+    await tester.pumpWidget(
+      _app(
+        ResetEverythingDialog(
+          requiresPassword: false,
+          onConfirm: ({required password, required clearCloudSync}) async {
+            expect(password, isNull);
+            expect(clearCloudSync, isFalse);
+            confirmed = true;
+            return null;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('reset-app-password-field')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('reset-confirm-button')));
+    await tester.pumpAndSettle();
+    expect(confirmed, isTrue);
   });
 }
 

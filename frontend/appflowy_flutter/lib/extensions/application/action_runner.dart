@@ -48,6 +48,16 @@ class ActionRunner {
   final ExtensionLibraryCache _libraries;
   final http.Client _client;
   final DocumentToolkit _documents = DocumentToolkit();
+  bool _stopping = false;
+  int _running = 0;
+  Completer<void>? _drained;
+
+  void pause() => _stopping = true;
+
+  void resumeAcceptingWork() => _stopping = false;
+
+  Future<void> drain() =>
+      _running == 0 ? Future.value() : (_drained ??= Completer<void>()).future;
 
   /// One action may not run longer than this. Everything in this repo that
   /// reaches the network has a deadline; a run without one leaves the
@@ -72,6 +82,41 @@ class ActionRunner {
     Map<String, Object?> arguments = const {},
     ActionRunCause cause = ActionRunCause.manual,
     int depth = 0,
+  }) async {
+    if (_stopping) {
+      return ActionRun(
+        extensionId: extension.id,
+        actionId: action.id,
+        startedAt: DateTime.now(),
+        status: ActionRunStatus.refused,
+        cause: cause,
+        message: 'Extensions are stopping.',
+      );
+    }
+    _running++;
+    try {
+      return await _run(
+        extension: extension,
+        action: action,
+        arguments: arguments,
+        cause: cause,
+        depth: depth,
+      );
+    } finally {
+      _running--;
+      if (_running == 0) {
+        _drained?.complete();
+        _drained = null;
+      }
+    }
+  }
+
+  Future<ActionRun> _run({
+    required LoadedExtension extension,
+    required ActionDefinition action,
+    required Map<String, Object?> arguments,
+    required ActionRunCause cause,
+    required int depth,
   }) async {
     final started = DateTime.now();
     final pending = ActionRun(
@@ -196,6 +241,7 @@ class ActionRunner {
     required ActionContext context,
     required int depth,
   }) async {
+    if (_stopping) throw _StepRefused('Extensions are stopping.');
     switch (step) {
       case HttpStep():
         return _runHttp(extension, step, context);

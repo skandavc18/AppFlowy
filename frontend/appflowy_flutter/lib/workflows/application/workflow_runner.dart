@@ -75,6 +75,30 @@ class WorkflowRunner {
   final WorkflowStore store;
   final WorkflowRunLog log;
   final DateTime Function() _clock;
+  bool _stopping = false;
+  int _pendingSteps = 0;
+  Completer<void>? _drained;
+
+  void pause() => _stopping = true;
+
+  void resumeAcceptingWork() => _stopping = false;
+
+  Future<void> drain() => _pendingSteps == 0
+      ? Future.value()
+      : (_drained ??= Completer<void>()).future;
+
+  Future<T> _track<T>(Future<T> operation) async {
+    _pendingSteps++;
+    try {
+      return await operation;
+    } finally {
+      _pendingSteps--;
+      if (_pendingSteps == 0) {
+        _drained?.complete();
+        _drained = null;
+      }
+    }
+  }
 
   WorkflowContext buildContext(
     Workflow workflow,
@@ -170,7 +194,8 @@ class WorkflowRunner {
       final watch = Stopwatch()..start();
       _refreshClock(context);
       try {
-        final outcome = await _runStep(step, context, testing: false).timeout(
+        final outcome =
+            await _track(_runStep(step, context, testing: false)).timeout(
           stepTimeout,
           onTimeout: () => throw WorkflowStepException(
             'It did not finish within ${stepTimeout.inMinutes} minutes.',
@@ -315,8 +340,8 @@ class WorkflowRunner {
       context[earlier.id] = workflow.samples[earlier.id];
     }
     try {
-      final outcome =
-          await _runStep(step, context, testing: true).timeout(stepTimeout);
+      final outcome = await _track(_runStep(step, context, testing: true))
+          .timeout(stepTimeout);
       return switch (outcome) {
         _Produced(:final output) =>
           WorkflowStepTest.passed(workflowJsonSafe(output)),
@@ -337,6 +362,9 @@ class WorkflowRunner {
     WorkflowContext context, {
     required bool testing,
   }) async {
+    if (_stopping) {
+      throw const WorkflowStepException('Workflows are stopping.');
+    }
     String text(String key) => renderWorkflowText(step.text(key), context);
 
     switch (step.kind) {

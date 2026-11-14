@@ -152,9 +152,18 @@ enum AuthenticatorType {
   }
 }
 
+/// The kind of server chosen in AppFlowy, which keeps a self-hosted server
+/// apart from the default; the backend is told [AuthenticatorType.appflowyCloud]
+/// for both.
 AuthenticatorType currentCloudType() {
-  return getIt<AppFlowyCloudSharedEnv>().authenticatorType;
+  return getIt<AppFlowyCloudSharedEnv>().chosenType;
 }
+
+/// Whether an AppFlowy server was chosen to work on — your own, or AppFlowy
+/// Cloud picked by address — so signing in means signing in to it.
+bool get isServerChosen =>
+    isAuthEnabled &&
+    currentCloudType() == AuthenticatorType.appflowyCloudSelfHost;
 
 Future<void> _setAppFlowyCloudUrl(String? url) async {
   await getIt<KeyValueStorage>().set(KVKeys.kAppflowyCloudBaseURL, url ?? '');
@@ -170,6 +179,32 @@ Future<void> useBaseWebDomain(String? url) async {
 Future<void> useSelfHostedAppFlowyCloud(String url) async {
   await _setAuthenticatorType(AuthenticatorType.appflowyCloudSelfHost);
   await _setAppFlowyCloudUrl(url);
+}
+
+/// Works on the AppFlowy server at [url] from the next start — AppFlowy Cloud
+/// itself or one of your own. [webUrl] is where its shared and published pages
+/// open.
+Future<void> useAppFlowyServer(String url, {required String webUrl}) async {
+  await useBaseWebDomain(webUrl);
+  await useSelfHostedAppFlowyCloud(url);
+}
+
+/// The server chosen to work on, or null when none is.
+Future<String?> chosenAppFlowyServer() async {
+  if (await getAuthenticatorType() != AuthenticatorType.appflowyCloudSelfHost) {
+    return null;
+  }
+  return getAppFlowyCloudUrl();
+}
+
+/// Works on no server from the next start, so the first screen offers every
+/// way to start again.
+Future<void> useNoServer() async {
+  await useBaseWebDomain(ShareConstants.defaultBaseWebDomain);
+  await useAppFlowyBetaCloudWithURL(
+    kAppflowyCloudUrl,
+    AuthenticatorType.appflowyCloud,
+  );
 }
 
 Future<void> useAppFlowyCloudDevelop(String url) async {
@@ -194,18 +229,26 @@ class AppFlowyCloudSharedEnv {
   AppFlowyCloudSharedEnv({
     required AuthenticatorType authenticatorType,
     required this.appflowyCloudConfig,
-  }) : _authenticatorType = authenticatorType;
+    AuthenticatorType? chosenType,
+  })  : _authenticatorType = authenticatorType,
+        chosenType = chosenType ?? authenticatorType;
 
   final AuthenticatorType _authenticatorType;
   final AppFlowyCloudConfiguration appflowyCloudConfig;
 
+  /// What the backend is told.
   AuthenticatorType get authenticatorType => _authenticatorType;
+
+  /// What was chosen, before [authenticatorType] folds a self-hosted server
+  /// into AppFlowy Cloud for the backend.
+  final AuthenticatorType chosenType;
 
   static Future<AppFlowyCloudSharedEnv> fromEnv() async {
     // If [Env.enableCustomCloud] is true, then use the custom cloud configuration.
     if (Env.enableCustomCloud) {
       // Use the custom cloud configuration.
-      var authenticatorType = await getAuthenticatorType();
+      final chosenType = await getAuthenticatorType();
+      var authenticatorType = chosenType;
 
       final appflowyCloudConfig = authenticatorType.isAppFlowyCloudEnabled
           ? await getAppFlowyCloudConfig(authenticatorType)
@@ -222,6 +265,7 @@ class AppFlowyCloudSharedEnv {
       return AppFlowyCloudSharedEnv(
         authenticatorType: authenticatorType,
         appflowyCloudConfig: appflowyCloudConfig,
+        chosenType: chosenType,
       );
     } else {
       // Using the cloud settings from the .env file.

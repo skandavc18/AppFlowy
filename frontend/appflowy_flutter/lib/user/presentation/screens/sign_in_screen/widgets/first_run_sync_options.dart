@@ -1,14 +1,14 @@
 // The first screen's ways to start.
 //
 // Instead of an account to sign in to, a person picks where their workspace
-// lives: in a folder in Google Drive, OneDrive or Box that keeps every computer
-// they use the same, on their own AppFlowy server, or on this computer only.
+// lives: in a folder in Google Drive, OneDrive, Box or their own AppFlowy Cloud
+// that keeps every computer they use the same, on an AppFlowy server, or on
+// this computer only.
 
 import 'dart:async';
 
 import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/shared/share/constants.dart';
 import 'package:appflowy/shared/legible_color.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -16,16 +16,13 @@ import 'package:appflowy/user/application/sign_in_bloc.dart';
 import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/sign_in_anonymous_button.dart';
 import 'package:appflowy/workspace/application/app_password/app_password.dart';
 import 'package:appflowy/workspace/application/backup/backup_policy.dart';
-import 'package:appflowy/workspace/application/settings/appflowy_cloud_urls_bloc.dart'
-    show validateUrl;
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
 import 'package:appflowy/workspace/application/sync/app_synced_preferences.dart';
 import 'package:appflowy/workspace/application/sync/sync_engine.dart';
 import 'package:appflowy/workspace/presentation/app_password/app_password_dialogs.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/appflowy_server.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/backup/backup_dialogs.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_dialogs.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
-import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -86,13 +83,16 @@ class _FirstRunSyncOptionsState extends State<FirstRunSyncOptions> {
             BackupDestinationKind.googleDrive,
             BackupDestinationKind.oneDrive,
             BackupDestinationKind.box,
+            BackupDestinationKind.selfHostedCloud,
           ]) ...[
             _OptionCard(
               key: ValueKey('first-run-${kind.name}'),
               icon: backupDestinationIcon(kind),
               accent: backupDestinationAccent(kind),
-              title: LocaleKeys.firstRun_syncWith
-                  .tr(args: [backupDestinationLabel(kind)]),
+              title: kind == BackupDestinationKind.selfHostedCloud
+                  ? LocaleKeys.selfHostedSync_signInTitle.tr()
+                  : LocaleKeys.firstRun_syncWith
+                      .tr(args: [backupDestinationLabel(kind)]),
               body: LocaleKeys.firstRun_syncWithBody.tr(),
               enabled: !_working,
               onTap: () => unawaited(_syncWith(kind)),
@@ -101,7 +101,7 @@ class _FirstRunSyncOptionsState extends State<FirstRunSyncOptions> {
           ],
           _OptionCard(
             key: const ValueKey('first-run-self-hosted'),
-            icon: Icons.dns_rounded,
+            icon: Icons.groups_rounded,
             accent: premium.accent,
             title: LocaleKeys.firstRun_selfHosted.tr(),
             body: LocaleKeys.firstRun_selfHostedBody.tr(),
@@ -109,13 +109,37 @@ class _FirstRunSyncOptionsState extends State<FirstRunSyncOptions> {
             onTap: () => unawaited(_selfHosted()),
           ),
           if (widget.showLocalOption) ...[
-            const SizedBox(height: 14),
-            Center(
-              child: SignInAnonymousButtonV2(
-                label: LocaleKeys.firstRun_thisComputer.tr(),
+            const SizedBox(height: 8),
+            if (widget.startLocal != null)
+              _OptionCard(
+                key: const ValueKey('first-run-local'),
+                icon: Icons.computer_rounded,
+                accent: premium.textSecondary,
+                title: LocaleKeys.firstRun_localAccountTitle.tr(),
+                body: LocaleKeys.firstRun_localAccountBody.tr(),
+                enabled: !_working,
+                onTap: () => unawaited(() async {
+                  if (await offerAppPassword(context) && mounted) {
+                    await widget.startLocal!();
+                  }
+                }()),
+              )
+            else
+              SignInAnonymousButtonV2(
+                label: LocaleKeys.firstRun_localAccountTitle.tr(),
                 beforeStart: () => offerAppPassword(context),
+                builder: (context, onTap, hasExistingLocal) => _OptionCard(
+                  key: const ValueKey('first-run-local'),
+                  icon: Icons.computer_rounded,
+                  accent: premium.textSecondary,
+                  title: hasExistingLocal
+                      ? LocaleKeys.signIn_continueAnonymousUser.tr()
+                      : LocaleKeys.firstRun_localAccountTitle.tr(),
+                  body: LocaleKeys.firstRun_localAccountBody.tr(),
+                  enabled: !_working,
+                  onTap: onTap,
+                ),
               ),
-            ),
           ],
         ],
       ),
@@ -150,12 +174,12 @@ class _FirstRunSyncOptionsState extends State<FirstRunSyncOptions> {
       await continueSyncSetup(
         context,
         destination,
-        onEmptyFolder: () async {
+        onEmptyFolder: (encrypt) async {
           final ready = await runWithSyncProgress(
             context,
             title: LocaleKeys.sync_startConfirm.tr(),
             work: () async {
-              await _sync.startWhenReady(destination);
+              await _sync.startWhenReady(destination, encrypt: encrypt);
               return true;
             },
           );
@@ -179,15 +203,11 @@ class _FirstRunSyncOptionsState extends State<FirstRunSyncOptions> {
   }
 
   Future<void> _selfHosted() async {
-    final url = await showDialog<String>(
-      context: context,
-      builder: (_) => const _ServerAddressDialog(),
-    );
-    if (url == null || !mounted) {
+    final choice = await chooseAppFlowyServer(context);
+    if (choice == null || !mounted) {
       return;
     }
-    await useBaseWebDomain(ShareConstants.defaultBaseWebDomain);
-    await useSelfHostedAppFlowyCloud(url);
+    await useAppFlowyServer(choice.url, webUrl: choice.webUrl);
     await runAppFlowy();
   }
 }
@@ -322,108 +342,9 @@ class _OptionCardState extends State<_OptionCard> {
   }
 }
 
-/// Asks where a self-hosted AppFlowy server is.
-class _ServerAddressDialog extends StatefulWidget {
-  const _ServerAddressDialog();
-
-  @override
-  State<_ServerAddressDialog> createState() => _ServerAddressDialogState();
-}
-
-class _ServerAddressDialogState extends State<_ServerAddressDialog> {
-  final TextEditingController _address = TextEditingController();
-  String? _error;
-
-  @override
-  void dispose() {
-    _address.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final typed = _address.text.trim();
-    final address = typed.contains('://') ? typed : 'https://$typed';
-    validateUrl(address).fold(
-      (url) {
-        final host = Uri.tryParse(url)?.host ?? '';
-        if (host.isEmpty) {
-          setState(() => _error = LocaleKeys.firstRun_serverInvalid.tr());
-          return;
-        }
-        Navigator.of(context).pop(url);
-      },
-      (error) => setState(() => _error = error),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final premium = PremiumThemeExtension.of(context);
-    return AlertDialog(
-      backgroundColor: premium.floatingSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Text(
-        LocaleKeys.firstRun_selfHosted.tr(),
-        style: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          color: premium.textPrimary,
-        ),
-      ),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              LocaleKeys.firstRun_serverBody.tr(),
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.4,
-                color: premium.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ProviderTextField(
-              label: LocaleKeys.firstRun_serverAddress.tr(),
-              hint: 'https://appflowy.example.com',
-              controller: _address,
-              palette: FolderExplorerPalette.of(context),
-              autofocus: true,
-              onSubmitted: (_) => _submit(),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style:
-                    const TextStyle(fontSize: 12.5, color: Color(0xFFD9534F)),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(LocaleKeys.button_cancel.tr()),
-        ),
-        TextButton(
-          onPressed: _submit,
-          child: Text(LocaleKeys.firstRun_serverContinue.tr()),
-        ),
-      ],
-    );
-  }
-}
-
 /// Goes back to the first screen's choices from a self-hosted server's sign
 /// in.
 Future<void> chooseAnotherWayToStart() async {
-  await useAppFlowyBetaCloudWithURL(
-    kAppflowyCloudUrl,
-    AuthenticatorType.appflowyCloud,
-  );
+  await useNoServer();
   await runAppFlowy();
 }

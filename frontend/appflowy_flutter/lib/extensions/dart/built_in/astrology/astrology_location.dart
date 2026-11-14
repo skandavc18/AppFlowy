@@ -7,16 +7,19 @@ import 'package:geolocator/geolocator.dart';
 import 'astrology_model.dart';
 import 'astrology_time.dart';
 
-/// Only place searches use a network. Photon permits search-as-you-type;
-/// names and birth dates are never sent to it. Device location uses the
-/// platform's permission flow.
+/// Only place searches use a network: Google's, when a Maps key is set in
+/// Settings, and Photon's, which permits search-as-you-type, otherwise and
+/// whenever Google cannot answer. Names and birth dates are never sent.
+/// Device location uses the platform's permission flow.
 class AstrologyLocationService {
-  AstrologyLocationService({MapGeocoder? geocoder})
-      : _geocoder = geocoder ?? _defaultGeocoder;
+  AstrologyLocationService({MapGeocoder? geocoder}) : _injected = geocoder;
 
-  static final MapGeocoder _defaultGeocoder = PhotonGeocoder();
+  static final MapGeocoder _photon = PhotonGeocoder();
   static final instance = AstrologyLocationService();
-  final MapGeocoder _geocoder;
+  final MapGeocoder? _injected;
+
+  /// Follows the key in Settings as it changes.
+  MapGeocoder get _geocoder => _injected ?? resolveGeocoder(keyless: _photon);
   Future<AstrologyPlace>? _pending;
   AstrologyPlace? _last;
   String? _failure;
@@ -33,6 +36,7 @@ class AstrologyLocationService {
           longitude: place.point.longitude,
           timeZone:
               AstrologyTime.zoneAt(place.point.latitude, place.point.longitude),
+          fromGoogle: place.source == GeocodeSource.google,
         ),
     ];
   }

@@ -1,9 +1,11 @@
+import 'dart:io';
+
 import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/user/presentation/screens/sign_in_screen/desktop_sign_in_screen.dart';
 import 'package:appflowy/workspace/presentation/settings/settings_dialog.dart';
-import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -12,105 +14,71 @@ import '../../shared/util.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  Finder findServerType(AuthenticatorType type) {
-    return find
-        .descendant(
-          of: find.byType(SettingsServerDropdownMenu),
-          matching: find.findTextInFlowyText(
-            type.label,
-          ),
-        )
-        .last;
-  }
+  Finder field(String key) => find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.byType(TextField),
+      );
 
-  group('sign-in page settings:', () {
-    testWidgets('change server type', (tester) async {
+  group('sign-in page:', () {
+    testWidgets('settings keep to language and support', (tester) async {
       await tester.initializeAppFlowy();
 
-      // reset the app to the default state
-      await useAppFlowyBetaCloudWithURL(
-        kAppflowyCloudUrl,
-        AuthenticatorType.appflowyCloud,
-      );
-
-      // open the settings page
-      final settingsButton = find.byType(DesktopSignInSettingsButton);
-      await tester.tapButton(settingsButton);
+      await tester.tapButton(find.byType(DesktopSignInSettingsButton));
 
       expect(find.byType(SimpleSettingsDialog), findsOneWidget);
-
-      // the default type should be appflowy cloud
-      final appflowyCloudType = findServerType(AuthenticatorType.appflowyCloud);
-      expect(appflowyCloudType, findsOneWidget);
-
-      // change the server type to self-host
-      await tester.tapButton(appflowyCloudType);
-      final selfHostedButton = findServerType(
-        AuthenticatorType.appflowyCloudSelfHost,
+      expect(
+        find.text(LocaleKeys.settings_workspacePage_language_title.tr()),
+        findsOneWidget,
       );
-      await tester.tapButton(selfHostedButton);
+      expect(
+        find.text(LocaleKeys.settings_menu_cloudAppFlowy.tr()),
+        findsNothing,
+      );
+    });
 
-      // update server url
-      const serverUrl = 'https://self-hosted.appflowy.cloud';
-      await tester.enterText(
-        find.byKey(kSelfHostedTextInputFieldKey),
-        serverUrl,
-      );
-      await tester.pumpAndSettle();
-      // update the web url
-      const webUrl = 'https://self-hosted.appflowy.com';
-      await tester.enterText(
-        find.byKey(kSelfHostedWebTextInputFieldKey),
-        webUrl,
-      );
-      await tester.pumpAndSettle();
+    testWidgets('work on your own AppFlowy server, then choose another way',
+        (tester) async {
+      // Something on this machine that answers like an AppFlowy server.
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) {
+        final path = request.uri.path;
+        request.response.statusCode = path == '/gotrue/health'
+            ? HttpStatus.ok
+            : path.startsWith('/api/sync-folders')
+                ? HttpStatus.unauthorized
+                : HttpStatus.notFound;
+        request.response.close();
+      });
+      addTearDown(() => server.close(force: true));
+      final serverUrl = 'http://127.0.0.1:${server.port}';
+      const webUrl = 'https://pages.example.com';
+
+      await tester.initializeAppFlowy();
+
+      await tester
+          .tapButton(find.byKey(const ValueKey('first-run-self-hosted')));
+      await tester.tapButton(find.byKey(const ValueKey('appflowy-server-own')));
+      await tester.enterText(field('appflowy-server-address'), serverUrl);
+      await tester.enterText(field('appflowy-server-web'), webUrl);
       await tester.tapButton(
-        find.findTextInFlowyText(LocaleKeys.button_save.tr()),
+        find.text(LocaleKeys.firstRun_serverContinue.tr()),
       );
 
-      // wait the app to restart, and the tooltip to disappear
-      await tester.pumpUntilNotFound(find.byType(DesktopToast));
-      await tester.pumpAndSettle(const Duration(milliseconds: 250));
+      // AppFlowy starts again on the server's own sign in.
+      await tester.pumpUntilFound(
+        find.text(LocaleKeys.firstRun_signInTo.tr(args: ['127.0.0.1'])),
+        timeout: const Duration(seconds: 30),
+      );
+      expect(currentCloudType(), AuthenticatorType.appflowyCloudSelfHost);
+      expect(await getAppFlowyCloudUrl(), serverUrl);
+      expect(await getAppFlowyShareDomain(), webUrl);
 
-      // open settings page to check the result
-      await tester.tapButton(settingsButton);
-      await tester.pumpAndSettle(const Duration(milliseconds: 250));
-
-      // check the server type
-      expect(
-        findServerType(AuthenticatorType.appflowyCloudSelfHost),
-        findsOneWidget,
+      await tester.tapButton(find.text(LocaleKeys.firstRun_anotherWay.tr()));
+      await tester.pumpUntilFound(
+        find.byKey(const ValueKey('first-run-self-hosted')),
+        timeout: const Duration(seconds: 30),
       );
-      // check the server url
-      expect(
-        find.text(serverUrl),
-        findsOneWidget,
-      );
-      // check the web url
-      expect(
-        find.text(webUrl),
-        findsOneWidget,
-      );
-
-      // reset to appflowy cloud
-      await tester.tapButton(
-        findServerType(AuthenticatorType.appflowyCloudSelfHost),
-      );
-      // change the server type to appflowy cloud
-      await tester.tapButton(
-        findServerType(AuthenticatorType.appflowyCloud),
-      );
-
-      // wait the app to restart, and the tooltip to disappear
-      await tester.pumpUntilNotFound(find.byType(DesktopToast));
-      await tester.pumpAndSettle(const Duration(milliseconds: 250));
-
-      // check the server type
-      await tester.tapButton(settingsButton);
-      expect(
-        findServerType(AuthenticatorType.appflowyCloud),
-        findsOneWidget,
-      );
+      expect(currentCloudType(), AuthenticatorType.appflowyCloud);
     });
   });
 }

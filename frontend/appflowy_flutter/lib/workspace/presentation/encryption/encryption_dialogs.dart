@@ -47,14 +47,14 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
   bool _working = false;
 
   /// Whether the key is to be the AppFlowy password, while choosing one.
-  late bool _useAppPassword =
-      widget.purpose == _PassphrasePurpose.create;
+  /// Always true: login, sync, backup and workspace encryption share the
+  /// single AppFlowy password.
+  bool _useAppPassword = true;
 
-  bool get _usesAppPasswordNow => EncryptionVault.instance.policy.usesAppPassword;
+  bool get _usesAppPasswordNow =>
+      EncryptionVault.instance.policy.usesAppPassword;
 
-  bool get _choosesKind =>
-      widget.purpose == _PassphrasePurpose.create ||
-      widget.purpose == _PassphrasePurpose.change;
+  bool get _choosesKind => false;
 
   bool get _asksCurrent =>
       widget.purpose == _PassphrasePurpose.unlock ||
@@ -62,7 +62,7 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
       widget.purpose == _PassphrasePurpose.remove ||
       widget.purpose == _PassphrasePurpose.reveal;
 
-  bool get _asksNew => _choosesKind && !_useAppPassword;
+  bool get _asksNew => false;
 
   @override
   void initState() {
@@ -128,7 +128,6 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
           final done = await vault.enable(
             passphrase: password,
             gateWholeWorkspace: widget.gatesWholeWorkspace,
-            usesAppPassword: true,
           );
           return done ? null : LocaleKeys.encryption_couldNotSet.tr();
         }
@@ -595,7 +594,8 @@ Future<bool> _ask(
   return answer ?? false;
 }
 
-/// Chooses a passphrase for a workspace that has none.
+/// Chooses a passphrase for a workspace that has none, using the single
+/// AppFlowy password (asking to set it once when none has been chosen yet).
 ///
 /// [gateWholeWorkspace] says what the person was actually asking for. Settings
 /// passes true ("ask before opening this workspace"); a page, block or column
@@ -603,19 +603,39 @@ Future<bool> _ask(
 Future<bool> showSetWorkspacePassphraseDialog(
   BuildContext context, {
   bool gateWholeWorkspace = false,
-}) =>
-    _ask(
-      context,
-      _PassphrasePurpose.create,
-      gatesWholeWorkspace: gateWholeWorkspace,
-    );
+}) async {
+  final vault = EncryptionVault.instance;
+  await vault.ensureLoaded();
+  if (!context.mounted) {
+    return false;
+  }
+  final password = await ensureAppPassword(context);
+  if (password == null) {
+    return false;
+  }
+  return vault.enable(
+    passphrase: password,
+    gateWholeWorkspace: gateWholeWorkspace,
+  );
+}
 
 /// Asks for the passphrase so the key goes back into memory.
 Future<bool> showUnlockWorkspaceDialog(BuildContext context) =>
     _ask(context, _PassphrasePurpose.unlock);
 
-Future<bool> showChangeWorkspacePassphraseDialog(BuildContext context) =>
-    _ask(context, _PassphrasePurpose.change);
+/// Changes the single AppFlowy password (or, for a legacy workspace that had
+/// a separate passphrase of its own, moves it onto the AppFlowy password).
+Future<bool> showChangeWorkspacePassphraseDialog(BuildContext context) async {
+  final vault = EncryptionVault.instance;
+  await vault.ensureLoaded();
+  if (!context.mounted) {
+    return false;
+  }
+  if (!vault.isConfigured || vault.policy.usesAppPassword) {
+    return showChangeAppPasswordDialog(context);
+  }
+  return _ask(context, _PassphrasePurpose.change);
+}
 
 Future<bool> showRemoveWorkspacePassphraseDialog(BuildContext context) =>
     _ask(context, _PassphrasePurpose.remove);

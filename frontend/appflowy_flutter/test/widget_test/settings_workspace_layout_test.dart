@@ -220,6 +220,16 @@ void main() {
           .widgetList<SettingsMenuElement>(find.byType(SettingsMenuElement))
           .toList();
       final pages = entries.map((entry) => entry.page).toSet();
+      expect(pages, contains(SettingsPage.account));
+      expect(pages, isNot(contains(SettingsPage.cloud)));
+      expect(pages, isNot(contains(SettingsPage.encryption)));
+      expect(pages, isNot(contains(SettingsPage.backup)));
+      expect(normalizeSettingsPage(SettingsPage.cloud), SettingsPage.account);
+      expect(
+        normalizeSettingsPage(SettingsPage.encryption),
+        SettingsPage.account,
+      );
+      expect(normalizeSettingsPage(SettingsPage.backup), SettingsPage.account);
       expect(pages, isNot(contains(SettingsPage.billing)));
       expect(pages, isNot(contains(SettingsPage.plan)));
       if (workspaceType != WorkspaceTypePB.ServerW || role == AFRolePB.Guest) {

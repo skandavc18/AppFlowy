@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:appflowy/extensions/dart/web_embed_registry.dart';
@@ -446,6 +447,23 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
         : GoogleMapsEmbedView(link: link, target: target, options: options);
   }
 
+  /// Google's embedded map draws only inside an iframe: loaded as a page of
+  /// its own, as a web view loads it, it says "The Google Maps Embed API must
+  /// be used in an iframe". So the frame loads a page that holds it in one.
+  @override
+  String frameUrlFor(WebEmbedLink link, WebEmbedViewOptions options) {
+    final embed = link.embedUrl;
+    if (embed == null || link.showsWholePage) {
+      return super.frameUrlFor(link, options);
+    }
+    return googleMapsFramePage(embed);
+  }
+
+  /// The place's own link, which opens in the browser or the Maps app; the
+  /// page that holds the embed means nothing outside the frame.
+  @override
+  String? browserUrlFor(WebEmbedLink link) => link.url;
+
   /// What a short link has arrived at, looking through Google's consent page
   /// to the address it continues to.
   WebEmbedLink? _landing(Uri uri) {
@@ -460,6 +478,24 @@ class GoogleMapsEmbeds extends FramedWebEmbedProvider {
     final found = recognize(target);
     return found == null || found.needsResolution ? null : found;
   }
+}
+
+/// A page holding Google's embedded map at [embedUrl] in an iframe that
+/// fills it, as a `data:` address a web view can load.
+String googleMapsFramePage(String embedUrl) {
+  const attribute = HtmlEscape(HtmlEscapeMode.attribute);
+  final html = '<!doctype html><html><head><meta charset="utf-8">'
+      '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      '<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}'
+      'iframe{display:block;border:0;width:100%;height:100%}</style>'
+      '</head><body><iframe src="${attribute.convert(embedUrl)}" '
+      'allowfullscreen></iframe></body></html>';
+  return Uri.dataFromString(
+    html,
+    mimeType: 'text/html',
+    encoding: utf8,
+    base64: true,
+  ).toString();
 }
 
 /// Docs, Sheets, Slides and Forms, plus Drive files and folders, shown as

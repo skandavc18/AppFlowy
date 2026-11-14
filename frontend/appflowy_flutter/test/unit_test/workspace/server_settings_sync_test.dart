@@ -7,6 +7,7 @@ import 'package:appflowy/workspace/application/sync/sync_engine.dart'
     show SyncError;
 import 'package:appflowy/workspace/application/sync/sync_preferences.dart';
 import 'package:appflowy/workspace/application/sync/sync_vault.dart';
+import 'package:appflowy/workspace/application/sync/synced_automation_files.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -24,6 +25,72 @@ void main() {
 
   _Computer computer(String name, {String? password = _passphrase}) =>
       _Computer(root, name, server, password: password);
+
+  test(
+      'automation follows its account, survives logout remotely, and never leaks to the next account',
+      () async {
+    final accounts = _AccountServer();
+    final a = _Computer(root, 'a', accounts, password: _passphrase);
+    final b = _Computer(root, 'b', accounts, password: _passphrase);
+    final source = _AutomationPreferences(a.home);
+    a.sync.configure(preferences: source);
+    b.sync.configure(preferences: _AutomationPreferences(b.home));
+    final workflow = File(p.join(a.home.path, 'workflows/workflows.json'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('private workflow');
+    final extension = File(p.join(a.home.path, 'extensions/demo/widget.js'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('private extension');
+    await a.sync.attach(uid: 7);
+    await a.sync.syncNow();
+    await b.sync.attach(uid: 7);
+    await b.sync.syncNow();
+    expect(
+      File(p.join(b.home.path, 'workflows/workflows.json')).readAsStringSync(),
+      'private workflow',
+    );
+    expect(
+      File(p.join(b.home.path, 'extensions/demo/widget.js')).readAsStringSync(),
+      'private extension',
+    );
+    expect(
+      accounts.accounts[7]!.values.any((value) => value.contains('private')),
+      isFalse,
+      reason: 'automation contents are sealed, not clear account metadata',
+    );
+    b.sync.detach();
+    await a.sync.suspendForSignOut();
+    final saved = Map<String, String>.of(accounts.accounts[7]!);
+    await a.sync.forgetAccount();
+    for (final name in ['workflows', 'extensions']) {
+      await Directory(p.join(a.home.path, name)).delete(recursive: true);
+    }
+    expect(
+      File(p.join(a.home.path, 'sync/server-7/prefs.json')).existsSync(),
+      isFalse,
+    );
+    await a.sync.syncNow();
+    expect(accounts.accounts[7], saved);
+
+    accounts.uid = 8;
+    a.sync.configure(preferences: source);
+    await a.sync.attach(uid: 8);
+    await a.sync.syncNow();
+    expect(workflow.existsSync(), isFalse);
+    expect(extension.existsSync(), isFalse);
+    expect(accounts.accounts[7], saved);
+    await a.sync.suspendForSignOut();
+    await a.sync.forgetAccount();
+
+    accounts.uid = 7;
+    a.sync.configure(preferences: source);
+    await a.sync.attach(uid: 7);
+    await a.sync.syncNow();
+    expect(workflow.readAsStringSync(), 'private workflow');
+    expect(extension.readAsStringSync(), 'private extension');
+    expect(accounts.accounts[7], saved);
+    a.sync.detach();
+  });
 
   test('nothing travels until there is an AppFlowy password', () async {
     final a = computer('a', password: null);
@@ -205,7 +272,7 @@ class _Computer {
   _Computer(
     Directory root,
     String name,
-    _Server server, {
+    CloudUserValues server, {
     required String? password,
   })  : home = Directory(p.join(root.path, name))..createSync(),
         passwords = _FakePasswords(password) {
@@ -243,6 +310,32 @@ class _Server implements CloudUserValues {
     }
     values[key] = value;
   }
+}
+
+class _AutomationPreferences implements SyncedPreferencesSource {
+  _AutomationPreferences(Directory root)
+      : files = SyncedAutomationFiles(dataPath: () async => root.path);
+  final SyncedAutomationFiles files;
+  @override
+  Set<String> get unreadable => const {};
+  @override
+  bool handles(String key) => isAutomationFileSyncKey(key);
+  @override
+  Future<Map<String, String>> read() => files.read();
+  @override
+  Future<void> apply(Map<String, String?> changes) async {
+    await files.apply(changes);
+  }
+}
+
+class _AccountServer implements CloudUserValues {
+  int uid = 7;
+  final Map<int, Map<String, String>> accounts = {};
+  Map<String, String> get values => accounts.putIfAbsent(uid, () => {});
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
 }
 
 class _MemoryPreferences implements SyncedPreferencesSource {

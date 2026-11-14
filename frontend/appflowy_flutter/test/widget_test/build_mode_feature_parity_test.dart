@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/core/config/kv_keys.dart';
-import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/extensions/dart/dart_extension_host.dart';
 import 'package:appflowy/mobile/presentation/notifications/widgets/settings_popup_menu.dart';
 import 'package:appflowy/plugins/shared/share/export_tab.dart';
@@ -21,8 +20,7 @@ import 'package:appflowy/workspace/application/settings/appearance/desktop_appea
 import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/import/import_panel.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/import/import_type.dart';
-import 'package:appflowy/workspace/presentation/settings/shared/settings_dropdown.dart';
-import 'package:appflowy/workspace/presentation/settings/widgets/setting_cloud.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/backup/appflowy_server.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/settings_menu.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/settings_menu_element.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart'
@@ -269,28 +267,20 @@ void runBuildModeFeatureParityTests() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('$appearance: cloud selector offers every configured provider',
+    testWidgets('$appearance: server choice offers AppFlowy Cloud and your own',
         (tester) async {
-      // Inspect the real selector's options without mounting a settings bloc
-      // or contacting any of the cloud choices.
-      late SettingsDropdown<AuthenticatorType> dropdown;
-      await _pump(
-        tester,
-        appearance,
-        Builder(
-          builder: (context) {
-            dropdown = CloudTypeSwitcher(
-              cloudType: AuthenticatorType.local,
-              onSelected: (_) {},
-            ).build(context) as SettingsDropdown<AuthenticatorType>;
-            return const SizedBox();
-          },
-        ),
-      );
+      await _pump(tester, appearance, const AppFlowyServerDialog());
       expect(
-        dropdown.options.map((entry) => entry.value).toSet(),
-        AuthenticatorType.values.toSet(),
+        find.byKey(const ValueKey('appflowy-server-cloud')),
+        findsOneWidget,
       );
+      await tester.tap(find.byKey(const ValueKey('appflowy-server-own')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('appflowy-server-address')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('$appearance: notification menu offers unarchive all',

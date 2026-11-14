@@ -6,6 +6,7 @@ import 'package:appflowy/workspace/application/providers/connections/provider_co
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/sync/app_synced_preferences.dart';
 import 'package:appflowy/workspace/application/sync/sync_preferences.dart';
+import 'package:appflowy/workspace/application/sync/synced_automation_files.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_result/appflowy_result.dart';
@@ -193,6 +194,49 @@ void main() {
       data = await Directory.systemTemp.createTemp('synced_settings');
     });
     tearDown(() => data.delete(recursive: true));
+
+    test('account sync includes automation files and awaits live reloads',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = _FakeSettingsService();
+      final key = automationFileSyncKey('extensions/demo/widget.js');
+      final file = File(p.join(data.path, 'extensions/demo/widget.js'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('private extension');
+      final folderSource = AppSyncedPreferences(
+        dataPath: () async => data.path,
+        workspaceId: () => 'workspace-1',
+        settingsService: service,
+        credentials: _FakeCredentials(),
+      );
+      expect(folderSource.handles(key), isFalse);
+      expect((await folderSource.read()).containsKey(key), isFalse);
+      var reloaded = false;
+      final account = AppSyncedPreferences(
+        dataPath: () async => data.path,
+        workspaceId: () => 'workspace-1',
+        settingsService: service,
+        credentials: _FakeCredentials(),
+        syncAutomationFiles: true,
+        onApplied: (keys) async {
+          expect(keys, contains(key));
+          await Future<void>.delayed(Duration.zero);
+          reloaded = true;
+        },
+      );
+      expect(account.handles(key), isTrue);
+      expect(
+        decodeSyncedValue((await account.read())[key]),
+        base64Encode(utf8.encode('private extension')),
+      );
+      await account.apply({
+        key: encodeSyncedValue(base64Encode(utf8.encode('new extension'))),
+      });
+      expect(file.readAsStringSync(), 'new extension');
+      expect(reloaded, isTrue);
+      await account.apply({key: null});
+      expect(file.existsSync(), isFalse);
+    });
 
     test('only what is the person choice everywhere is synced', () {
       final source = AppSyncedPreferences(

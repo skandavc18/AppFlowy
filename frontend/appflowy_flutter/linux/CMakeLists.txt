@@ -50,6 +50,7 @@ add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
   "display_vsync.cc"
+  "workflow_background.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 apply_standard_settings(${BINARY_NAME})
@@ -88,6 +89,10 @@ install(CODE "
 set(DART_FFI_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
+
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/assets/logo.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" RENAME "appflowy.png"
+  COMPONENT Runtime)
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)

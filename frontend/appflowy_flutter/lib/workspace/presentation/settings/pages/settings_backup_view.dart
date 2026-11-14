@@ -22,19 +22,42 @@ import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_dialo
 import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_section.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
+import 'package:appflowy/workspace/presentation/settings/shared/settings_category_spacer.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_dropdown.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/file_picker/file_picker_service.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
-class SettingsBackupView extends StatefulWidget {
+class SettingsBackupView extends StatelessWidget {
   const SettingsBackupView({super.key});
 
   @override
-  State<SettingsBackupView> createState() => _SettingsBackupViewState();
+  Widget build(BuildContext context) {
+    return SettingsBody(
+      title: LocaleKeys.backup_settingsTitle.tr(),
+      description: LocaleKeys.backup_settingsDescription.tr(),
+      children: const [
+        AppPasswordSettingsSection(),
+        SyncSettingsSection(),
+        BackupOnlySettingsSections(),
+      ],
+    );
+  }
 }
 
-class _SettingsBackupViewState extends State<SettingsBackupView> {
+/// Backup destination, schedule, contents, compression, sealing, and restore
+/// sections, embeddable inside the unified Account & App settings page.
+class BackupOnlySettingsSections extends StatefulWidget {
+  const BackupOnlySettingsSections({super.key});
+
+  @override
+  State<BackupOnlySettingsSections> createState() =>
+      _BackupOnlySettingsSectionsState();
+}
+
+class _BackupOnlySettingsSectionsState
+    extends State<BackupOnlySettingsSections> {
   BackupSettings get _settings => BackupSettings.instance;
 
   BackupService get _service => BackupService.instance;
@@ -130,12 +153,11 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
     final policy = _policy;
     final remote = policy.destination.kind.isRemote;
 
-    return SettingsBody(
-      title: LocaleKeys.backup_settingsTitle.tr(),
-      description: LocaleKeys.backup_settingsDescription.tr(),
+    return SeparatedColumn(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      separatorBuilder: () => const SettingsCategorySpacer(),
       children: [
-        const AppPasswordSettingsSection(),
-        const SyncSettingsSection(),
         SettingsCategory(
           title: LocaleKeys.backup_whereTitle.tr(),
           description: LocaleKeys.backup_whereDescription.tr(),
@@ -143,6 +165,7 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
             _DestinationCard(
               destination: policy.destination,
               onChange: () async {
+                final wasNone = !_policy.destination.isReady;
                 final chosen = await chooseBackupDestination(
                   context,
                   current: policy.destination,
@@ -151,6 +174,15 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
                   return;
                 }
                 await _apply(_policy.copyWith(destination: chosen));
+                if (wasNone &&
+                    chosen.isReady &&
+                    !_policy.encrypt &&
+                    context.mounted) {
+                  final password = await ensureAppPassword(context);
+                  if (password != null) {
+                    await _settings.useAppPassword(password, turnOn: true);
+                  }
+                }
                 await _refresh();
               },
             ),

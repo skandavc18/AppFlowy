@@ -291,6 +291,25 @@ class AppPassword extends ChangeNotifier implements AppPasswordSource {
     await _write(next);
   }
 
+  /// Forgets the password and its check value on this computer, for a full
+  /// local reset.
+  Future<void> clear() async {
+    _record = null;
+    _password = null;
+    _loading = null;
+    try {
+      await _secrets.forget(secretId);
+    } on Object catch (error) {
+      Log.warn('The AppFlowy password could not be cleared from keyring: $error');
+    }
+    try {
+      await _kv?.remove(storageKey);
+    } on Object catch (error) {
+      Log.warn('The AppFlowy password record could not be removed: $error');
+    }
+    notifyListeners();
+  }
+
   Future<void> _write(String password) async {
     final storage = _kv;
     if (storage == null) {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/base/emoji/emoji_picker_screen.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/presentation/widgets/user_avatar.dart';
@@ -29,6 +30,7 @@ class UserAvatarButton extends StatelessWidget {
     required this.size,
     this.decoration,
     this.borderRadius,
+    this.additionalActions = const [],
   });
 
   final UserProfilePB userProfile;
@@ -36,6 +38,7 @@ class UserAvatarButton extends StatelessWidget {
   final bool Function() isCurrent;
   final AFAvatarSize size;
   final Decoration? decoration;
+  final List<AppMenuEntry> additionalActions;
 
   /// Shapes the avatar, and its hover and press highlight, as a rounded
   /// square instead of a circle.
@@ -49,6 +52,10 @@ class UserAvatarButton extends StatelessWidget {
       key: ValueKey(userId),
       identity: userId,
       label: LocaleKeys.settings_accountPage_general_changeProfilePicture.tr(),
+      buttonLabel: additionalActions.isEmpty
+          ? null
+          : LocaleKeys.newSettings_myAccount_title.tr(),
+      additionalActions: additionalActions,
       icon: userIconData(userProfile.iconUrl),
       documentId: userId.toString(),
       dimension: size.size,
@@ -89,6 +96,8 @@ class AvatarPickerButton extends StatefulWidget {
     required this.child,
     this.isCurrent,
     this.borderRadius,
+    this.buttonLabel,
+    this.additionalActions = const [],
   });
 
   final Object identity;
@@ -99,6 +108,8 @@ class AvatarPickerButton extends StatefulWidget {
   final FutureOr<void> Function(EmojiIconData) onSelected;
   final bool Function()? isCurrent;
   final Widget child;
+  final String? buttonLabel;
+  final List<AppMenuEntry> additionalActions;
 
   /// Corners of the hover and press highlight; a circle when null.
   final BorderRadius? borderRadius;
@@ -164,6 +175,24 @@ class _AvatarPickerButtonState extends State<AvatarPickerButton> {
 
   Future<void> _open() async {
     if (_busy || !_isCurrent(_generation)) return;
+    if (widget.additionalActions.isNotEmpty) {
+      final generation = _generation;
+      final editAvatar = await showAppMenuForWidget<bool>(
+        context: context,
+        placement: AppMenuPlacement.below,
+        entries: [
+          AppMenuItem(
+            label: widget.label,
+            icon: Icons.edit_outlined,
+            value: true,
+          ),
+          const AppMenuSeparator(),
+          ...widget.additionalActions,
+        ],
+      );
+      if (editAvatar != true || !_isCurrent(generation)) return;
+    }
+    if (!mounted) return;
     _popover.close();
     final generation = ++_generation;
     _status.value = (saving: false, error: null);
@@ -260,7 +289,7 @@ class _AvatarPickerButtonState extends State<AvatarPickerButton> {
   @override
   Widget build(BuildContext context) {
     final button = Tooltip(
-      message: widget.label,
+      message: widget.buttonLabel ?? widget.label,
       excludeFromSemantics: true,
       child: SizedBox.square(
         dimension: widget.dimension,
@@ -275,7 +304,7 @@ class _AvatarPickerButtonState extends State<AvatarPickerButton> {
                 : RoundedRectangleBorder(borderRadius: widget.borderRadius!),
           ),
           icon: Semantics(
-            label: widget.label,
+            label: widget.buttonLabel ?? widget.label,
             excludeSemantics: true,
             child: widget.child,
           ),
