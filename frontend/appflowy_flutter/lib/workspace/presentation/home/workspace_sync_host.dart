@@ -19,6 +19,7 @@ import 'package:appflowy/workspace/application/backup/backup.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
 import 'package:appflowy/workspace/application/settings/notifications/notification_settings_cubit.dart';
+import 'package:appflowy/workspace/application/sync/android_background_sync.dart';
 import 'package:appflowy/workspace/application/sync/app_synced_preferences.dart';
 import 'package:appflowy/workspace/application/sync/synced_automation_files.dart';
 import 'package:appflowy/workflows/application/workflow_manager.dart';
@@ -32,9 +33,160 @@ import 'package:appflowy/workspace/presentation/settings/pages/backup/sync_dialo
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
+int _bootstrapDepth = 0;
+
+/// Placed outside `WorkspaceEncryptionGate` on both desktop and mobile so
+/// background sync attaches immediately (including `--background` login start
+/// and while the lock screen is shown), triggers an immediate sync on app
+/// resume or network reconnection, and keeps Android's periodic `JobScheduler`
+/// sync registered.
+class BackgroundSyncBootstrap extends StatefulWidget {
+  const BackgroundSyncBootstrap({
+    super.key,
+    required this.userProfile,
+    required this.workspaceId,
+    required this.child,
+  });
+
+  final UserProfilePB userProfile;
+  final String workspaceId;
+  final Widget child;
+
+  @override
+  State<BackgroundSyncBootstrap> createState() =>
+      _BackgroundSyncBootstrapState();
+}
+
+class _BackgroundSyncBootstrapState extends State<BackgroundSyncBootstrap>
+    with WidgetsBindingObserver {
+  WorkspaceSyncEngine get _engine => WorkspaceSyncEngine.instance;
+  StreamSubscription<ConnectivityResult>? _connectivitySub;
+  ConnectivityResult? _lastConnectivity;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrapDepth++;
+    WidgetsBinding.instance.addObserver(this);
+    _engine.configure(
+      dataPath: () => getIt<ApplicationDataStorage>().getPath(),
+      restart: () async {
+        _engine.detach();
+        await runAppFlowy();
+      },
+      preferences: AppSyncedPreferences(
+        dataPath: () => getIt<ApplicationDataStorage>().getPath(),
+        workspaceId: () => _engine.binding?.workspaceId,
+      ),
+    );
+    unawaited(_bootstrapAttach());
+    unawaited(AndroidBackgroundSync.instance.attach());
+    _listenConnectivity();
+  }
+
+  void _listenConnectivity() {
+    if (FlowyRunner.currentMode.isTest) {
+      return;
+    }
+    try {
+      final connectivity = Connectivity();
+      unawaited(
+        connectivity.checkConnectivity().then<void>(
+          (value) => _lastConnectivity = value,
+          onError: (_) {},
+        ),
+      );
+      _connectivitySub = connectivity.onConnectivityChanged.listen((result) {
+        final wasOffline = _lastConnectivity == ConnectivityResult.none;
+        _lastConnectivity = result;
+        if (wasOffline && result != ConnectivityResult.none) {
+          _triggerImmediateSync();
+        }
+      });
+    } on MissingPluginException {
+      // Ignored in environments without connectivity_plus.
+    } on PlatformException {
+      // Ignored if platform refuses connectivity subscription.
+    }
+  }
+
+  Future<void> _bootstrapAttach() async {
+    await _engine.settings.ensureLoaded();
+    if (!mounted) {
+      return;
+    }
+    // Only pre-attach here if WorkspaceSyncHost has not attached yet (for
+    // example while WorkspaceEncryptionGate is waiting for unlock).
+    if (_engine.isBoundHere) {
+      return;
+    }
+    final isLocal = widget.userProfile.workspaceType == WorkspaceTypePB.LocalW;
+    if (!isLocal) {
+      return;
+    }
+    final boundForThis = _engine.settings.bindingsFor(
+      workspaceId: widget.workspaceId,
+      uid: widget.userProfile.id.toInt(),
+    );
+    final name = boundForThis.isNotEmpty
+        ? boundForThis.first.workspaceName
+        : _engine.workspaceName;
+    await _engine.attach(
+      workspaceId: widget.workspaceId,
+      uid: widget.userProfile.id.toInt(),
+      workspaceName: name,
+      isLocalWorkspace: true,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant BackgroundSyncBootstrap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workspaceId != widget.workspaceId ||
+        oldWidget.userProfile.id != widget.userProfile.id) {
+      unawaited(_bootstrapAttach());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _triggerImmediateSync();
+    }
+  }
+
+  void _triggerImmediateSync() {
+    if (_engine.isBoundHere && !_engine.isAllPaused) {
+      unawaited(_engine.syncNow());
+    }
+    final server = ServerSettingsSync.instance;
+    if (server.phase == ServerSettingsPhase.idle ||
+        server.phase == ServerSettingsPhase.failed) {
+      unawaited(server.syncNow());
+    }
+  }
+
+  @override
+  void dispose() {
+    _bootstrapDepth = (_bootstrapDepth - 1).clamp(0, 1000);
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_connectivitySub?.cancel());
+    if (_bootstrapDepth == 0) {
+      _engine.detach();
+      ServerSettingsSync.instance.detach();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
 
 class WorkspaceSyncHost extends StatefulWidget {
   const WorkspaceSyncHost({
@@ -260,8 +412,10 @@ class _WorkspaceSyncHostState extends State<WorkspaceSyncHost> {
   @override
   void dispose() {
     _engine.removeListener(_onEngineChanged);
-    _engine.detach();
-    ServerSettingsSync.instance.detach();
+    if (_bootstrapDepth == 0) {
+      _engine.detach();
+      ServerSettingsSync.instance.detach();
+    }
     super.dispose();
   }
 

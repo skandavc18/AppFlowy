@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/shared/linux_keyring.dart';
+import 'package:appflowy/shared/platform_secret_store.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:ffi/ffi.dart';
@@ -26,7 +27,7 @@ import 'package:ffi/ffi.dart';
 class ProviderSecretStore {
   ProviderSecretStore({KeyValueStorage? storage, DesktopKeyring? keyring})
       : _storage = storage,
-        _keyring = keyring ?? LinuxKeyring.instance;
+        _keyring = keyring ?? defaultPlatformKeyring();
 
   static const _prefix = 'appflowy_provider_secret_';
   static const _keyringScope = 'provider';

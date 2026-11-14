@@ -358,13 +358,16 @@ typedef SyncBlobFetcher = Future<bool> Function(String hash, File destination);
 ///
 /// Each path ends up with its latest version, whatever order versions arrive
 /// in: one older than what is here changes nothing. A removal never takes away
-/// a file changed here since it was last synced.
+/// a file changed here since it was last synced. Fetches run up to
+/// [concurrency] at a time, and duplicate hashes in the same batch are fetched
+/// once and copied locally.
 Future<SyncFileApplyResult> applyRemoteFiles({
   required String dataPath,
   required SyncFileIndex index,
   required List<SyncFileRecord> files,
   required List<SyncFileRecord> deleted,
   required SyncBlobFetcher fetch,
+  int concurrency = 4,
 }) async {
   var written = 0;
   var removed = 0;
@@ -425,10 +428,27 @@ Future<SyncFileApplyResult> applyRemoteFiles({
     }
   }
 
+  // Latest winning record per path, filtered against what is already on disk.
+  final neededByHash = <String, List<SyncFileRecord>>{};
+  final orderedTargets = <String, SyncFileRecord>{};
   for (final record in files) {
     if (!isSafeSyncPath(record.path) || record.hash.isEmpty) {
       continue;
     }
+    final prior = orderedTargets[record.path];
+    if (prior != null &&
+        !isLaterSyncVersion(
+          record.modified,
+          record.hash,
+          prior.modified,
+          prior.hash,
+        )) {
+      continue;
+    }
+    orderedTargets[record.path] = record;
+  }
+
+  for (final record in orderedTargets.values) {
     final waiting = index.waiting[record.path];
     if (waiting != null &&
         isLaterSyncVersion(
@@ -493,49 +513,93 @@ Future<SyncFileApplyResult> applyRemoteFiles({
         continue;
       }
     }
+    neededByHash.putIfAbsent(record.hash, () => <SyncFileRecord>[]).add(record);
+  }
 
-    final staging = File(
-      p.join(local.parent.path, '.${p.basename(local.path)}.sync.part'),
-    );
-    try {
-      await local.parent.create(recursive: true);
-      if (!await fetch(record.hash, staging)) {
-        index.waiting[record.path] = record;
-        continue;
-      }
-      if (await hashFile(staging) != record.hash) {
-        Log.warn('A synced file did not match its record and was skipped.');
-        await staging.delete();
-        continue;
-      }
-      await staging.rename(local.path);
-      final when = DateTime.fromMillisecondsSinceEpoch(record.modified);
-      try {
-        await local.setLastModified(when);
-      } on FileSystemException {
-        // Keeping the remote time only saves a hash on the next scan.
-      }
-      final stat = local.statSync();
-      index.entries[record.path] = SyncFileRecord(
-        path: record.path,
-        hash: record.hash,
-        bytes: stat.size,
-        modified: stat.modified.millisecondsSinceEpoch,
-      );
-      index.removed.remove(record.path);
-      index.waiting.remove(record.path);
-      written++;
-      changedPaths.add(record.path);
-    } on Object catch (error) {
-      Log.warn('A synced file could not be written: $error');
-      if (staging.existsSync()) {
+  if (neededByHash.isNotEmpty) {
+    final queue = neededByHash.entries.toList(growable: false);
+    var cursor = 0;
+    final workers = min(max(1, concurrency), queue.length);
+
+    Future<void> runWorker() async {
+      while (true) {
+        final next = cursor++;
+        if (next >= queue.length) {
+          return;
+        }
+        final hash = queue[next].key;
+        final targets = queue[next].value;
+        final primary = targets.first;
+        final primaryLocal =
+            File(p.joinAll([dataPath, ...p.posix.split(primary.path)]));
+        final staging = File(
+          p.join(
+            primaryLocal.parent.path,
+            '.${p.basename(primaryLocal.path)}.$hash.sync.part',
+          ),
+        );
         try {
-          await staging.delete();
-        } on Object {
-          // Swept on a later run.
+          await primaryLocal.parent.create(recursive: true);
+          if (!await fetch(hash, staging)) {
+            for (final record in targets) {
+              index.waiting[record.path] = record;
+            }
+            continue;
+          }
+          if (await hashFile(staging) != hash) {
+            Log.warn('A synced file did not match its record and was skipped.');
+            await staging.delete();
+            continue;
+          }
+          for (var i = 0; i < targets.length; i++) {
+            final record = targets[i];
+            final local =
+                File(p.joinAll([dataPath, ...p.posix.split(record.path)]));
+            await local.parent.create(recursive: true);
+            if (i < targets.length - 1) {
+              final copyPart = File(
+                p.join(
+                  local.parent.path,
+                  '.${p.basename(local.path)}.$i.sync.part',
+                ),
+              );
+              await staging.copy(copyPart.path);
+              await copyPart.rename(local.path);
+            } else {
+              await staging.rename(local.path);
+            }
+            final when = DateTime.fromMillisecondsSinceEpoch(record.modified);
+            try {
+              await local.setLastModified(when);
+            } on FileSystemException {
+              // Keeping the remote time only saves a hash on the next scan.
+            }
+            final stat = local.statSync();
+            index.entries[record.path] = SyncFileRecord(
+              path: record.path,
+              hash: record.hash,
+              bytes: stat.size,
+              modified: stat.modified.millisecondsSinceEpoch,
+            );
+            index.removed.remove(record.path);
+            index.waiting.remove(record.path);
+            written++;
+            changedPaths.add(record.path);
+          }
+        } on Object catch (error) {
+          Log.warn('A synced file could not be written: $error');
+          if (staging.existsSync()) {
+            try {
+              await staging.delete();
+            } on Object {
+              // Swept on a later run.
+            }
+          }
         }
       }
     }
+
+    await Future.wait([for (var i = 0; i < workers; i++) runWorker()]);
   }
 
   return SyncFileApplyResult(

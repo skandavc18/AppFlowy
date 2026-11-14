@@ -52,7 +52,7 @@ class WorkflowBackground {
   static List<String> _launchArguments = const [];
 
   static bool get isSupported =>
-      !kIsWeb && (Platform.isWindows || Platform.isLinux);
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
   static void recordLaunchArguments(List<String> arguments) {
     _launchArguments = List.unmodifiable(arguments);

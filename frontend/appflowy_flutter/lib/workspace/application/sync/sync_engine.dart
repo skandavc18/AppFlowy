@@ -68,6 +68,24 @@ enum SyncPhase {
   failed,
 }
 
+/// Runtime status of a single sync provider destination.
+@immutable
+class SyncDestinationStatus {
+  const SyncDestinationStatus({
+    this.phase = SyncPhase.idle,
+    this.activity = '',
+    this.needsSignIn = false,
+    this.lockedBy,
+    this.passwordChangedElsewhere = false,
+  });
+
+  final SyncPhase phase;
+  final String activity;
+  final bool needsSignIn;
+  final SyncVault? lockedBy;
+  final bool passwordChangedElsewhere;
+}
+
 /// One computer or phone syncing through the folder.
 @immutable
 class SyncDeviceSummary {
@@ -275,13 +293,16 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   final SyncKeyKeeper _keys;
   final AppPasswordSource _passwords;
 
-  // The key of the folder this computer syncs with, and the record it opens;
-  // null while the folder is not sealed, or is sealed with a password not
-  // typed here yet.
-  SyncKey? _key;
-  SyncVault? _vault;
+  // Keys and vaults unlocked in memory, indexed by vaultId.
+  final Map<String, SyncKey> _keysInMemory = {};
+  final Map<String, SyncVault> _vaultsById = {};
 
-  // The record waiting for its password.
+  // Per-binding runtime status and locked vault records.
+  final Map<String, SyncDestinationStatus> _destinationStatuses = {};
+  final Map<String, SyncVault> _lockedByBinding = {};
+
+  // The most recent key/locked record for single-provider compatibility.
+  SyncKey? _key;
   SyncVault? _lockedBy;
 
   final Map<String, SyncVault> _vaults = {};
@@ -312,8 +333,11 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   SyncPhase _phase = SyncPhase.off;
   String _activity = '';
   bool _needsSignIn = false;
+  bool _inBackground = false;
   List<SyncDeviceSummary> _devices = const [];
+  final Map<String, List<SyncDeviceSummary>> _devicesByBinding = {};
   SyncEpochInfo? _restoredElsewhere;
+  String? _restoredBindingId;
   WorkspaceRestoreOutcome? _lastRestore;
 
   String? _workspaceId;
@@ -331,51 +355,102 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   // done.
   Completer<void>? _rounds;
   bool _busyWithSetup = false;
+  BackupDestination? _settingUpDestination;
 
   final Map<String, SyncCheckpointInfo> _checkpointInfos = {};
   final Map<String, SyncDeviceInfo> _deviceInfos = {};
-  Map<String, RemoteSyncFile>? _blobs;
+  final Expando<Map<String, RemoteSyncFile>> _remoteBlobs = Expando();
 
-  // Since when changes of [_unreachable] have been missing from the folder.
-  // A moment's gap, say a record that could not be read, is not worth a word.
-  DateTime? _unreachableSince;
-  Set<String> _unreachable = const {};
+  // Since when changes of [_unreachable] have been missing from a folder, per
+  // binding id.
+  final Map<String, DateTime> _unreachableSinceByBinding = {};
+  final Map<String, Set<String>> _unreachableByBinding = {};
 
   SyncSettings get settings => _settingsOverride ?? SyncSettings.instance;
 
-  SyncBinding? get binding => settings.binding;
+  /// All destinations bound to the currently open workspace.
+  List<SyncBinding> get boundBindings =>
+      settings.bindingsFor(workspaceId: _workspaceId, uid: _uid);
+
+  /// Primary binding: the first destination bound to the open workspace, or the
+  /// first configured destination overall when another workspace is open.
+  SyncBinding? get binding {
+    final bound = boundBindings;
+    if (bound.isNotEmpty) {
+      return bound.first;
+    }
+    return settings.binding;
+  }
+
+  /// Destination currently being initialized in the background (before its
+  /// first epoch is published).
+  BackupDestination? get settingUpDestination => _settingUpDestination;
+
+  /// Per-destination runtime status.
+  SyncDestinationStatus statusOf(String bindingId) {
+    final b = settings.byId(bindingId);
+    if (b != null && b.paused) {
+      return const SyncDestinationStatus(phase: SyncPhase.paused);
+    }
+    return _destinationStatuses[bindingId] ??
+        SyncDestinationStatus(
+          phase: b == null
+              ? SyncPhase.off
+              : (b.lastError.isEmpty ? SyncPhase.idle : SyncPhase.failed),
+          activity: b?.lastError ?? '',
+        );
+  }
 
   SyncPhase get phase => _phase;
 
   /// What a running round is doing, for the interface.
   String get activity => _activity;
 
-  /// Whether the last round failed because the account holding the sync
-  /// folder has to be signed in to again.
-  bool get needsSignIn => _phase == SyncPhase.failed && _needsSignIn;
+  /// Whether any bound destination needs re-authentication.
+  bool get needsSignIn =>
+      (_phase == SyncPhase.failed && _needsSignIn) ||
+      boundBindings.any((b) => statusOf(b.id).needsSignIn);
+
+  /// Whether every bound destination for this workspace is currently paused.
+  bool get isAllPaused {
+    final bound = boundBindings;
+    return bound.isNotEmpty && bound.every((b) => b.paused);
+  }
 
   List<SyncDeviceSummary> get devices => _devices;
 
   /// The restore waiting on another computer, while [phase] says so.
   SyncEpochInfo? get restoredElsewhere => _restoredElsewhere;
 
-  /// Whether the folder this computer syncs with is sealed.
-  bool get isSealed => binding?.vaultId.isNotEmpty ?? false;
+  /// Whether any bound folder is sealed with the AppFlowy password.
+  bool get isSealed => boundBindings.isNotEmpty
+      ? boundBindings.any((b) => b.vaultId.isNotEmpty)
+      : (binding?.vaultId.isNotEmpty ?? false);
 
   /// The record whose password has to be typed before sync can go on.
-  SyncVault? get lockedBy => _lockedBy;
+  SyncVault? get lockedBy =>
+      _lockedBy ??
+      (_lockedByBinding.values.isEmpty ? null : _lockedByBinding.values.first);
 
-  /// Whether the folder is locked because the AppFlowy password was changed
-  /// on another computer, rather than never typed here.
+  /// Whether a folder is locked because the AppFlowy password was changed on
+  /// another computer, rather than never typed here.
   bool get passwordChangedElsewhere {
+    for (final b in boundBindings) {
+      final locked = _lockedByBinding[b.id];
+      if (locked != null && b.vaultId.isNotEmpty && locked.id != b.vaultId) {
+        return true;
+      }
+    }
     final locked = _lockedBy;
     final vaultId = binding?.vaultId ?? '';
     return locked != null && vaultId.isNotEmpty && locked.id != vaultId;
   }
 
-  /// Whether the folder is still sealed with an AppFlowy password this
-  /// computer has since changed, waiting to be sealed again.
-  bool get needsResealing => isSealed && (binding?.resealPending ?? false);
+  /// Whether any bound folder is still sealed with an old AppFlowy password
+  /// waiting to be sealed again.
+  bool get needsResealing => boundBindings.isNotEmpty
+      ? boundBindings.any((b) => b.vaultId.isNotEmpty && b.resealPending)
+      : (isSealed && (binding?.resealPending ?? false));
 
   /// Whether accounts, passwords and keys travel through the folder.
   bool get credentialsSynced => isSealed && _credentialsOn;
@@ -385,18 +460,14 @@ class WorkspaceSyncEngine extends ChangeNotifier {
 
   bool get isBusy => _running || _busyWithSetup;
   bool get isSuspended => _suspended;
+  bool get inBackground => _inBackground;
 
   /// Whether the workspace that is open is a local one. A workspace on
   /// AppFlowy Cloud is already kept in step by the cloud.
   bool get canSyncThisWorkspace => _isLocalWorkspace && _workspaceId != null;
 
   /// Whether sync is set up for the workspace that is open.
-  bool get isBoundHere {
-    final binding = this.binding;
-    return binding != null &&
-        binding.workspaceId == _workspaceId &&
-        binding.uid == _uid;
-  }
+  bool get isBoundHere => boundBindings.isNotEmpty;
 
   String get workspaceName => _workspaceName;
 
@@ -446,8 +517,16 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     return GatedPreferences(source, credentials: credentials);
   }
 
-  Future<File> _preferencesIndexFile(String epoch) async =>
-      File(p.join((await settings.epochFolder(epoch)).path, 'prefs.json'));
+  Future<File> _preferencesIndexFile(
+    String epoch, {
+    String bindingId = '',
+  }) async =>
+      File(
+        p.join(
+          (await settings.epochFolder(epoch, bindingId: bindingId)).path,
+          'prefs.json',
+        ),
+      );
 
   /// The settings changed here since they were last synced. None when they
   /// cannot be read this time: nothing is noted, so they go out next round.
@@ -578,17 +657,27 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     _workspaceName = workspaceName;
     _isLocalWorkspace = isLocalWorkspace;
     _restoredElsewhere = null;
-    _unreachableSince = null;
+    _restoredBindingId = null;
+    _unreachableSinceByBinding.clear();
+    _unreachableByBinding.clear();
     await settings.ensureLoaded();
-    final vaultId = binding?.vaultId ?? '';
-    if (vaultId.isNotEmpty && _key?.vaultId != vaultId) {
-      _key = await _keys.read(vaultId);
+    for (final b in boundBindings) {
+      final vaultId = b.vaultId;
+      if (vaultId.isNotEmpty && !_keysInMemory.containsKey(vaultId)) {
+        final stored = await _keys.read(vaultId);
+        if (stored != null) {
+          _keysInMemory[vaultId] = stored;
+          _key ??= stored;
+        }
+      }
     }
     if (isBoundHere) {
       await _loadDevices();
     }
     final pending = settings.pendingStart;
-    if (pending != null && binding == null && canSyncThisWorkspace) {
+    if (pending != null &&
+        settings.byDestination(pending) == null &&
+        canSyncThisWorkspace) {
       unawaited(
         _startPending(pending, encrypt: settings.pendingEncrypt),
       );
@@ -613,6 +702,16 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     _timer = null;
   }
 
+  /// Adjusts the background polling cadence when the desktop window hides to or
+  /// returns from the notification area.
+  void setBackgroundMode(bool inBackground) {
+    if (_inBackground == inBackground) {
+      return;
+    }
+    _inBackground = inBackground;
+    _schedule(runImmediately: !inBackground);
+  }
+
   Future<void> suspendForSignOut() async {
     _suspended = true;
     detach();
@@ -628,45 +727,73 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   }
 
   Future<void> forgetAccount() async {
-    final current = binding;
-    if (current != null && current.uid == _uid) {
-      final folder = await settings.epochFolder(current.epoch);
+    final matching = [
+      for (final b in settings.bindings)
+        if (b.uid == _uid) b,
+    ];
+    for (final current in matching) {
+      final folder = await settings.epochFolder(
+        current.epoch,
+        bindingId: current.id,
+      );
       for (final name in ['files.json', 'prefs.json', 'collab_state.json']) {
         final file = File(p.join(folder.path, name));
         if (await file.exists()) await file.delete();
       }
-      await settings
-          .update(current.copyWith(applied: const {}, baseApplied: false));
+      await settings.upsertBinding(
+        current.copyWith(applied: const {}, baseApplied: false),
+      );
     }
     _uid = null;
     _workspaceId = null;
     _workspaceName = '';
     _key = null;
+    _keysInMemory.clear();
+    _vaultsById.clear();
+    _lockedBy = null;
+    _lockedByBinding.clear();
+    _destinationStatuses.clear();
+    _devicesByBinding.clear();
     _preferencesNow = null;
     _preferences = null;
     _onFilesApplied = null;
     _set(SyncPhase.off);
   }
 
-  void _schedule() {
+  void _schedule({bool runImmediately = true}) {
     _timer?.cancel();
     _timer = null;
     if (_suspended) return;
-    final binding = this.binding;
-    if (binding == null || !isBoundHere) {
-      _set(SyncPhase.off);
+    final bound = boundBindings;
+    if (bound.isEmpty) {
+      if (_busyWithSetup) {
+        _set(SyncPhase.working, activity: _activity);
+      } else {
+        _set(SyncPhase.off);
+      }
       return;
     }
-    if (binding.paused) {
+    final active = [for (final b in bound) if (!b.paused) b];
+    if (active.isEmpty) {
       _set(SyncPhase.paused);
       return;
     }
-    _set(binding.lastError.isEmpty ? SyncPhase.idle : SyncPhase.failed);
+    final anyError = active.any((b) => b.lastError.isNotEmpty);
+    final allError = active.every((b) => b.lastError.isNotEmpty);
+    if (!_running && !_busyWithSetup) {
+      _set(allError && anyError ? SyncPhase.failed : SyncPhase.idle);
+    }
+    final shortest = active
+        .map((b) => b.intervalSeconds)
+        .reduce(min);
+    final seconds = _inBackground ? max(60, shortest) : max(5, shortest);
     _timer = Timer.periodic(
-      Duration(seconds: max(5, binding.intervalSeconds)),
+      Duration(seconds: seconds),
       (_) => unawaited(syncNow()),
     );
-    unawaited(syncNow());
+    if (runImmediately) {
+      unawaited(syncNow());
+    }
   }
 
   void _set(SyncPhase phase, {String activity = ''}) {
@@ -710,111 +837,270 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   }
 
   Future<void> _round() async {
-    final binding = this.binding;
-    if (binding == null ||
-        !isBoundHere ||
-        binding.paused ||
-        _restoredElsewhere != null) {
+    final bound = boundBindings;
+    final active = [
+      for (final b in bound)
+        if (!b.paused) b,
+    ];
+    if (active.isEmpty || _restoredElsewhere != null) {
       return;
     }
     _set(SyncPhase.working, activity: 'Looking for changes…');
-    _blobs = null;
     _preferencesNow = null;
-    SyncRemote? plain;
+
+    final sessions = <_ProviderSession>[];
+    var anyLocked = false;
+    var anyFailed = false;
+    var anySignInNeeded = false;
+    var lastErrorDetail = '';
+
     try {
-      plain = await _openRemote(binding.destination);
-      await plain.ensureReady();
-      final listing = SyncListing.of(await plain.list());
-      final current = listing.current;
-      if (current == null) {
-        throw const SyncError(
-          'The sync folder no longer holds this workspace.',
+      // Phase 1: Pull from every active provider so incoming edits from any
+      // provider merge into the workspace before Phase 2 pushes out to all.
+      for (final candidate in active) {
+        _destinationStatuses[candidate.id] = const SyncDestinationStatus(
+          phase: SyncPhase.working,
+          activity: 'Looking for changes…',
         );
-      }
-      final key = await _keyFor(plain, current);
-      if (_lockedBy != null) {
-        _set(SyncPhase.locked);
-        return;
-      }
-      if (key == null && binding.vaultId.isNotEmpty) {
-        // Never followed into an epoch that is not sealed: everything here
-        // would go out in the clear.
-        throw const SyncError(
-          'The sync folder is no longer sealed with the AppFlowy password. '
-          'Set sync up again.',
-        );
-      }
-      final remote = SealedSyncRemote(plain, key, scratch: _scratchFolder);
-      var next = binding;
-      if (current.id != binding.epoch) {
-        if (current.id.compareTo(binding.epoch) < 0) {
-          throw const SyncError(
-            'The sync folder lost the start of this workspace. Set sync up '
-            'again.',
+        notifyListeners();
+        SyncRemote? plain;
+        var handedOff = false;
+        try {
+          plain = await _openRemote(candidate.destination);
+          await plain.ensureReady();
+          final listing = SyncListing.of(await plain.list());
+          final current = listing.current;
+          if (current == null) {
+            throw const SyncError(
+              'The sync folder no longer holds this workspace.',
+            );
+          }
+          final key =
+              await _keyFor(plain, current, bindingId: candidate.id);
+          final lockedVault = _lockedByBinding[candidate.id];
+          if (lockedVault != null) {
+            anyLocked = true;
+            _destinationStatuses[candidate.id] = SyncDestinationStatus(
+              phase: SyncPhase.locked,
+              lockedBy: lockedVault,
+              passwordChangedElsewhere: candidate.vaultId.isNotEmpty &&
+                  lockedVault.id != candidate.vaultId,
+            );
+            continue;
+          }
+          if (key == null && candidate.vaultId.isNotEmpty) {
+            throw const SyncError(
+              'The sync folder is no longer sealed with the AppFlowy password. '
+              'Set sync up again.',
+            );
+          }
+          final remote = SealedSyncRemote(plain, key, scratch: _scratchFolder);
+          var next = candidate;
+          if (current.id != candidate.epoch) {
+            if (current.id.compareTo(candidate.epoch) < 0) {
+              throw const SyncError(
+                'The sync folder lost the start of this workspace. Set sync up '
+                'again.',
+              );
+            }
+            final info = await _readEpochInfo(remote, current);
+            if (info.reason != SyncEpochReason.continued) {
+              await _restoredOnAnotherComputer(
+                plain,
+                listing,
+                candidate,
+                info,
+              );
+              return;
+            }
+            next = await _follow(current, info, candidate, key);
+          }
+
+          await _announceDevice(remote, current);
+          await _refreshDevices(remote, current, bindingId: next.id);
+          next = await _pull(remote, listing, current, next);
+          sessions.add(
+            _ProviderSession(
+              original: candidate,
+              currentBinding: next,
+              plain: plain,
+              remote: remote,
+              epoch: current,
+            ),
           );
-        }
-        final info = await _readEpochInfo(remote, current);
-        if (info.reason != SyncEpochReason.continued) {
-          await _restoredOnAnotherComputer(
-            plain,
-            listing,
-            binding,
-            info,
+          handedOff = true;
+        } on Object catch (error, stackTrace) {
+          final detail = describeSyncError(error);
+          final signIn =
+              error is ProviderFailure && error.status.needsReconnect;
+          anyFailed = true;
+          if (signIn) anySignInNeeded = true;
+          lastErrorDetail = detail;
+          Log.warn(
+            'A sync pull from ${candidate.destination.kind.name} did not finish: '
+            '$detail\n$stackTrace',
           );
-          return;
+          final latest = settings.byId(candidate.id);
+          if (latest != null && latest.epoch == candidate.epoch) {
+            await settings.upsertBinding(latest.copyWith(lastError: detail));
+          }
+          _destinationStatuses[candidate.id] = SyncDestinationStatus(
+            phase: SyncPhase.failed,
+            activity: detail,
+            needsSignIn: signIn,
+          );
+        } finally {
+          if (!handedOff) {
+            plain?.dispose();
+          }
         }
-        next = await _follow(current, info, binding, key);
       }
 
-      await _announceDevice(remote, current);
-      await _refreshDevices(remote, current);
-      next = await _pull(remote, listing, current, next);
-      next = await _push(remote, current, next);
-      next = await _maybeCheckpoint(remote, current, next);
-      final missingSince = _unreachableSince;
-      if (missingSince != null &&
-          _clock().difference(missingSince) >= checkpointQuietPeriod) {
-        throw SyncError(
-          'Changes from ${_unreachable.map(_nameOf).join(', ')} are missing '
-          'from the sync folder, so this computer cannot catch up with them. '
-          'On a computer that has them, stop syncing and set sync up again '
-          'in an empty folder, then join it here.',
-        );
+      // Phase 2: Push local changes (plus anything merged from other providers
+      // in Phase 1) out to every connected provider.
+      _preferencesNow = null;
+      for (final session in sessions) {
+        try {
+          var next = await _push(
+            session.remote,
+            session.epoch,
+            session.currentBinding,
+          );
+          next = await _maybeCheckpoint(session.remote, session.epoch, next);
+          final missingSince =
+              _unreachableSinceByBinding[session.original.id];
+          final unreachable =
+              _unreachableByBinding[session.original.id] ?? const {};
+          if (missingSince != null &&
+              _clock().difference(missingSince) >= checkpointQuietPeriod) {
+            throw SyncError(
+              'Changes from ${unreachable.map(_nameOf).join(', ')} are missing '
+              'from the sync folder, so this computer cannot catch up with them. '
+              'On a computer that has them, stop syncing and set sync up again '
+              'in an empty folder, then join it here.',
+            );
+          }
+          await settings.upsertBinding(
+            next.copyWith(lastSyncedAt: _clock(), lastError: ''),
+          );
+          _destinationStatuses[session.original.id] =
+              const SyncDestinationStatus();
+        } on Object catch (error, stackTrace) {
+          final detail = describeSyncError(error);
+          final signIn =
+              error is ProviderFailure && error.status.needsReconnect;
+          anyFailed = true;
+          if (signIn) anySignInNeeded = true;
+          lastErrorDetail = detail;
+          Log.warn(
+            'A sync push to ${session.original.destination.kind.name} did not '
+            'finish: $detail\n$stackTrace',
+          );
+          final latest = settings.byId(session.original.id);
+          if (latest != null && latest.epoch == session.currentBinding.epoch) {
+            await settings.upsertBinding(latest.copyWith(lastError: detail));
+          }
+          _destinationStatuses[session.original.id] = SyncDestinationStatus(
+            phase: SyncPhase.failed,
+            activity: detail,
+            needsSignIn: signIn,
+          );
+        }
       }
-      await settings.update(
-        next.copyWith(lastSyncedAt: _clock(), lastError: ''),
-      );
-      _needsSignIn = false;
-      _set(SyncPhase.idle);
-    } on Object catch (error, stackTrace) {
-      final detail = describeSyncError(error);
-      _needsSignIn = error is ProviderFailure && error.status.needsReconnect;
-      Log.warn('A sync round did not finish: $detail\n$stackTrace');
-      final latest = this.binding;
-      if (latest != null && latest.epoch == binding.epoch) {
-        await settings.update(latest.copyWith(lastError: detail));
+
+      // Prune outbox switches only once every sealed bound provider has noted
+      // them, so a second provider still receives a switch turned here.
+      if (_outbox.isNotEmpty) {
+        await _pruneOutboxAcrossSealedBindings();
       }
-      _set(SyncPhase.failed, activity: detail);
     } finally {
-      plain?.dispose();
+      for (final session in sessions) {
+        session.plain.dispose();
+      }
     }
+
+    if (_restoredElsewhere != null) {
+      return;
+    }
+    _needsSignIn = anySignInNeeded;
+    if (anyLocked && sessions.isEmpty) {
+      _set(SyncPhase.locked);
+    } else if (anyFailed && (sessions.isEmpty || active.length == 1)) {
+      _set(SyncPhase.failed, activity: lastErrorDetail);
+    } else if (anyLocked) {
+      _set(SyncPhase.locked);
+    } else if (anyFailed) {
+      _set(SyncPhase.failed, activity: lastErrorDetail);
+    } else {
+      _set(SyncPhase.idle);
+    }
+  }
+
+  Future<void> _pruneOutboxAcrossSealedBindings() async {
+    final sealedBindings = [
+      for (final b in boundBindings)
+        if (b.vaultId.isNotEmpty) b,
+    ];
+    if (sealedBindings.isEmpty) {
+      _outbox.clear();
+      return;
+    }
+    final indices = <SyncPreferencesIndex>[];
+    for (final b in sealedBindings) {
+      final key = await _keyOf(b);
+      if (key == null) {
+        return;
+      }
+      indices.add(
+        await SyncPreferencesIndex.load(
+          await _preferencesIndexFile(b.epoch, bindingId: b.id),
+          key: key,
+        ),
+      );
+    }
+    _outbox.removeWhere(
+      (record) => indices.every(
+        (prefs) => !record.isLaterThan(prefs.entries[record.key]),
+      ),
+    );
   }
 
   /// The key [epoch] is sealed with, as this computer keeps it or as the
   /// AppFlowy password makes it; null for an epoch never sealed. Leaves
   /// [_lockedBy] set when this computer has no password that opens it.
-  Future<SyncKey?> _keyFor(SyncRemote remote, SyncEpochListing epoch) async {
+  Future<SyncKey?> _keyFor(
+    SyncRemote remote,
+    SyncEpochListing epoch, {
+    String? bindingId,
+  }) async {
     final file = epoch.vault;
     if (file == null) {
-      _lockedBy = null;
+      if (bindingId != null) {
+        _lockedByBinding.remove(bindingId);
+      }
+      _lockedBy = _lockedByBinding.values.isEmpty
+          ? null
+          : _lockedByBinding.values.first;
       return null;
     }
     final vault = await _readVault(remote, file);
     final key = await _openVault(vault);
-    _lockedBy = key == null ? vault : null;
+    if (bindingId != null) {
+      if (key == null) {
+        _lockedByBinding[bindingId] = vault;
+      } else {
+        _lockedByBinding.remove(bindingId);
+      }
+    }
+    _lockedBy = key == null
+        ? vault
+        : (_lockedByBinding.values.isEmpty
+            ? null
+            : _lockedByBinding.values.first);
     if (key != null) {
+      _keysInMemory[vault.id] = key;
+      _vaultsById[vault.id] = vault;
       _key = key;
-      _vault = vault;
     }
     return key;
   }
@@ -822,12 +1108,14 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   /// The key for [vault]: the one in memory, the one kept in the keyring, or
   /// the one the AppFlowy password makes.
   Future<SyncKey?> _openVault(SyncVault vault) async {
-    final held = _key;
-    if (held != null && vault.accepts(held)) {
-      return held;
+    final inMemory = _keysInMemory[vault.id] ?? _key;
+    if (inMemory != null && vault.accepts(inMemory)) {
+      _keysInMemory[vault.id] = inMemory;
+      return inMemory;
     }
     final kept = await _keys.read(vault.id);
     if (kept != null && vault.accepts(kept)) {
+      _keysInMemory[vault.id] = kept;
       return kept;
     }
     final password = await _passwords.current();
@@ -837,6 +1125,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     _triedPasswords[vault.id] = password;
     final key = await vault.unlock(password);
     if (key != null) {
+      _keysInMemory[vault.id] = key;
       await _keys.write(key);
     }
     return key;
@@ -863,11 +1152,15 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     if (vaultId.isEmpty) {
       return null;
     }
-    final held = _key;
+    final held = _keysInMemory[vaultId] ?? _key;
     if (held != null && held.vaultId == vaultId) {
       return held;
     }
-    return _keys.read(vaultId);
+    final kept = await _keys.read(vaultId);
+    if (kept != null) {
+      _keysInMemory[vaultId] = kept;
+    }
+    return kept;
   }
 
   /// Carries on in [current], an epoch another computer started for the same
@@ -889,10 +1182,11 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     // What the settings were when last synced, so a change made here and not
     // sent yet still counts as one.
     final carried = await SyncPreferencesIndex.load(
-      await _preferencesIndexFile(binding.epoch),
+      await _preferencesIndexFile(binding.epoch, bindingId: binding.id),
       key: await _keyOf(binding),
     );
     final next = SyncBinding(
+      id: binding.id,
       destination: binding.destination,
       epoch: current.id,
       workspaceId: binding.workspaceId,
@@ -906,8 +1200,11 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       syncPreferences: binding.syncPreferences,
       vaultId: key?.vaultId ?? '',
     );
-    await carried.save(await _preferencesIndexFile(current.id), key: key);
-    await settings.update(next);
+    await carried.save(
+      await _preferencesIndexFile(current.id, bindingId: next.id),
+      key: key,
+    );
+    await settings.upsertBinding(next);
     await settings.sweepEpochFolders(keep: current.id);
     _checkpointInfos.clear();
     return next;
@@ -940,6 +1237,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       }
     }
     _restoredElsewhere = info;
+    _restoredBindingId = binding.id;
     _set(SyncPhase.restoredElsewhere);
     final ask = onRestoredElsewhere;
     if (ask != null) {
@@ -960,11 +1258,15 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     SyncEpochListing epoch,
     SyncBinding binding,
   ) async {
-    final folder = await settings.epochFolder(epoch.id);
+    final folder = await settings.epochFolder(
+      epoch.id,
+      bindingId: binding.id,
+    );
     final state = File(p.join(folder.path, 'collab_state.json'));
     final indexFile = File(p.join(folder.path, 'files.json'));
     final index = await SyncFileIndex.load(indexFile);
-    final prefsFile = await _preferencesIndexFile(epoch.id);
+    final prefsFile =
+        await _preferencesIndexFile(epoch.id, bindingId: binding.id);
     final prefs = await SyncPreferencesIndex.load(prefsFile, key: remote.key);
     _credentialsOn = prefs.credentialsOn;
     var next = binding;
@@ -983,16 +1285,17 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     );
 
     if (plan.unreachable.isEmpty) {
-      _unreachableSince = null;
+      _unreachableSinceByBinding.remove(binding.id);
+      _unreachableByBinding.remove(binding.id);
     } else {
-      if (_unreachableSince == null) {
-        _unreachableSince = _clock();
+      if (!_unreachableSinceByBinding.containsKey(binding.id)) {
+        _unreachableSinceByBinding[binding.id] = _clock();
         Log.warn(
           'Changes from ${plan.unreachable.map(_nameOf).join(', ')} are not '
           'in the sync folder any more.',
         );
       }
-      _unreachable = plan.unreachable;
+      _unreachableByBinding[binding.id] = plan.unreachable;
     }
 
     for (final planned in plan.checkpoints) {
@@ -1012,7 +1315,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         }
       });
       next = next.copyWith(applied: applied);
-      await settings.update(next);
+      await settings.upsertBinding(next);
       await index.save(indexFile);
       await prefs.save(prefsFile, key: remote.key);
     }
@@ -1023,7 +1326,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       next = next.copyWith(
         applied: {...next.applied, change.device: change.seq},
       );
-      await settings.update(next);
+      await settings.upsertBinding(next);
       await index.save(indexFile);
       await prefs.save(prefsFile, key: remote.key);
     }
@@ -1061,7 +1364,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       await _applyPack(remote, epoch.base!, state, index, prefs, binding);
     }
     final next = binding.copyWith(applied: applied, baseApplied: true);
-    await settings.update(next);
+    await settings.upsertBinding(next);
     return next;
   }
 
@@ -1141,11 +1444,15 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     SyncEpochListing epoch,
     SyncBinding binding,
   ) async {
-    final folder = await settings.epochFolder(epoch.id);
+    final folder = await settings.epochFolder(
+      epoch.id,
+      bindingId: binding.id,
+    );
     final state = File(p.join(folder.path, 'collab_state.json'));
     final indexFile = File(p.join(folder.path, 'files.json'));
     final index = await SyncFileIndex.load(indexFile);
-    final prefsFile = await _preferencesIndexFile(epoch.id);
+    final prefsFile =
+        await _preferencesIndexFile(epoch.id, bindingId: binding.id);
     final prefs = await SyncPreferencesIndex.load(prefsFile, key: remote.key);
     final scratch = await _scratchFolder();
     final bundle =
@@ -1237,9 +1544,6 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       }
       await index.save(indexFile);
       preferences.forEach(prefs.note);
-      _outbox.removeWhere(
-        (record) => !record.isLaterThan(prefs.entries[record.key]),
-      );
       _credentialsOn = prefs.credentialsOn;
       await prefs.save(prefsFile, key: remote.key);
 
@@ -1252,7 +1556,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             ? {...binding.applied, me: seq}
             : null,
       );
-      await settings.update(next);
+      await settings.upsertBinding(next);
       return next;
     } finally {
       await _discard(bundle);
@@ -1260,52 +1564,76 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     }
   }
 
-  /// Puts the contents of [changed] in the folder, each under its hash.
-  ///
-  /// Each file is copied aside and hashed again before it goes: a file changed
-  /// while it was being sent must never be stored under the hash of what it
-  /// was.
+  /// Puts the contents of [changed] in the folder, each under its hash, using
+  /// up to [concurrency] parallel uploads and deduplicating identical hashes.
   Future<List<SyncFileRecord>> _uploadFiles(
     SealedSyncRemote remote,
     String dataPath,
-    List<SyncFileRecord> changed,
-  ) async {
+    List<SyncFileRecord> changed, {
+    int concurrency = 4,
+  }) async {
     if (changed.isEmpty) {
       return const [];
     }
     final blobs = await _blobsOf(remote);
     final scratch = await _scratchFolder();
-    final sent = <SyncFileRecord>[];
-    for (final record in changed) {
-      final source = File(p.joinAll([dataPath, ...p.posix.split(record.path)]));
-      final copy = File(p.join(scratch.path, 'file-${randomSyncToken(8)}'));
-      try {
-        await source.copy(copy.path);
-        final hash = await hashFile(copy);
-        final name = remote.blobName(hash);
-        if (!blobs.containsKey(name)) {
-          blobs[name] = await remote.upload(
-            SyncFileName.blob(name),
-            copy,
-            blob: true,
-          );
+    final sentByIndex = List<SyncFileRecord?>.filled(changed.length, null);
+    final inFlight = <String, Future<RemoteSyncFile>>{};
+    var cursor = 0;
+    final workers = min(max(1, concurrency), changed.length);
+
+    Future<void> runWorker() async {
+      while (true) {
+        final index = cursor++;
+        if (index >= changed.length) {
+          return;
         }
-        sent.add(
-          SyncFileRecord(
+        final record = changed[index];
+        final source =
+            File(p.joinAll([dataPath, ...p.posix.split(record.path)]));
+        final copy = File(p.join(scratch.path, 'file-${randomSyncToken(8)}'));
+        try {
+          await source.copy(copy.path);
+          final hash = await hashFile(copy);
+          final name = remote.blobName(hash);
+          if (!blobs.containsKey(name)) {
+            final pending = inFlight[name];
+            if (pending != null) {
+              blobs[name] = await pending;
+            } else {
+              final upload = remote.upload(
+                SyncFileName.blob(name),
+                copy,
+                blob: true,
+              );
+              inFlight[name] = upload;
+              try {
+                blobs[name] = await upload;
+              } finally {
+                unawaited(inFlight.remove(name));
+              }
+            }
+          }
+          sentByIndex[index] = SyncFileRecord(
             path: record.path,
             hash: hash,
             bytes: copy.lengthSync(),
             modified: record.modified,
-          ),
-        );
-      } on FileSystemException catch (error) {
-        // Removed or locked since the scan; the next round sees it as it is.
-        Log.info('A file was not synced this time: $error');
-      } finally {
-        await _discard(copy);
+          );
+        } on FileSystemException catch (error) {
+          // Removed or locked since the scan; the next round sees it as it is.
+          Log.info('A file was not synced this time: $error');
+        } finally {
+          await _discard(copy);
+        }
       }
     }
-    return sent;
+
+    await Future.wait([for (var i = 0; i < workers; i++) runWorker()]);
+    return [
+      for (final item in sentByIndex)
+        if (item != null) item,
+    ];
   }
 
   /// Writes this computer's name into the epoch, once.
@@ -1381,11 +1709,12 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     SyncEpochListing epoch,
     SyncBinding binding,
   ) async {
-    final folder = await settings.epochFolder(epoch.id);
+    final folder =
+        await settings.epochFolder(epoch.id, bindingId: binding.id);
     final index =
         await SyncFileIndex.load(File(p.join(folder.path, 'files.json')));
     final prefs = await SyncPreferencesIndex.load(
-      await _preferencesIndexFile(epoch.id),
+      await _preferencesIndexFile(epoch.id, bindingId: binding.id),
       key: remote.key,
     );
     final scratch = await _scratchFolder();
@@ -1576,6 +1905,20 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     return inspect(destination, key: key, password: password);
   }
 
+  /// Records an already-inspected empty folder for the first workspace to start
+  /// syncing into asynchronously as soon as it opens — without a second
+  /// blocking network round-trip.
+  Future<void> queueStartWhenReady(
+    BackupDestination destination, {
+    bool encrypt = true,
+  }) async {
+    await settings.ensureLoaded();
+    if (encrypt) {
+      await _requirePassword();
+    }
+    await settings.setPendingStart(destination, encrypt: encrypt);
+  }
+
   /// Keeps an empty folder, chosen before any workspace exists here, for the
   /// first workspace to start syncing into once it opens — sealed with the
   /// AppFlowy password by default, or unsealed when [encrypt] is false.
@@ -1599,8 +1942,42 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     await settings.setPendingStart(destination, encrypt: encrypt);
   }
 
+  /// Starts syncing into [destination] asynchronously in the background without
+  /// blocking the caller or showing a modal spinner.
+  void startNewInBackground(
+    BackupDestination destination, {
+    bool encrypt = true,
+    void Function()? onSucceeded,
+    void Function(Object error)? onFailed,
+  }) {
+    _settingUpDestination = destination;
+    _set(SyncPhase.working, activity: 'Preparing initial sync…');
+    unawaited(() async {
+      try {
+        await startNew(destination, encrypt: encrypt);
+        onSucceeded?.call();
+      } on Object catch (error) {
+        Log.warn('Background initial sync setup failed: $error');
+        if (onFailed != null) {
+          onFailed(error);
+        } else {
+          notify?.call(
+            'Sync could not start: ${describeSyncError(error)}',
+            isError: true,
+          );
+        }
+      } finally {
+        if (_settingUpDestination == destination) {
+          _settingUpDestination = null;
+          notifyListeners();
+        }
+      }
+    }());
+  }
+
   /// Starts syncing this workspace into an empty folder, sealed with the
-  /// AppFlowy password when [encrypt] is true (the default).
+  /// AppFlowy password when [encrypt] is true (the default). If other providers
+  /// are already syncing this workspace, [destination] is added alongside them.
   Future<void> startNew(
     BackupDestination destination, {
     bool encrypt = true,
@@ -1610,6 +1987,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   Future<void> _startSealed(BackupDestination destination) => _setup(() async {
         _requireLocalWorkspace();
         final password = await _requirePassword();
+        _settingUpDestination = destination;
         final plain = await _openRemote(destination);
         try {
           await plain.ensureReady();
@@ -1617,10 +1995,10 @@ class WorkspaceSyncEngine extends ChangeNotifier {
           if (!listing.isEmpty) {
             throw const SyncError('That folder already holds a workspace.');
           }
-          _report('Sealing the folder…');
+          _set(SyncPhase.working, activity: 'Sealing the folder…');
           final (vault, key) = await _newVault(password);
           final epoch = newSyncEpoch(_clock());
-          final binding = await _publishEpoch(
+          final created = await _publishEpoch(
             remote: SealedSyncRemote(plain, key, scratch: _scratchFolder),
             vault: vault,
             destination: destination,
@@ -1630,10 +2008,11 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             snapshot: null,
           );
           await _keep(key, vault);
-          await settings.update(binding);
+          await settings.upsertBinding(created);
           await settings.sweepEpochFolders(keep: epoch);
           await _removeFiles(plain, listing.legacyVaults);
         } finally {
+          _settingUpDestination = null;
           plain.dispose();
         }
         _schedule();
@@ -1642,6 +2021,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   /// Starts syncing into an empty folder without sealing it.
   Future<void> startUnsealed(BackupDestination destination) => _setup(() async {
         _requireLocalWorkspace();
+        _settingUpDestination = destination;
         final plain = await _openRemote(destination);
         try {
           await plain.ensureReady();
@@ -1649,8 +2029,9 @@ class WorkspaceSyncEngine extends ChangeNotifier {
           if (!listing.isEmpty) {
             throw const SyncError('That folder already holds a workspace.');
           }
+          _set(SyncPhase.working, activity: 'Preparing sync folder…');
           final epoch = newSyncEpoch(_clock());
-          final binding = await _publishEpoch(
+          final created = await _publishEpoch(
             remote: SealedSyncRemote(plain, null, scratch: _scratchFolder),
             vault: null,
             destination: destination,
@@ -1659,10 +2040,11 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             filesRoot: await _resolveDataPath(),
             snapshot: null,
           );
-          await settings.update(binding);
+          await settings.upsertBinding(created);
           await settings.sweepEpochFolders(keep: epoch);
           await _removeFiles(plain, listing.legacyVaults);
         } finally {
+          _settingUpDestination = null;
           plain.dispose();
         }
         _schedule();
@@ -1673,8 +2055,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     bool encrypt = true,
   }) async {
     try {
-      await startNew(destination, encrypt: encrypt);
       await settings.setPendingStart(null);
+      await startNew(destination, encrypt: encrypt);
       notify?.call('"$_workspaceName" is syncing.');
     } on Object catch (error) {
       Log.warn('Sync could not start in the folder chosen at first: $error');
@@ -1685,7 +2067,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     }
   }
 
-  /// Syncs this workspace with a folder that already holds it.
+  /// Syncs this workspace with a folder that already holds it (adding it
+  /// alongside any other providers already bound to this workspace).
   Future<void> reconnect(
     BackupDestination destination,
     SyncFolderInspection inspection,
@@ -1700,12 +2083,12 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         if (inspection.needsPassword) {
           throw const SyncError('Type your AppFlowy password first.');
         }
-        await settings.sweepEpochFolders(keep: info.epoch);
         if (key != null) {
           await _keep(key, inspection.vault);
         }
         await _adoptPasswordOf(inspection);
-        await settings.update(
+        final existing = settings.byDestination(destination) ?? binding;
+        await settings.upsertBinding(
           SyncBinding(
             destination: destination,
             epoch: info.epoch,
@@ -1713,21 +2096,27 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             workspaceName: _workspaceName,
             uid: info.uid,
             intervalSeconds:
-                binding?.intervalSeconds ?? defaultSyncIntervalSeconds,
-            syncPreferences: binding?.syncPreferences ?? true,
+                existing?.intervalSeconds ?? defaultSyncIntervalSeconds,
+            syncPreferences: existing?.syncPreferences ?? true,
             vaultId: key?.vaultId ?? '',
           ),
         );
+        await settings.sweepEpochFolders(keep: info.epoch);
         _schedule();
       });
 
   /// Replaces the workspace on this computer with the one in [destination].
   ///
-  /// The workspace here is copied aside first. AppFlowy restarts to finish.
+  /// When [deferFiles] is true (used by UI flows), only the compact workspace
+  /// structure pack is fetched before restarting so the workspace opens in a
+  /// second or two; attached files and media stream asynchronously in the
+  /// background once the workspace opens.
   Future<void> join(
     BackupDestination destination,
-    SyncFolderInspection inspection,
-  ) =>
+    SyncFolderInspection inspection, {
+    bool deferFiles = false,
+    bool skipSafetyCopy = false,
+  }) =>
       _setup(() async {
         final info = inspection.epoch;
         if (info == null) {
@@ -1745,6 +2134,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             destination,
             info,
             reason: 'join',
+            deferFiles: deferFiles,
+            skipSafetyCopy: skipSafetyCopy,
           );
         } finally {
           plain.dispose();
@@ -1757,13 +2148,17 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       });
 
   /// Loads the workspace another computer restored, replacing this one.
-  Future<void> loadRestoredWorkspace() => _setup(() async {
+  Future<void> loadRestoredWorkspace({bool deferFiles = false}) =>
+      _setup(() async {
         final info = _restoredElsewhere;
-        final binding = this.binding;
-        if (info == null || binding == null) {
+        final target = (_restoredBindingId == null
+                ? null
+                : settings.byId(_restoredBindingId!)) ??
+            binding;
+        if (info == null || target == null) {
           return;
         }
-        final plain = await _openRemote(binding.destination);
+        final plain = await _openRemote(target.destination);
         try {
           await plain.ensureReady();
           final current = SyncListing.of(await plain.list()).current;
@@ -1772,15 +2167,18 @@ class WorkspaceSyncEngine extends ChangeNotifier {
               'The sync folder no longer holds this workspace.',
             );
           }
-          final key = await _keyFor(plain, current);
-          if (_lockedBy != null) {
+          final key =
+              await _keyFor(plain, current, bindingId: target.id);
+          if (_lockedByBinding[target.id] != null ||
+              (current.vault != null && key == null)) {
             throw const SyncError('Type your AppFlowy password first.');
           }
           await _replaceFrom(
             SealedSyncRemote(plain, key, scratch: _scratchFolder),
-            binding.destination,
+            target.destination,
             info,
             reason: 'restore-elsewhere',
+            deferFiles: deferFiles,
           );
         } finally {
           plain.dispose();
@@ -1790,146 +2188,180 @@ class WorkspaceSyncEngine extends ChangeNotifier {
 
   /// Forgets the key held in memory, as a computer that never had it.
   @visibleForTesting
-  void forgetKeyInMemory() => _key = null;
+  void forgetKeyInMemory() {
+    _key = null;
+    _keysInMemory.clear();
+  }
 
-  /// Types the AppFlowy password on this computer, for the folder that asked
+  /// Types the AppFlowy password on this computer, for the folder(s) that asked
   /// for it, and carries on syncing. It becomes this computer's AppFlowy
-  /// password too: the folder is sealed with nothing else.
-  Future<void> unlock(String password) async {
-    final vault = _lockedBy;
-    if (vault == null) {
+  /// password too.
+  Future<void> unlock(String password, {String? bindingId}) async {
+    final vaultsToTry = <String, SyncVault>{
+      if (bindingId != null && _lockedByBinding[bindingId] != null)
+        bindingId: _lockedByBinding[bindingId]!
+      else
+        ..._lockedByBinding,
+    };
+    if (vaultsToTry.isEmpty && _lockedBy != null) {
+      vaultsToTry[''] = _lockedBy!;
+    }
+    if (vaultsToTry.isEmpty) {
       return;
     }
-    final key = await vault.unlock(password);
-    if (key == null) {
+    var unlockedAny = false;
+    for (final entry in vaultsToTry.entries) {
+      final key = await entry.value.unlock(password);
+      if (key != null) {
+        unlockedAny = true;
+        await _keep(key, entry.value);
+        if (entry.key.isNotEmpty) {
+          _lockedByBinding.remove(entry.key);
+          _destinationStatuses[entry.key] = const SyncDestinationStatus();
+        }
+      }
+    }
+    if (!unlockedAny) {
       throw const SyncError(
         'That is not the AppFlowy password this folder is sealed with.',
       );
     }
-    await _keep(key, vault);
+    _lockedBy = _lockedByBinding.values.isEmpty
+        ? null
+        : _lockedByBinding.values.first;
     await _passwords.adopt(password);
     _schedule();
   }
 
-  /// Seals the folder with the AppFlowy password: a folder written before
-  /// folders were sealed, or one still sealed with the password this computer
-  /// had before it was changed.
-  ///
-  /// Everything is merged first, then the workspace carries on in an epoch
-  /// sealed with the password, which the others merge into once they have
-  /// it. What the folder held before is removed.
-  Future<void> sealWithAppPassword() => _setup(() async {
-        final binding = this.binding;
-        if (binding == null || !isBoundHere) {
+  /// Seals bound sync folder(s) with the AppFlowy password: [bindingId] when
+  /// specified, or every bound folder that is unsealed or awaiting resealing.
+  Future<void> sealWithAppPassword({String? bindingId}) => _setup(() async {
+        final targets = bindingId != null
+            ? [
+                if (settings.byId(bindingId) case final found?) found,
+              ]
+            : boundBindings;
+        if (targets.isEmpty || !isBoundHere) {
           throw const SyncError('Sync is not set up for this workspace.');
         }
         final password = await _requirePassword();
-        final plain = await _openRemote(binding.destination);
-        try {
-          await plain.ensureReady();
-          var listing = SyncListing.of(await plain.list());
-          final current = listing.current;
-          if (current == null || current.id != binding.epoch) {
-            throw const SyncError(
-              'The sync folder changed. Sync once, then try again.',
-            );
-          }
-          SyncKey? key;
-          if (binding.vaultId.isNotEmpty) {
-            final file = current.vault;
-            if (file == null) {
-              throw const SyncError(
-                'The sync folder is no longer sealed with the AppFlowy '
-                'password. Set sync up again.',
-              );
-            }
-            final vault = await _readVault(plain, file);
-            if (await vault.unlock(password) != null) {
-              // Sealed with it already: another computer got there first, or
-              // the password went back to what it was.
-              if (binding.resealPending) {
-                await settings.update(binding.copyWith(resealPending: false));
-              }
-              return;
-            }
-            key = await _keyOf(binding);
-            if (key == null || !vault.accepts(key)) {
-              throw const SyncError('Type your AppFlowy password first.');
-            }
-          }
-          _report('Taking in what the others sent…');
-          final previous =
-              SealedSyncRemote(plain, key, scratch: _scratchFolder);
-          await _refreshDevices(previous, current);
-          final pulled = await _pull(previous, listing, current, binding);
-
-          _report('Sealing the folder…');
-          final (vault, sealed) = await _newVault(password);
-          final epoch = nextSyncEpoch(binding.epoch, _clock());
-          final next = await _publishEpoch(
-            remote: SealedSyncRemote(plain, sealed, scratch: _scratchFolder),
-            vault: vault,
-            destination: binding.destination,
-            epoch: epoch,
-            reason: SyncEpochReason.continued,
-            filesRoot: await _resolveDataPath(),
-            snapshot: null,
-            intervalSeconds: pulled.intervalSeconds,
-            syncPreferences: pulled.syncPreferences,
-          );
-          await _keep(sealed, vault);
-          await settings.update(next);
-          await settings.sweepEpochFolders(keep: epoch);
-
-          // Nothing sealed the old way, or not at all, stays behind.
-          listing = SyncListing.of(await plain.list());
-          await _removeAllBut(plain, listing, epoch, keepBlobs: false);
-        } finally {
-          plain.dispose();
+        for (final target in targets) {
+          await _sealSingleBinding(target, password);
         }
         _schedule();
       });
 
-  /// Turns encryption off for the sync folder, carrying the workspace on in an
-  /// unsealed epoch and removing sealed files from the folder.
-  ///
-  /// Requires the current key to be known first so nothing sent by other
-  /// computers is left behind and nobody without the AppFlowy password can
-  /// unseal the folder. Settings and credentials do not travel unsealed.
-  Future<void> unsealSyncFolder() => _setup(() async {
-        final binding = this.binding;
-        if (binding == null || !isBoundHere) {
-          throw const SyncError('Sync is not set up for this workspace.');
+  Future<void> _sealSingleBinding(
+    SyncBinding binding,
+    String password,
+  ) async {
+    final plain = await _openRemote(binding.destination);
+    try {
+      await plain.ensureReady();
+      var listing = SyncListing.of(await plain.list());
+      final current = listing.current;
+      if (current == null || current.id != binding.epoch) {
+        throw const SyncError(
+          'The sync folder changed. Sync once, then try again.',
+        );
+      }
+      SyncKey? key;
+      if (binding.vaultId.isNotEmpty) {
+        final file = current.vault;
+        if (file == null) {
+          throw const SyncError(
+            'The sync folder is no longer sealed with the AppFlowy '
+            'password. Set sync up again.',
+          );
         }
-        if (binding.vaultId.isEmpty) {
+        final vault = await _readVault(plain, file);
+        if (await vault.unlock(password) != null) {
+          if (binding.resealPending) {
+            await settings
+                .upsertBinding(binding.copyWith(resealPending: false));
+          }
           return;
         }
-        final plain = await _openRemote(binding.destination);
+        key = await _keyOf(binding);
+        if (key == null || !vault.accepts(key)) {
+          throw const SyncError('Type your AppFlowy password first.');
+        }
+      }
+      _report('Taking in what the others sent…');
+      final previous = SealedSyncRemote(plain, key, scratch: _scratchFolder);
+      await _refreshDevices(previous, current, bindingId: binding.id);
+      final pulled = await _pull(previous, listing, current, binding);
+
+      _report('Sealing the folder…');
+      final (vault, sealed) = await _newVault(password);
+      final epoch = nextSyncEpoch(binding.epoch, _clock());
+      final next = await _publishEpoch(
+        remote: SealedSyncRemote(plain, sealed, scratch: _scratchFolder),
+        vault: vault,
+        destination: binding.destination,
+        epoch: epoch,
+        reason: SyncEpochReason.continued,
+        filesRoot: await _resolveDataPath(),
+        snapshot: null,
+        intervalSeconds: pulled.intervalSeconds,
+        syncPreferences: pulled.syncPreferences,
+      );
+      await _keep(sealed, vault);
+      await settings.upsertBinding(next);
+      await settings.sweepEpochFolders(keep: epoch);
+
+      listing = SyncListing.of(await plain.list());
+      await _removeAllBut(
+        plain,
+        listing,
+        epoch,
+        bindingId: next.id,
+        key: sealed,
+        keepBlobs: false,
+      );
+    } finally {
+      plain.dispose();
+    }
+  }
+
+  /// Turns encryption off for [bindingId] (or the primary bound folder),
+  /// carrying the workspace on in an unsealed epoch and removing sealed files.
+  Future<void> unsealSyncFolder({String? bindingId}) => _setup(() async {
+        final target =
+            (bindingId == null ? null : settings.byId(bindingId)) ?? binding;
+        if (target == null || !isBoundHere) {
+          throw const SyncError('Sync is not set up for this workspace.');
+        }
+        if (target.vaultId.isEmpty) {
+          return;
+        }
+        final plain = await _openRemote(target.destination);
         try {
           await plain.ensureReady();
           var listing = SyncListing.of(await plain.list());
           final current = listing.current;
-          if (current == null || current.id != binding.epoch) {
+          if (current == null || current.id != target.epoch) {
             throw const SyncError(
               'The sync folder changed. Sync once, then try again.',
             );
           }
-          final key = await _keyFor(plain, current);
-          if (_lockedBy != null || key == null) {
+          final key =
+              await _keyFor(plain, current, bindingId: target.id);
+          if (_lockedByBinding[target.id] != null || key == null) {
             throw const SyncError('Type your AppFlowy password first.');
           }
           _report('Taking in what the others sent…');
           final previous =
               SealedSyncRemote(plain, key, scratch: _scratchFolder);
-          await _refreshDevices(previous, current);
-          final pulled = await _pull(previous, listing, current, binding);
+          await _refreshDevices(previous, current, bindingId: target.id);
+          final pulled = await _pull(previous, listing, current, target);
 
           _report('Updating the sync folder…');
-          final epoch = nextSyncEpoch(binding.epoch, _clock());
+          final epoch = nextSyncEpoch(target.epoch, _clock());
           final next = await _publishEpoch(
             remote: SealedSyncRemote(plain, null, scratch: _scratchFolder),
             vault: null,
-            destination: binding.destination,
+            destination: target.destination,
             epoch: epoch,
             reason: SyncEpochReason.continued,
             filesRoot: await _resolveDataPath(),
@@ -1937,44 +2369,63 @@ class WorkspaceSyncEngine extends ChangeNotifier {
             intervalSeconds: pulled.intervalSeconds,
             syncPreferences: pulled.syncPreferences,
           );
-          final oldVaultId = binding.vaultId;
-          _key = null;
-          _vault = null;
-          _lockedBy = null;
-          _credentialsOn = false;
+          final oldVaultId = target.vaultId;
+          _keysInMemory.remove(oldVaultId);
+          _vaultsById.remove(oldVaultId);
+          _lockedByBinding.remove(target.id);
+          if (_key?.vaultId == oldVaultId) {
+            _key = _keysInMemory.values.isEmpty
+                ? null
+                : _keysInMemory.values.first;
+          }
+          if (!boundBindings.any(
+            (b) => b.id != target.id && b.vaultId.isNotEmpty,
+          )) {
+            _credentialsOn = false;
+          }
           if (oldVaultId.isNotEmpty) {
             await _keys.forget(oldVaultId);
           }
-          await settings.update(next);
+          await settings.upsertBinding(next);
           await settings.sweepEpochFolders(keep: epoch);
 
           listing = SyncListing.of(await plain.list());
-          await _removeAllBut(plain, listing, epoch, keepBlobs: false);
+          await _removeAllBut(
+            plain,
+            listing,
+            epoch,
+            bindingId: next.id,
+            key: null,
+            keepBlobs: false,
+          );
         } finally {
           plain.dispose();
         }
         _schedule();
       });
 
-  /// Notes that the AppFlowy password was changed here while the folder could
-  /// not be sealed again, so it is sealed as soon as it can be.
+  /// Notes that the AppFlowy password was changed here while sealed folders
+  /// could not be sealed again yet, so they are sealed as soon as reachable.
   Future<void> markResealPending() async {
-    final binding = this.binding;
-    if (binding == null || binding.vaultId.isEmpty || binding.resealPending) {
-      return;
+    var changed = false;
+    for (final b in boundBindings) {
+      if (b.vaultId.isNotEmpty && !b.resealPending) {
+        await settings.upsertBinding(b.copyWith(resealPending: true));
+        changed = true;
+      }
     }
-    await settings.update(binding.copyWith(resealPending: true));
-    notifyListeners();
+    if (changed) {
+      notifyListeners();
+    }
   }
 
-  /// Whether accounts, passwords and keys travel through the folder.
-  ///
-  /// Turned off, they are taken out of the folder: the workspace carries on
-  /// in an epoch without them, and the files that held them are removed.
-  /// Every computer keeps the ones it has.
+  /// Whether accounts, passwords and keys travel through sealed sync folders.
   Future<void> setSyncCredentials(bool on) async {
-    final binding = this.binding;
-    if (binding == null || !isBoundHere || binding.vaultId.isEmpty) {
+    final sealedTargets = [
+      for (final b in boundBindings)
+        if (b.vaultId.isNotEmpty) b,
+    ];
+    if (sealedTargets.isEmpty || !isBoundHere) {
       throw const SyncError(
         'Accounts, passwords and keys only travel through a sealed folder.',
       );
@@ -1995,47 +2446,59 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       return;
     }
     await _setup(() async {
-      final plain = await _openRemote(binding.destination);
-      try {
-        await plain.ensureReady();
-        var listing = SyncListing.of(await plain.list());
-        final current = listing.current;
-        if (current == null || current.id != binding.epoch) {
-          throw const SyncError(
-            'The sync folder changed. Sync once, then try again.',
-          );
-        }
-        final key = await _keyFor(plain, current);
-        final vault = _vault;
-        if (_lockedBy != null || key == null || vault == null) {
-          throw const SyncError('Type your AppFlowy password first.');
-        }
-        final remote = SealedSyncRemote(plain, key, scratch: _scratchFolder);
-        _report('Taking in what the others sent…');
-        await _refreshDevices(remote, current);
-        final pulled = await _pull(remote, listing, current, binding);
+      for (final binding in sealedTargets) {
+        final plain = await _openRemote(binding.destination);
+        try {
+          await plain.ensureReady();
+          var listing = SyncListing.of(await plain.list());
+          final current = listing.current;
+          if (current == null || current.id != binding.epoch) {
+            throw const SyncError(
+              'The sync folder changed. Sync once, then try again.',
+            );
+          }
+          final key =
+              await _keyFor(plain, current, bindingId: binding.id);
+          final vault = key == null ? null : _vaultsById[key.vaultId];
+          if (_lockedByBinding[binding.id] != null ||
+              key == null ||
+              vault == null) {
+            throw const SyncError('Type your AppFlowy password first.');
+          }
+          final remote = SealedSyncRemote(plain, key, scratch: _scratchFolder);
+          _report('Taking in what the others sent…');
+          await _refreshDevices(remote, current, bindingId: binding.id);
+          final pulled = await _pull(remote, listing, current, binding);
 
-        _report('Taking accounts, passwords and keys out of the folder…');
-        final epoch = nextSyncEpoch(binding.epoch, _clock());
-        final next = await _publishEpoch(
-          remote: remote,
-          vault: vault,
-          destination: binding.destination,
-          epoch: epoch,
-          reason: SyncEpochReason.continued,
-          filesRoot: await _resolveDataPath(),
-          snapshot: null,
-          intervalSeconds: pulled.intervalSeconds,
-          syncPreferences: pulled.syncPreferences,
-          switches: [record],
-        );
-        _credentialsOn = false;
-        await settings.update(next);
-        await settings.sweepEpochFolders(keep: epoch);
-        listing = SyncListing.of(await plain.list());
-        await _removeAllBut(plain, listing, epoch, keepBlobs: true);
-      } finally {
-        plain.dispose();
+          _report('Taking accounts, passwords and keys out of the folder…');
+          final epoch = nextSyncEpoch(binding.epoch, _clock());
+          final next = await _publishEpoch(
+            remote: remote,
+            vault: vault,
+            destination: binding.destination,
+            epoch: epoch,
+            reason: SyncEpochReason.continued,
+            filesRoot: await _resolveDataPath(),
+            snapshot: null,
+            intervalSeconds: pulled.intervalSeconds,
+            syncPreferences: pulled.syncPreferences,
+            switches: [record],
+          );
+          _credentialsOn = false;
+          await settings.upsertBinding(next);
+          await settings.sweepEpochFolders(keep: epoch);
+          listing = SyncListing.of(await plain.list());
+          await _removeAllBut(
+            plain,
+            listing,
+            epoch,
+            bindingId: next.id,
+            key: key,
+            keepBlobs: true,
+          );
+        } finally {
+          plain.dispose();
+        }
       }
     });
     _schedule();
@@ -2043,9 +2506,6 @@ class WorkspaceSyncEngine extends ChangeNotifier {
 
   /// The epoch a restore made here will be synced in, or null when sync is
   /// not set up for this workspace.
-  ///
-  /// Chosen before the restore is scheduled, because the restore writes the
-  /// sync bookkeeping for exactly that epoch.
   String? newRestoreEpoch() {
     final binding = this.binding;
     return binding != null && isBoundHere
@@ -2053,20 +2513,14 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         : null;
   }
 
-  /// Publishes a restore made on this computer as [epoch], so every other
-  /// computer takes it up too.
-  ///
-  /// [snapshot] is the workspace being restored and [filesRoot] the folder that
-  /// holds the attached files it comes with. When the folder cannot be updated,
-  /// sync is turned off here rather than left to send the workspace as it was
-  /// before the restore.
+  /// Publishes a restore made on this computer across every bound sync folder.
   Future<void> publishRestore({
     required String epoch,
     required File snapshot,
     required String filesRoot,
   }) async {
-    final binding = this.binding;
-    if (binding == null || !isBoundHere) {
+    final targets = boundBindings;
+    if (targets.isEmpty) {
       return;
     }
     _busyWithSetup = true;
@@ -2075,44 +2529,53 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     try {
-      final plain = await _openRemote(binding.destination);
-      try {
-        await plain.ensureReady();
-        SyncKey? key;
-        SyncVault? vault;
-        final mine = SyncListing.of(await plain.list()).epochs[binding.epoch];
-        if (binding.vaultId.isNotEmpty) {
-          key = mine == null ? null : await _keyFor(plain, mine);
-          vault = _vault;
-          if (key == null || vault == null || vault.id != key.vaultId) {
-            throw const SyncError('Type your AppFlowy password first.');
+      for (var i = 0; i < targets.length; i++) {
+        final binding = targets[i];
+        final targetEpoch =
+            i == 0 ? epoch : nextSyncEpoch(binding.epoch, _clock());
+        final plain = await _openRemote(binding.destination);
+        try {
+          await plain.ensureReady();
+          SyncKey? key;
+          SyncVault? vault;
+          final mine =
+              SyncListing.of(await plain.list()).epochs[binding.epoch];
+          if (binding.vaultId.isNotEmpty) {
+            key = mine == null
+                ? null
+                : await _keyFor(plain, mine, bindingId: binding.id);
+            vault = key == null ? null : _vaultsById[key.vaultId];
+            if (key == null || vault == null || vault.id != key.vaultId) {
+              throw const SyncError('Type your AppFlowy password first.');
+            }
           }
-        }
-        if (mine != null) {
-          try {
-            await _refreshDevices(
-              SealedSyncRemote(plain, key, scratch: _scratchFolder),
-              mine,
-            );
-          } on Object catch (error) {
-            Log.info('Who else syncs could not be read: $error');
+          if (mine != null) {
+            try {
+              await _refreshDevices(
+                SealedSyncRemote(plain, key, scratch: _scratchFolder),
+                mine,
+                bindingId: binding.id,
+              );
+            } on Object catch (error) {
+              Log.info('Who else syncs could not be read: $error');
+            }
           }
+          final next = await _publishEpoch(
+            remote: SealedSyncRemote(plain, key, scratch: _scratchFolder),
+            vault: vault,
+            destination: binding.destination,
+            epoch: targetEpoch,
+            reason: SyncEpochReason.restored,
+            filesRoot: filesRoot,
+            snapshot: snapshot,
+            intervalSeconds: binding.intervalSeconds,
+            syncPreferences: binding.syncPreferences,
+          );
+          await settings.upsertBinding(next);
+          await settings.sweepEpochFolders(keep: targetEpoch);
+        } finally {
+          plain.dispose();
         }
-        final next = await _publishEpoch(
-          remote: SealedSyncRemote(plain, key, scratch: _scratchFolder),
-          vault: vault,
-          destination: binding.destination,
-          epoch: epoch,
-          reason: SyncEpochReason.restored,
-          filesRoot: filesRoot,
-          snapshot: snapshot,
-          intervalSeconds: binding.intervalSeconds,
-          syncPreferences: binding.syncPreferences,
-        );
-        await settings.update(next);
-        await settings.sweepEpochFolders(keep: epoch);
-      } finally {
-        plain.dispose();
       }
     } on Object catch (error) {
       Log.warn('A restore could not be published to the sync folder: $error');
@@ -2151,11 +2614,14 @@ class WorkspaceSyncEngine extends ChangeNotifier {
 
   Future<void> _keep(SyncKey key, [SyncVault? vault]) async {
     await _keys.write(key);
+    _keysInMemory[key.vaultId] = key;
     _key = key;
     if (vault != null) {
-      _vault = vault;
+      _vaultsById[vault.id] = vault;
     }
-    _lockedBy = null;
+    _lockedBy = _lockedByBinding.values.isEmpty
+        ? null
+        : _lockedByBinding.values.first;
   }
 
   /// Removes every file of every epoch but [epoch], and, unless [keepBlobs],
@@ -2164,6 +2630,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     SyncRemote plain,
     SyncListing listing,
     String epoch, {
+    required String bindingId,
+    required SyncKey? key,
     required bool keepBlobs,
   }) async {
     final doomed = <RemoteSyncFile>[
@@ -2183,11 +2651,16 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     ];
     if (!keepBlobs) {
       final index = await SyncFileIndex.load(
-        File(p.join((await settings.epochFolder(epoch)).path, 'files.json')),
+        File(
+          p.join(
+            (await settings.epochFolder(epoch, bindingId: bindingId)).path,
+            'files.json',
+          ),
+        ),
       );
       final named = {
         for (final record in index.entries.values)
-          _key?.blobName(record.hash) ?? record.hash,
+          key?.blobName(record.hash) ?? record.hash,
       };
       for (final file in await plain.list(blobs: true)) {
         final parsed = SyncFileName.parse(file.name);
@@ -2196,7 +2669,6 @@ class WorkspaceSyncEngine extends ChangeNotifier {
           doomed.add(file);
         }
       }
-      _blobs = null;
     }
     await _removeFiles(plain, doomed);
   }
@@ -2216,45 +2688,66 @@ class WorkspaceSyncEngine extends ChangeNotifier {
 
   /// Where the sync bookkeeping for [epoch] lives — what a restore that is
   /// about to start a new epoch should write its state to.
-  Future<String> collabStatePath(String epoch) async =>
-      p.join((await settings.epochFolder(epoch)).path, 'collab_state.json');
+  Future<String> collabStatePath(String epoch) async => p.join(
+        (await settings.epochFolder(
+          epoch,
+          bindingId: binding?.id ?? '',
+        ))
+            .path,
+        'collab_state.json',
+      );
 
+  /// Pauses or resumes every bound sync provider for this workspace.
   Future<void> setPaused(bool paused) async {
-    final binding = this.binding;
-    if (binding == null) {
+    final targets = boundBindings.isNotEmpty
+        ? boundBindings
+        : [if (binding case final b?) b];
+    if (targets.isEmpty) {
       return;
     }
-    await settings.update(binding.copyWith(paused: paused));
+    for (final target in targets) {
+      await settings.upsertBinding(target.copyWith(paused: paused));
+    }
     _schedule();
   }
 
-  /// Whether this computer's settings follow the workspace. Turned on, the
-  /// settings the folder holds are taken here first: what this computer had
-  /// while it was off is not sent over everybody else's.
-  Future<void> setSyncPreferences(bool on) async {
-    final binding = this.binding;
-    if (binding == null || binding.syncPreferences == on) {
+  /// Pauses or resumes a single sync provider identified by [bindingId].
+  Future<void> setDestinationPaused(String bindingId, bool paused) async {
+    final target = settings.byId(bindingId);
+    if (target == null || target.paused == paused) {
       return;
     }
-    final next = binding.copyWith(syncPreferences: on);
-    if (on) {
-      try {
-        await adoptIndexedPreferences(
-          source: _preferencesFor(
-            next,
-            sealed: isSealed,
-            credentials: _credentialsOn,
-          ),
-          index: await SyncPreferencesIndex.load(
-            await _preferencesIndexFile(binding.epoch),
-            key: await _keyOf(binding),
-          ),
-        );
-      } on Object catch (error) {
-        Log.warn('The synced settings could not be taken: $error');
-      }
+    await settings.upsertBinding(target.copyWith(paused: paused));
+    _schedule();
+  }
+
+  /// Whether this computer's settings follow the workspace.
+  Future<void> setSyncPreferences(bool on) async {
+    final targets = boundBindings;
+    if (targets.isEmpty || targets.every((b) => b.syncPreferences == on)) {
+      return;
     }
-    await settings.update(next);
+    for (final target in targets) {
+      final next = target.copyWith(syncPreferences: on);
+      if (on) {
+        try {
+          await adoptIndexedPreferences(
+            source: _preferencesFor(
+              next,
+              sealed: target.vaultId.isNotEmpty,
+              credentials: _credentialsOn,
+            ),
+            index: await SyncPreferencesIndex.load(
+              await _preferencesIndexFile(target.epoch, bindingId: target.id),
+              key: await _keyOf(target),
+            ),
+          );
+        } on Object catch (error) {
+          Log.warn('The synced settings could not be taken: $error');
+        }
+      }
+      await settings.upsertBinding(next);
+    }
     notifyListeners();
     if (on) {
       unawaited(syncNow());
@@ -2262,74 +2755,120 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   }
 
   Future<void> setInterval(int seconds) async {
-    final binding = this.binding;
-    if (binding == null) {
+    final targets = boundBindings.isNotEmpty
+        ? boundBindings
+        : [if (binding case final b?) b];
+    if (targets.isEmpty) {
       return;
     }
-    await settings.update(binding.copyWith(intervalSeconds: seconds));
+    for (final target in targets) {
+      await settings.upsertBinding(target.copyWith(intervalSeconds: seconds));
+    }
     _schedule();
   }
 
-  /// Stops syncing here. The folder and everything in it stay as they are.
+  /// Disconnects a single sync provider [bindingId], leaving any other
+  /// providers active.
+  Future<void> disconnectDestination(String bindingId) async {
+    _destinationStatuses.remove(bindingId);
+    _lockedByBinding.remove(bindingId);
+    _devicesByBinding.remove(bindingId);
+    _unreachableSinceByBinding.remove(bindingId);
+    _unreachableByBinding.remove(bindingId);
+    _lockedBy = _lockedByBinding.values.isEmpty
+        ? null
+        : _lockedByBinding.values.first;
+    await settings.removeBinding(bindingId);
+    _rebuildMergedDevices();
+    if (boundBindings.isEmpty) {
+      detach();
+      _restoredElsewhere = null;
+      _restoredBindingId = null;
+      _devices = const [];
+      _set(SyncPhase.off);
+    } else {
+      _schedule();
+    }
+  }
+
+  /// Stops syncing across all destinations on this computer. The remote folders
+  /// and everything in them stay as they are.
   Future<void> disconnect() async {
     detach();
     _restoredElsewhere = null;
+    _restoredBindingId = null;
+    _destinationStatuses.clear();
+    _lockedByBinding.clear();
+    _lockedBy = null;
+    _devicesByBinding.clear();
     _devices = const [];
     await settings.update(null);
     await settings.sweepEpochFolders();
     _set(SyncPhase.off);
   }
 
-  /// Removes all AppFlowy sync files and synced blobs from [destination] (or
-  /// the currently bound destination), leaving any unrelated files untouched.
+  /// Removes all AppFlowy sync files and synced blobs from [override] (or
+  /// every currently bound destination when omitted), leaving any unrelated
+  /// personal files untouched.
   Future<void> clearRemoteSyncFolder([BackupDestination? override]) async {
-    final target = override ?? binding?.destination;
-    if (target == null || !target.isReady) {
-      return;
-    }
-    final plain = await _openRemote(target);
-    try {
-      await plain.ensureReady();
-      final files = [
-        ...await plain.list(),
-        ...await plain.list(blobs: true),
-      ];
-      for (final file in files) {
-        if (SyncFileName.parse(file.name) != null) {
-          await plain.delete(file);
-        }
+    final targets = override != null
+        ? [override]
+        : [for (final b in settings.bindings) b.destination];
+    for (final target in targets) {
+      if (!target.isReady) {
+        continue;
       }
-    } finally {
-      plain.dispose();
+      final plain = await _openRemote(target);
+      try {
+        await plain.ensureReady();
+        final files = [
+          ...await plain.list(),
+          ...await plain.list(blobs: true),
+        ];
+        for (final file in files) {
+          if (SyncFileName.parse(file.name) != null) {
+            await plain.delete(file);
+          }
+        }
+      } finally {
+        plain.dispose();
+      }
     }
   }
 
   /// Clears all local sync state (and, when [clearRemote] is true, removes
-  /// synced data from the cloud sync folder first) for a fresh start.
+  /// synced data from all cloud sync folders first) for a fresh start.
   Future<void> resetForFreshStart({bool clearRemote = false}) async {
     _suspended = true;
     detach();
     _again = false;
     await Future.wait(_attachments.toList());
     await _rounds?.future;
-    final current = binding;
-    if (clearRemote && current != null) {
-      await clearRemoteSyncFolder(current.destination);
+    final existing = List<SyncBinding>.of(settings.bindings);
+    if (clearRemote && existing.isNotEmpty) {
+      await clearRemoteSyncFolder();
     }
-    if (current != null && current.vaultId.isNotEmpty) {
-      try {
-        await _keys.forget(current.vaultId);
-      } on Object catch (error) {
-        Log.warn('Sync vault key could not be cleared: $error');
+    for (final current in existing) {
+      if (current.vaultId.isNotEmpty) {
+        try {
+          await _keys.forget(current.vaultId);
+        } on Object catch (error) {
+          Log.warn('Sync vault key could not be cleared: $error');
+        }
       }
     }
     _uid = null;
     _workspaceId = null;
     _workspaceName = '';
     _key = null;
-    _vault = null;
+    _keysInMemory.clear();
+    _vaultsById.clear();
     _lockedBy = null;
+    _lockedByBinding.clear();
+    _destinationStatuses.clear();
     _restoredElsewhere = null;
+    _restoredBindingId = null;
+    _devicesByBinding.clear();
     _devices = const [];
     _preferencesNow = null;
     _preferences = null;
@@ -2385,7 +2924,8 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     bool syncPreferences = true,
     List<SyncPreferenceRecord> switches = const [],
   }) async {
-    final folder = await settings.epochFolder(epoch);
+    final bindingId = SyncBinding.idFor(destination);
+    final folder = await settings.epochFolder(epoch, bindingId: bindingId);
     final state = File(p.join(folder.path, 'collab_state.json'));
     final scratch = await _scratchFolder();
     final bundle = snapshot ??
@@ -2397,10 +2937,11 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         (vault != null && !vault.accepts(remote.key!))) {
       throw const SyncError('The sync folder could not be sealed.');
     }
-    // Who synced the epoch this one carries on from, so the ones still
-    // catching up are listed until they have.
+    final previous = settings.byDestination(destination) ?? binding;
+    final previousDevices =
+        _devicesByBinding[bindingId] ?? const <SyncDeviceSummary>[];
     final roster = [
-      for (final device in _devices)
+      for (final device in previousDevices)
         if (!device.isThisComputer)
           SyncDeviceInfo(
             device: device.id,
@@ -2412,8 +2953,6 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     ];
     try {
       if (vault != null) {
-        // First, so that nothing of the epoch is ever there without the
-        // record of the password it is sealed with.
         final vaultFile =
             File(p.join(scratch.path, 'vault-${randomSyncToken(8)}.json'));
         try {
@@ -2456,12 +2995,12 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       );
       final files = await _uploadFiles(remote, filesRoot, scan.changed);
 
-      // Everything known of the settings so far — including those kept for
-      // other kinds of computer — with what changed here since.
-      final previous = binding;
       final prefs = previous != null && previous.epoch != epoch
           ? await SyncPreferencesIndex.load(
-              await _preferencesIndexFile(previous.epoch),
+              await _preferencesIndexFile(
+                previous.epoch,
+                bindingId: previous.id,
+              ),
               key: await _keyOf(previous),
             )
           : SyncPreferencesIndex();
@@ -2519,9 +3058,13 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         for (final record in files) record.path: record,
       });
       await index.save(File(p.join(folder.path, 'files.json')));
-      await prefs.save(await _preferencesIndexFile(epoch), key: remote.key);
+      await prefs.save(
+        await _preferencesIndexFile(epoch, bindingId: bindingId),
+        key: remote.key,
+      );
 
       return SyncBinding(
+        id: bindingId,
         destination: destination,
         epoch: epoch,
         workspaceId: workspaceId,
@@ -2541,13 +3084,19 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     }
   }
 
-  /// Fetches the newest whole state of [info]'s epoch, with its attached files,
-  /// and schedules it to replace the workspace here at the next start.
+  /// Fetches the newest whole state of [info]'s epoch and schedules it to
+  /// replace the workspace here at the next start.
+  ///
+  /// When [deferFiles] is true, attached files are recorded in `index.waiting`
+  /// instead of blocking the join, and stream in parallel in the background as
+  /// soon as the workspace opens.
   Future<void> _replaceFrom(
     SealedSyncRemote remote,
     BackupDestination destination,
     SyncEpochInfo info, {
     required String reason,
+    bool deferFiles = false,
+    bool skipSafetyCopy = false,
   }) async {
     final listing = SyncListing.of(await remote.list());
     final epoch = listing.epochs[info.epoch];
@@ -2555,8 +3104,10 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       throw const SyncError('The sync folder changed while it was being read.');
     }
 
-    _report('Keeping a copy of this workspace…');
-    await _safetyCopy?.call(reason);
+    if (!skipSafetyCopy) {
+      _report('Keeping a copy of this workspace…');
+      await _safetyCopy?.call(reason);
+    }
 
     final infos = await _checkpointInfosOf(remote, epoch);
     final newest = _newestCheckpoint(epoch, infos);
@@ -2565,7 +3116,9 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         ? <String, int>{}
         : Map<String, int>.from(infos[newest.pack.name]!.covers);
 
-    final folder = await settings.epochFolder(epoch.id);
+    final bindingId = SyncBinding.idFor(destination);
+    final folder =
+        await settings.epochFolder(epoch.id, bindingId: bindingId);
     final state = File(p.join(folder.path, 'collab_state.json'));
     final indexFile = File(p.join(folder.path, 'files.json'));
     final scratch = await _scratchFolder();
@@ -2581,9 +3134,22 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         throw const SyncError('The workspace in the sync folder is damaged.');
       }
 
-      _report('Fetching attached files…');
       final index = SyncFileIndex();
-      await _applyFiles(remote, index, record.files, record.deleted);
+      if (deferFiles) {
+        // Apply deletions immediately and queue attachments for async
+        // background download right after the workspace opens.
+        if (record.deleted.isNotEmpty) {
+          await _applyFiles(remote, index, const [], record.deleted);
+        }
+        for (final fileRecord in record.files) {
+          if (isSafeSyncPath(fileRecord.path) && fileRecord.hash.isNotEmpty) {
+            index.waiting[fileRecord.path] = fileRecord;
+          }
+        }
+      } else {
+        _report('Fetching attached files…');
+        await _applyFiles(remote, index, record.files, record.deleted);
+      }
       await index.save(indexFile);
 
       // Settings never synced here take the folder's values. Joining does not
@@ -2600,30 +3166,35 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       } on Object catch (error) {
         Log.warn('The synced settings were not taken while joining: $error');
       }
-      await prefs.save(await _preferencesIndexFile(epoch.id), key: remote.key);
+      await prefs.save(
+        await _preferencesIndexFile(epoch.id, bindingId: bindingId),
+        key: remote.key,
+      );
 
       await _bridge.scheduleRestore(
         path: bundle.path,
         syncStatePath: state.path,
       );
-      await settings.update(
-        SyncBinding(
-          destination: destination,
-          epoch: epoch.id,
-          workspaceId: info.workspaceId,
-          workspaceName: info.workspaceName,
-          uid: info.uid,
-          nextSeq: epoch.lastSeqOf(settings.deviceId) + 1,
-          // Changes this computer sent before, and the checkpoint does not
-          // hold, are merged back by the first round.
-          applied: applied,
-          baseApplied: true,
-          intervalSeconds:
-              binding?.intervalSeconds ?? defaultSyncIntervalSeconds,
-          syncPreferences: binding?.syncPreferences ?? true,
-          vaultId: remote.key?.vaultId ?? '',
-        ),
+      final joined = SyncBinding(
+        id: bindingId,
+        destination: destination,
+        epoch: epoch.id,
+        workspaceId: info.workspaceId,
+        workspaceName: info.workspaceName,
+        uid: info.uid,
+        nextSeq: epoch.lastSeqOf(settings.deviceId) + 1,
+        applied: applied,
+        baseApplied: true,
+        intervalSeconds:
+            binding?.intervalSeconds ?? defaultSyncIntervalSeconds,
+        syncPreferences: binding?.syncPreferences ?? true,
+        vaultId: remote.key?.vaultId ?? '',
       );
+      if (reason == 'restore-elsewhere') {
+        await settings.upsertBinding(joined);
+      } else {
+        await settings.replaceAllBindings([joined]);
+      }
       await settings.sweepEpochFolders(keep: epoch.id);
     } finally {
       await _discard(pack);
@@ -2706,7 +3277,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   Future<Map<String, RemoteSyncFile>> _blobsOf(
     SealedSyncRemote remote,
   ) async {
-    final known = _blobs;
+    final known = _remoteBlobs[remote];
     if (known != null) {
       return known;
     }
@@ -2717,7 +3288,7 @@ class WorkspaceSyncEngine extends ChangeNotifier {
         blobs[parsed!.hash] = file;
       }
     }
-    return _blobs = blobs;
+    return _remoteBlobs[remote] = blobs;
   }
 
   /// Every computer and phone syncing through [epoch]: those that have sent
@@ -2725,8 +3296,9 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   /// not caught up yet.
   Future<void> _refreshDevices(
     SealedSyncRemote remote,
-    SyncEpochListing epoch,
-  ) async {
+    SyncEpochListing epoch, {
+    String bindingId = '',
+  }) async {
     List<SyncDeviceInfo> roster = const [];
     try {
       roster = (await _readEpochInfo(remote, epoch)).roster;
@@ -2782,11 +3354,53 @@ class WorkspaceSyncEngine extends ChangeNotifier {
           lastSeen: entry.lastSeen,
           joinedAt: entry.joinedAt,
           isThisComputer: isThisComputer,
-          // This computer is about to announce itself in the epoch.
           waiting: !isThisComputer,
         ),
       );
     }
+    if (bindingId.isNotEmpty) {
+      _devicesByBinding[bindingId] = summaries;
+      _rebuildMergedDevices();
+      await _saveDevices(epoch.id, bindingId: bindingId, list: summaries);
+    } else {
+      _sortDeviceSummaries(summaries);
+      _devices = summaries;
+    }
+  }
+
+  void _rebuildMergedDevices() {
+    final merged = <String, SyncDeviceSummary>{};
+    for (final list in _devicesByBinding.values) {
+      for (final item in list) {
+        final prior = merged[item.id];
+        if (prior == null) {
+          merged[item.id] = item;
+        } else {
+          final lastSeen = switch ((prior.lastSeen, item.lastSeen)) {
+            (final a?, final b?) => a.isAfter(b) ? a : b,
+            (final a?, null) => a,
+            (null, final b?) => b,
+            _ => null,
+          };
+          merged[item.id] = SyncDeviceSummary(
+            id: item.id,
+            name: prior.name.isNotEmpty ? prior.name : item.name,
+            isThisComputer: prior.isThisComputer || item.isThisComputer,
+            platform:
+                prior.platform.isNotEmpty ? prior.platform : item.platform,
+            lastSeen: lastSeen,
+            joinedAt: prior.joinedAt ?? item.joinedAt,
+            waiting: prior.waiting || item.waiting,
+          );
+        }
+      }
+    }
+    final list = merged.values.toList();
+    _sortDeviceSummaries(list);
+    _devices = list;
+  }
+
+  static void _sortDeviceSummaries(List<SyncDeviceSummary> summaries) {
     summaries.sort((a, b) {
       if (a.isThisComputer != b.isThisComputer) {
         return a.isThisComputer ? -1 : 1;
@@ -2796,22 +3410,24 @@ class WorkspaceSyncEngine extends ChangeNotifier {
       }
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
-    _devices = summaries;
-    await _saveDevices(epoch.id);
   }
 
   /// Keeps the list where the next start finds it, so it is there before the
   /// first round has read the folder.
-  Future<void> _saveDevices(String epoch) async {
-    if (binding?.epoch != epoch) {
-      return;
-    }
+  Future<void> _saveDevices(
+    String epoch, {
+    required String bindingId,
+    required List<SyncDeviceSummary> list,
+  }) async {
     try {
       final file = File(
-        p.join((await settings.epochFolder(epoch)).path, 'devices.json'),
+        p.join(
+          (await settings.epochFolder(epoch, bindingId: bindingId)).path,
+          'devices.json',
+        ),
       );
       await file.writeAsString(
-        jsonEncode([for (final device in _devices) device.toJson()]),
+        jsonEncode([for (final device in list) device.toJson()]),
       );
     } on Object catch (error) {
       Log.info('The list of synced devices could not be kept: $error');
@@ -2819,26 +3435,31 @@ class WorkspaceSyncEngine extends ChangeNotifier {
   }
 
   Future<void> _loadDevices() async {
-    final binding = this.binding;
-    if (binding == null || _devices.isNotEmpty) {
+    final bound = boundBindings;
+    if (bound.isEmpty || _devices.isNotEmpty) {
       return;
     }
     try {
-      final file = File(
-        p.join(
-          (await settings.epochFolder(binding.epoch)).path,
-          'devices.json',
-        ),
-      );
-      if (!file.existsSync()) {
-        return;
+      for (final b in bound) {
+        final file = File(
+          p.join(
+            (await settings.epochFolder(b.epoch, bindingId: b.id)).path,
+            'devices.json',
+          ),
+        );
+        if (!file.existsSync()) {
+          continue;
+        }
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is List) {
+          _devicesByBinding[b.id] = [
+            for (final entry in decoded)
+              if (SyncDeviceSummary.fromJson(entry) case final device?) device,
+          ];
+        }
       }
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is List) {
-        _devices = [
-          for (final entry in decoded)
-            if (SyncDeviceSummary.fromJson(entry) case final device?) device,
-        ];
+      if (_devicesByBinding.isNotEmpty) {
+        _rebuildMergedDevices();
         notifyListeners();
       }
     } on Object catch (error) {
@@ -2910,3 +3531,20 @@ class WorkspaceSyncEngine extends ChangeNotifier {
     }
   }
 }
+
+class _ProviderSession {
+  const _ProviderSession({
+    required this.original,
+    required this.currentBinding,
+    required this.plain,
+    required this.remote,
+    required this.epoch,
+  });
+
+  final SyncBinding original;
+  final SyncBinding currentBinding;
+  final SyncRemote plain;
+  final SealedSyncRemote remote;
+  final SyncEpochListing epoch;
+}
+

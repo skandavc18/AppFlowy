@@ -94,9 +94,11 @@ Future<bool> showResetEverythingDialog(
   if (!context.mounted) {
     return false;
   }
-  final binding = sync.binding;
-  final syncLabel =
-      binding == null ? null : _syncDestinationLabel(binding.destination);
+  final allBindings = sync.settings.bindings;
+  final syncLabel = allBindings.isEmpty
+      ? null
+      : [for (final b in allBindings) _syncDestinationLabel(b.destination)]
+          .join(', ');
 
   final didReset = await showDialog<bool>(
     context: context,

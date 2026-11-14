@@ -19,16 +19,38 @@ WorkspaceSyncEngine get _sync => WorkspaceSyncEngine.instance;
 
 /// Chooses a folder and, depending on what is in it, starts syncing this
 /// workspace there, reconnects to it, or joins the workspace it holds.
-Future<void> setUpWorkspaceSync(BuildContext context) async {
+Future<void> setUpWorkspaceSync(
+  BuildContext context, {
+  bool addingAnother = false,
+}) async {
   final destination = await chooseBackupDestination(
     context,
-    current: _sync.binding?.destination ?? const BackupDestination(),
+    current: addingAnother
+        ? const BackupDestination()
+        : (_sync.binding?.destination ?? const BackupDestination()),
     allowAppFlowyCloud: false,
     allowSelfHostedCloud: true,
-    title: LocaleKeys.sync_chooseTitle.tr(),
-    body: LocaleKeys.sync_chooseBody.tr(),
+    title: addingAnother
+        ? LocaleKeys.sync_addProviderTitle.tr()
+        : LocaleKeys.sync_chooseTitle.tr(),
+    body: addingAnother
+        ? LocaleKeys.sync_addProviderBody.tr()
+        : LocaleKeys.sync_chooseBody.tr(),
   );
   if (destination == null || !context.mounted) {
+    return;
+  }
+  await _sync.settings.ensureLoaded();
+  if (!context.mounted) {
+    return;
+  }
+  final existing = _sync.settings.byDestination(destination);
+  if (existing != null && _sync.boundBindings.any((b) => b.id == existing.id)) {
+    reportBackupOutcome(
+      context: context,
+      succeeded: true,
+      message: LocaleKeys.sync_alreadySyncingFolder.tr(),
+    );
     return;
   }
   await continueSyncSetup(context, destination);
@@ -45,6 +67,7 @@ Future<void> continueSyncSetup(
   BuildContext context,
   BackupDestination destination, {
   Future<void> Function(bool encrypt)? onEmptyFolder,
+  bool isFirstRun = false,
 }) async {
   var inspection = await runWithSyncProgress(
     context,
@@ -109,21 +132,21 @@ Future<void> continueSyncSetup(
           return;
         }
       }
-      final done = await runWithSyncProgress(
-        context,
-        title: LocaleKeys.sync_startConfirm.tr(),
-        work: () async {
-          await _sync.startNew(destination, encrypt: encrypt);
-          return true;
+      final workspaceName = _sync.workspaceName;
+      reportBackupOutcome(
+        context: context,
+        succeeded: true,
+        message: LocaleKeys.sync_startingBackground.tr(args: [where]),
+      );
+      _sync.startNewInBackground(
+        destination,
+        encrypt: encrypt,
+        onSucceeded: () {
+          _sync.notify?.call(
+            LocaleKeys.sync_started.tr(args: [workspaceName]),
+          );
         },
       );
-      if (done == true && context.mounted) {
-        reportBackupOutcome(
-          context: context,
-          succeeded: true,
-          message: LocaleKeys.sync_started.tr(args: [_sync.workspaceName]),
-        );
-      }
     case SyncFolderState.thisWorkspace:
       final confirmed = await confirmSyncStep(
         context,
@@ -163,10 +186,11 @@ Future<void> continueSyncSetup(
             DateFormat.yMMMd().format(info.createdAt.toLocal()),
           ],
         ),
-        note:
-            _sync.canSyncThisWorkspace ? LocaleKeys.sync_joinSafety.tr() : null,
+        note: _sync.canSyncThisWorkspace && !isFirstRun
+            ? LocaleKeys.sync_joinSafety.tr()
+            : null,
         confirm: LocaleKeys.sync_joinConfirm.tr(),
-        destructive: _sync.canSyncThisWorkspace,
+        destructive: _sync.canSyncThisWorkspace && !isFirstRun,
       );
       if (!confirmed || !context.mounted) {
         return;
@@ -175,7 +199,12 @@ Future<void> continueSyncSetup(
         context,
         title: LocaleKeys.sync_joinConfirm.tr(),
         work: () async {
-          await _sync.join(destination, found);
+          await _sync.join(
+            destination,
+            found,
+            deferFiles: true,
+            skipSafetyCopy: isFirstRun,
+          );
           return true;
         },
       );
@@ -398,7 +427,7 @@ Future<void> showRestoredElsewhereDialog(
     context,
     title: LocaleKeys.sync_restoredConfirm.tr(),
     work: () async {
-      await _sync.loadRestoredWorkspace();
+      await _sync.loadRestoredWorkspace(deferFiles: true);
       return true;
     },
   );

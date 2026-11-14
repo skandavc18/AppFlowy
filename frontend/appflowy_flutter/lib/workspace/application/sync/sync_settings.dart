@@ -13,6 +13,7 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/backup/backup_policy.dart';
 import 'package:appflowy/workspace/application/sync/sync_protocol.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -27,6 +28,7 @@ const int defaultSyncIntervalSeconds = 15;
 @immutable
 class SyncBinding {
   const SyncBinding({
+    String id = '',
     required this.destination,
     required this.epoch,
     required this.workspaceId,
@@ -42,16 +44,20 @@ class SyncBinding {
     this.resealPending = false,
     this.lastSyncedAt,
     this.lastError = '',
-  });
+  }) : _id = id;
 
   factory SyncBinding.fromJson(Map<String, Object?> json) {
     final destination = json['destination'];
     final applied = json['applied'];
     final last = json['last_synced_at'];
+    final parsedDestination = destination is Map
+        ? BackupDestination.fromJson(Map<String, Object?>.from(destination))
+        : const BackupDestination();
     return SyncBinding(
-      destination: destination is Map
-          ? BackupDestination.fromJson(Map<String, Object?>.from(destination))
-          : const BackupDestination(),
+      id: json['id'] is String && (json['id']! as String).isNotEmpty
+          ? json['id']! as String
+          : idFor(parsedDestination),
+      destination: parsedDestination,
       epoch: json['epoch'] is String ? json['epoch']! as String : '',
       workspaceId:
           json['workspace_id'] is String ? json['workspace_id']! as String : '',
@@ -81,6 +87,21 @@ class SyncBinding {
           json['last_error'] is String ? json['last_error']! as String : '',
     );
   }
+
+  /// Stable identifier for [destination], safe to use in folder names.
+  static String idFor(BackupDestination destination) {
+    final raw = [
+      destination.kind.name,
+      destination.connectionId,
+      destination.folderId,
+      destination.localPath,
+      destination.server,
+    ].join('|');
+    return sha256.convert(utf8.encode(raw)).toString().substring(0, 16);
+  }
+
+  final String _id;
+  String get id => _id.isEmpty ? idFor(destination) : _id;
 
   final BackupDestination destination;
   final String epoch;
@@ -120,7 +141,11 @@ class SyncBinding {
 
   bool get isReady => destination.isReady && epoch.isNotEmpty;
 
+  bool matchesDestination(BackupDestination other) =>
+      idFor(destination) == idFor(other);
+
   SyncBinding copyWith({
+    String? id,
     BackupDestination? destination,
     String? epoch,
     String? workspaceId,
@@ -138,6 +163,7 @@ class SyncBinding {
     String? lastError,
   }) =>
       SyncBinding(
+        id: id ?? _id,
         destination: destination ?? this.destination,
         epoch: epoch ?? this.epoch,
         workspaceId: workspaceId ?? this.workspaceId,
@@ -156,6 +182,7 @@ class SyncBinding {
       );
 
   Map<String, Object?> toJson() => {
+        'id': id,
         'destination': destination.toJson(),
         'epoch': epoch,
         'workspace_id': workspaceId,
@@ -175,12 +202,12 @@ class SyncBinding {
       };
 }
 
-/// The binding, this computer's name in sync folders, and where the
-/// bookkeeping for an epoch is kept.
+/// The bindings, this computer's name in sync folders, background sync
+/// preferences, and where the bookkeeping for each epoch is kept.
 ///
-/// ⚠️ Every mutation waits on [ensureLoaded] before it writes, for the same
-/// reason backup settings do: a lazily loaded singleton whose writes do not
-/// wait will happily persist a view of the world it never read.
+/// Multiple providers (for example Google Drive and Box simultaneously) may be
+/// bound to the same workspace at once; each keeps its own epoch and sync state
+/// so edits merge across every provider.
 class SyncSettings extends ChangeNotifier {
   SyncSettings({KeyValueStorage? storage, Future<Directory> Function()? home})
       : _storageOverride = storage,
@@ -191,17 +218,57 @@ class SyncSettings extends ChangeNotifier {
   static const bindingKey = 'appflowy_sync_binding';
   static const deviceKey = 'appflowy_sync_device';
   static const pendingStartKey = 'appflowy_sync_pending_start';
+  static const backgroundKey = 'appflowy_sync_background';
 
   final KeyValueStorage? _storageOverride;
   final Future<Directory> Function() _home;
 
-  SyncBinding? _binding;
+  List<SyncBinding> _bindings = const [];
   BackupDestination? _pendingStart;
   bool _pendingEncrypt = true;
+  bool _keepRunningInBackground = true;
   String _deviceId = '';
   Future<void>? _loading;
 
-  SyncBinding? get binding => _binding;
+  /// Primary binding (first configured destination), kept for callers that ask
+  /// whether sync is configured at all.
+  SyncBinding? get binding => _bindings.isEmpty ? null : _bindings.first;
+
+  /// Every configured sync destination on this computer.
+  List<SyncBinding> get bindings => List<SyncBinding>.unmodifiable(_bindings);
+
+  SyncBinding? byId(String id) {
+    for (final entry in _bindings) {
+      if (entry.id == id) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  SyncBinding? byDestination(BackupDestination destination) {
+    for (final entry in _bindings) {
+      if (entry.matchesDestination(destination)) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  List<SyncBinding> bindingsFor({
+    required String? workspaceId,
+    required int? uid,
+  }) =>
+      workspaceId == null || uid == null
+          ? const []
+          : [
+              for (final entry in _bindings)
+                if (entry.workspaceId == workspaceId && entry.uid == uid) entry,
+            ];
+
+  /// Whether AppFlowy keeps syncing in the background when the window is closed
+  /// on desktop or scheduled via the OS on Android.
+  bool get keepRunningInBackground => _keepRunningInBackground;
 
   /// A folder chosen before any workspace existed here, waiting for the first
   /// workspace to start syncing into it.
@@ -238,11 +305,42 @@ class SyncSettings extends ChangeNotifier {
       final stored = await storage.get(bindingKey);
       if (stored != null && stored.isNotEmpty) {
         final decoded = jsonDecode(stored);
+        final parsed = <SyncBinding>[];
         if (decoded is Map) {
-          final binding =
-              SyncBinding.fromJson(Map<String, Object?>.from(decoded));
-          _binding = binding.isReady ? binding : null;
+          final list = decoded['bindings'];
+          if (list is List) {
+            for (final item in list) {
+              if (item is Map) {
+                final candidate =
+                    SyncBinding.fromJson(Map<String, Object?>.from(item));
+                if (candidate.isReady) {
+                  parsed.add(candidate);
+                }
+              }
+            }
+          } else {
+            final single =
+                SyncBinding.fromJson(Map<String, Object?>.from(decoded));
+            if (single.isReady) {
+              parsed.add(single);
+            }
+          }
+        } else if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map) {
+              final candidate =
+                  SyncBinding.fromJson(Map<String, Object?>.from(item));
+              if (candidate.isReady) {
+                parsed.add(candidate);
+              }
+            }
+          }
         }
+        _bindings = parsed;
+      }
+      final bg = await storage.get(backgroundKey);
+      if (bg != null && bg.isNotEmpty) {
+        _keepRunningInBackground = bg != 'false';
       }
       final pending = await storage.get(pendingStartKey);
       if (pending != null && pending.isNotEmpty) {
@@ -261,22 +359,92 @@ class SyncSettings extends ChangeNotifier {
     }
   }
 
-  Future<void> update(SyncBinding? binding) async {
-    await ensureLoaded();
-    _binding = binding;
-    notifyListeners();
+  Future<void> _persistBindings() async {
     final storage = _kv;
     if (storage == null) {
       return;
     }
     try {
-      if (binding == null) {
+      if (_bindings.isEmpty) {
         await storage.remove(bindingKey);
+      } else if (_bindings.length == 1) {
+        await storage.set(bindingKey, jsonEncode(_bindings.single.toJson()));
       } else {
-        await storage.set(bindingKey, jsonEncode(binding.toJson()));
+        await storage.set(
+          bindingKey,
+          jsonEncode({
+            'bindings': [for (final item in _bindings) item.toJson()],
+          }),
+        );
       }
     } on Object catch (error) {
       Log.warn('The sync settings could not be stored: $error');
+    }
+  }
+
+  /// Adds [next] or updates the existing binding for the same destination.
+  Future<void> upsertBinding(SyncBinding next) async {
+    await ensureLoaded();
+    final updated = List<SyncBinding>.of(_bindings);
+    final index = updated.indexWhere(
+      (b) => b.id == next.id || b.matchesDestination(next.destination),
+    );
+    if (index >= 0) {
+      updated[index] = next;
+    } else {
+      updated.add(next);
+    }
+    _bindings = updated;
+    notifyListeners();
+    await _persistBindings();
+  }
+
+  /// Replaces every binding with [only] (used when joining another workspace).
+  Future<void> replaceAllBindings(List<SyncBinding> next) async {
+    await ensureLoaded();
+    _bindings = List<SyncBinding>.of(next);
+    notifyListeners();
+    await _persistBindings();
+  }
+
+  /// Removes the binding with [id], keeping any other providers intact.
+  Future<void> removeBinding(String id) async {
+    await ensureLoaded();
+    final updated = [
+      for (final item in _bindings)
+        if (item.id != id) item,
+    ];
+    if (updated.length == _bindings.length) {
+      return;
+    }
+    _bindings = updated;
+    notifyListeners();
+    await _persistBindings();
+    await sweepEpochFolders();
+  }
+
+  Future<void> update(SyncBinding? binding) async {
+    if (binding == null) {
+      await replaceAllBindings(const []);
+      return;
+    }
+    await upsertBinding(binding);
+  }
+
+  Future<void> setKeepRunningInBackground(bool enabled) async {
+    await ensureLoaded();
+    if (_keepRunningInBackground == enabled) {
+      return;
+    }
+    _keepRunningInBackground = enabled;
+    notifyListeners();
+    final storage = _kv;
+    if (storage != null) {
+      try {
+        await storage.set(backgroundKey, enabled ? 'true' : 'false');
+      } on Object catch (error) {
+        Log.warn('Background sync preference could not be stored: $error');
+      }
     }
   }
 
@@ -310,9 +478,10 @@ class SyncSettings extends ChangeNotifier {
 
   /// Clears all local sync bindings and epoch bookkeeping for a fresh start.
   Future<void> resetForFreshStart() async {
-    _binding = null;
+    _bindings = const [];
     _pendingStart = null;
     _pendingEncrypt = true;
+    _keepRunningInBackground = true;
     _deviceId = '';
     _loading = null;
     final storage = _kv;
@@ -321,6 +490,7 @@ class SyncSettings extends ChangeNotifier {
         await storage.remove(bindingKey);
         await storage.remove(pendingStartKey);
         await storage.remove(deviceKey);
+        await storage.remove(backgroundKey);
       } on Object catch (error) {
         Log.warn('Sync settings could not be cleared: $error');
       }
@@ -329,22 +499,55 @@ class SyncSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Where this computer keeps its bookkeeping for [epoch].
-  Future<Directory> epochFolder(String epoch) async {
-    final folder = Directory(p.join((await _home()).path, 'sync', epoch));
-    await folder.create(recursive: true);
-    return folder;
+  String _folderNameFor(String epoch, String bindingId) {
+    if (bindingId.isEmpty) {
+      return epoch;
+    }
+    return '${bindingId}_$epoch';
   }
 
-  /// Forgets the bookkeeping of every epoch but [keep].
-  Future<void> sweepEpochFolders({String? keep}) async {
+  /// Where this computer keeps its bookkeeping for [epoch] (scoped to
+  /// [bindingId] when multiple providers are configured, while seamlessly
+  /// reading an existing legacy `<epoch>` folder when unique).
+  Future<Directory> epochFolder(String epoch, {String bindingId = ''}) async {
+    final syncRoot = p.join((await _home()).path, 'sync');
+    final legacy = Directory(p.join(syncRoot, epoch));
+    if (bindingId.isEmpty) {
+      await legacy.create(recursive: true);
+      return legacy;
+    }
+    final sharedEpoch = _bindings
+            .where((b) => b.epoch == epoch && b.id != bindingId)
+            .isNotEmpty;
+    if (!sharedEpoch && legacy.existsSync()) {
+      return legacy;
+    }
+    final scoped = Directory(p.join(syncRoot, _folderNameFor(epoch, bindingId)));
+    await scoped.create(recursive: true);
+    return scoped;
+  }
+
+  /// Forgets the bookkeeping of every epoch except active bindings and [keep].
+  Future<void> sweepEpochFolders({
+    String? keep,
+    Set<String> keepFolders = const {},
+  }) async {
     try {
       final root = Directory(p.join((await _home()).path, 'sync'));
       if (!root.existsSync()) {
         return;
       }
+      final retained = <String>{
+        if (keep != null && keep.isNotEmpty) keep,
+        ...keepFolders,
+        for (final b in _bindings) ...[
+          b.epoch,
+          _folderNameFor(b.epoch, b.id),
+        ],
+      };
       for (final entity in root.listSync(followLinks: false)) {
-        if (entity is Directory && p.basename(entity.path) != keep) {
+        if (entity is Directory &&
+            !retained.contains(p.basename(entity.path))) {
           await entity.delete(recursive: true);
         }
       }

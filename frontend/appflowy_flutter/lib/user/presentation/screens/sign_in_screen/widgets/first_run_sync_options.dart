@@ -174,24 +174,19 @@ class _FirstRunSyncOptionsState extends State<FirstRunSyncOptions> {
       await continueSyncSetup(
         context,
         destination,
+        isFirstRun: true,
         onEmptyFolder: (encrypt) async {
-          final ready = await runWithSyncProgress(
-            context,
-            title: LocaleKeys.sync_startConfirm.tr(),
-            work: () async {
-              await _sync.startWhenReady(destination, encrypt: encrypt);
-              return true;
-            },
-          );
-          if (ready == true && mounted) {
-            // A workspace of its own first; sync starts in the folder as
-            // soon as it is open.
-            final startLocal = widget.startLocal;
-            if (startLocal != null) {
-              await startLocal();
-            } else {
-              context.read<SignInBloc>().add(const SignInEvent.signInAsGuest());
-            }
+          await _sync.queueStartWhenReady(destination, encrypt: encrypt);
+          if (!mounted) {
+            return;
+          }
+          // Open straight into the workspace; initial sync runs asynchronously
+          // in the background as soon as the workspace opens.
+          final startLocal = widget.startLocal;
+          if (startLocal != null) {
+            await startLocal();
+          } else {
+            context.read<SignInBloc>().add(const SignInEvent.signInAsGuest());
           }
         },
       );

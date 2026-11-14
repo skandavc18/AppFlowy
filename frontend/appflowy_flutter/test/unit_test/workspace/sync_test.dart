@@ -1813,6 +1813,178 @@ void main() {
       a.engine.detach();
       b.engine.detach();
     });
+
+    test(
+        'syncs simultaneously across multiple providers with per-provider and global pause/resume',
+        () async {
+      final googleDir = Directory(p.join(root.path, 'google_drive'))
+        ..createSync(recursive: true);
+      final boxDir = Directory(p.join(root.path, 'box_drive'))
+        ..createSync(recursive: true);
+      final googleDest = BackupDestination(
+        kind: BackupDestinationKind.folder,
+        localPath: googleDir.path,
+      );
+      final boxDest = BackupDestination(
+        kind: BackupDestinationKind.folder,
+        localPath: boxDir.path,
+      );
+
+      final a = _Computer(root, 'a', uid: 1, workspaceId: 'workspace-a');
+      final gPeer =
+          _Computer(root, 'gPeer', uid: 2, workspaceId: 'workspace-g');
+      final bPeer =
+          _Computer(root, 'bPeer', uid: 3, workspaceId: 'workspace-b');
+      await a.attach();
+      await gPeer.attach();
+      await bPeer.attach();
+
+      a.bridge.add('page', 'initial on A');
+      File(p.join(a.data.path, 'images', 'hero.png'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([10, 20, 30]);
+
+      // Bind A to BOTH Google Drive folder and Box folder simultaneously.
+      await a.engine.startNew(googleDest);
+      await a.engine.startNew(boxDest);
+      expect(a.engine.boundBindings, hasLength(2));
+
+      // gPeer joins via Google folder; bPeer joins via Box folder.
+      await gPeer.joinSealed(googleDest);
+      await bPeer.joinSealed(boxDest);
+      await gPeer.engine.syncNow();
+      await bPeer.engine.syncNow();
+      expect(gPeer.bridge.objects['page'], {'initial on A'});
+      expect(bPeer.bridge.objects['page'], {'initial on A'});
+      expect(
+        File(p.join(bPeer.data.path, 'images', 'hero.png')).readAsBytesSync(),
+        [10, 20, 30],
+      );
+
+      // Edit made on gPeer (only connected to Google) flows through A into Box
+      // in a single round on A, reaching bPeer!
+      gPeer.bridge.add('page', 'from Google peer');
+      await gPeer.engine.syncNow();
+      await a.engine.syncNow();
+      await bPeer.engine.syncNow();
+      expect(a.bridge.objects['page'], contains('from Google peer'));
+      expect(bPeer.bridge.objects['page'], contains('from Google peer'));
+
+      // Pause ONLY Box on A: Google keeps syncing, Box waits until resumed.
+      final boxBindingId =
+          a.engine.boundBindings.firstWhere((b) => b.destination == boxDest).id;
+      await a.engine.setDestinationPaused(boxBindingId, true);
+      expect(a.engine.isAllPaused, isFalse);
+
+      a.bridge.add('page', 'while Box paused');
+      await a.engine.syncNow();
+      await gPeer.engine.syncNow();
+      await bPeer.engine.syncNow();
+      expect(gPeer.bridge.objects['page'], contains('while Box paused'));
+      expect(
+        bPeer.bridge.objects['page'],
+        isNot(contains('while Box paused')),
+      );
+
+      // Resume Box on A: Box catches right up!
+      await a.engine.setDestinationPaused(boxBindingId, false);
+      await a.engine.syncNow();
+      await bPeer.engine.syncNow();
+      expect(bPeer.bridge.objects['page'], contains('while Box paused'));
+
+      // Global pause pauses every provider; global resume resumes all.
+      await a.engine.setPaused(true);
+      expect(a.engine.isAllPaused, isTrue);
+      expect(a.engine.phase, SyncPhase.paused);
+      a.bridge.add('page', 'while all paused');
+      await a.engine.syncNow();
+      await gPeer.engine.syncNow();
+      expect(
+        gPeer.bridge.objects['page'],
+        isNot(contains('while all paused')),
+      );
+
+      await a.engine.setPaused(false);
+      expect(a.engine.isAllPaused, isFalse);
+      await a.engine.syncNow();
+      await gPeer.engine.syncNow();
+      await bPeer.engine.syncNow();
+      expect(gPeer.bridge.objects['page'], contains('while all paused'));
+      expect(bPeer.bridge.objects['page'], contains('while all paused'));
+
+      // Disconnecting Box leaves Google syncing cleanly.
+      await a.engine.disconnectDestination(boxBindingId);
+      expect(a.engine.boundBindings, hasLength(1));
+      expect(a.engine.boundBindings.single.destination, googleDest);
+
+      a.engine.detach();
+      gPeer.engine.detach();
+      bPeer.engine.detach();
+    });
+
+    test(
+        'deferred-files join opens pages immediately and streams attachments in parallel on first sync round',
+        () async {
+      final sharedDir = Directory(p.join(root.path, 'deferred_shared'))
+        ..createSync(recursive: true);
+      final sharedDest = BackupDestination(
+        kind: BackupDestinationKind.folder,
+        localPath: sharedDir.path,
+      );
+      final a = _Computer(root, 'a', uid: 1, workspaceId: 'workspace-a');
+      await a.attach();
+      a.bridge.add('page', 'instant join content');
+      for (var i = 0; i < 6; i++) {
+        // Two pairs share identical bytes to exercise parallel deduplication.
+        final payload = [i % 4, 42, 99, i % 4];
+        File(p.join(a.data.path, 'files', 'doc_$i.bin'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(payload);
+      }
+      await a.engine.startNew(sharedDest);
+
+      // B joins with deferFiles: true and skipSafetyCopy: true, stopping right
+      // at restart before background sync runs so we can inspect stage 1.
+      final b = _Computer(root, 'b', uid: 2, workspaceId: 'workspace-b');
+      b.engine.configure(
+        restart: () async {
+          b.restarted++;
+          b.engine.detach();
+          b.bridge.applyPendingRestore();
+        },
+      );
+      final seen = await b.engine.inspect(sharedDest);
+      final unlocked =
+          await b.engine.unlockFolder(sharedDest, seen, _passphrase);
+      await b.engine.join(
+        sharedDest,
+        unlocked,
+        deferFiles: true,
+        skipSafetyCopy: true,
+      );
+
+      expect(b.restarted, 1);
+      expect(b.safetyCopies, isEmpty);
+      expect(b.bridge.objects['page'], {'instant join content'});
+      // Attachments were deferred so the workspace opened without waiting!
+      expect(
+        File(p.join(b.data.path, 'files', 'doc_0.bin')).existsSync(),
+        isFalse,
+      );
+
+      // Now attach and run the background sync round: all 6 attachments arrive.
+      await b.attach();
+      await b.engine.syncNow();
+      for (var i = 0; i < 6; i++) {
+        expect(
+          File(p.join(b.data.path, 'files', 'doc_$i.bin')).readAsBytesSync(),
+          [i % 4, 42, 99, i % 4],
+        );
+      }
+
+      a.engine.detach();
+      b.engine.detach();
+    });
   });
 }
 

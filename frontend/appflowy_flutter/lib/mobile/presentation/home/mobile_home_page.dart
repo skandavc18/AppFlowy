@@ -67,17 +67,21 @@ class MobileHomeScreen extends StatelessWidget {
           return const WorkspaceFailedScreen();
         }
 
-        // Nothing behind this is built while the workspace waits for its
-        // passphrase, exactly as on desktop.
-        return WorkspaceEncryptionGate(
-          child: Scaffold(
-            body: SafeArea(
-              bottom: false,
-              child: Provider.value(
-                value: userProfile,
-                child: MobileHomePage(
-                  userProfile: userProfile,
-                  workspaceLatest: workspaceLatest,
+        // Sync bootstraps outside the lock gate, while nothing behind the gate
+        // is built until unlocked.
+        return BackgroundSyncBootstrap(
+          userProfile: userProfile,
+          workspaceId: workspaceLatest.workspaceId,
+          child: WorkspaceEncryptionGate(
+            child: Scaffold(
+              body: SafeArea(
+                bottom: false,
+                child: Provider.value(
+                  value: userProfile,
+                  child: MobileHomePage(
+                    userProfile: userProfile,
+                    workspaceLatest: workspaceLatest,
+                  ),
                 ),
               ),
             ),

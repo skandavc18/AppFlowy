@@ -6,6 +6,7 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/menu/menu_user_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/header/sidebar_sync_button.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
@@ -106,7 +107,8 @@ class _SidebarUserState extends State<SidebarUser> {
                   ),
                   const HSpace(SidebarMetrics.space2),
                   Expanded(child: _buildUserName(context, state)),
-                  if (widget.showUtilities)
+                  if (widget.showUtilities) ...[
+                    SidebarSyncStatusButton(isHover: _isHovered),
                     AnimatedOpacity(
                       duration: WorkspaceTokens.motion(
                         context,
@@ -128,6 +130,7 @@ class _SidebarUserState extends State<SidebarUser> {
                         ),
                       ),
                     ),
+                  ],
                   const HSpace(SidebarMetrics.space1),
                 ],
               ),

@@ -5,6 +5,7 @@ import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/extensions/application/extension_manager.dart';
 import 'package:appflowy/shared/linux_keyring.dart';
+import 'package:appflowy/shared/platform_secret_store.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/tasks/rust_sdk.dart';
 import 'package:appflowy/workflows/application/workflow_manager.dart';
@@ -284,6 +285,7 @@ class AppFreshResetService {
         Log.info('Keyring profile could not be cleared: $error');
       }
     }
+    await PlatformChannelKeyring.instance.clearProfile();
   }
 
   static Future<void> _defaultRestart() async {

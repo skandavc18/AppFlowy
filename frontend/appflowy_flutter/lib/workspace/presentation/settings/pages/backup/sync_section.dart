@@ -61,8 +61,11 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final binding = _engine.binding;
+    final bound = _engine.boundBindings;
+    final settingUp = _engine.settingUpDestination;
     final serverPanel = widget.serverPanel;
-    final onServer = !_engine.canSyncThisWorkspace && binding == null;
+    final onServer =
+        !_engine.canSyncThisWorkspace && binding == null && settingUp == null;
     return SettingsCategory(
       title: LocaleKeys.sync_title.tr(),
       description: LocaleKeys.sync_description.tr(),
@@ -78,7 +81,17 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
           ],
           const SizedBox(height: 14),
           const _ServerSettingsPanel(),
-        ] else if (binding == null)
+        ] else if (bound.isEmpty && settingUp != null)
+          _SyncCard(
+            destination: settingUp,
+            title: _destinationTitle(settingUp),
+            subtitle: _engine.activity.isEmpty
+                ? LocaleKeys.sync_statusWorking.tr()
+                : _engine.activity,
+            busy: true,
+            actions: const [],
+          )
+        else if (binding == null)
           _SyncCard(
             destination: const BackupDestination(),
             title: LocaleKeys.sync_notSet.tr(),
@@ -92,7 +105,7 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
               ),
             ],
           )
-        else if (!_engine.isBoundHere)
+        else if (bound.isEmpty)
           _SyncCard(
             destination: binding.destination,
             title: _destinationTitle(binding.destination),
@@ -100,13 +113,13 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
                 .tr(args: [binding.workspaceName]),
             actions: [
               TextButton(
-                onPressed: () => unawaited(_disconnect()),
+                onPressed: () => unawaited(_disconnectAll()),
                 child: Text(LocaleKeys.sync_disconnectConfirm.tr()),
               ),
             ],
           )
         else
-          ..._bound(context, binding),
+          ..._bound(context, bound, settingUp),
         if (!onServer && serverPanel != null) ...[
           const SizedBox(height: 18),
           serverPanel,
@@ -115,42 +128,91 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
     );
   }
 
-  List<Widget> _bound(BuildContext context, SyncBinding binding) {
+  List<Widget> _bound(
+    BuildContext context,
+    List<SyncBinding> bound,
+    BackupDestination? settingUp,
+  ) {
     final premium = PremiumThemeExtension.of(context);
+    final primary = bound.first;
     final phase = _engine.phase;
     final working = phase == SyncPhase.working || _engine.isBusy;
     final restored = _engine.restoredElsewhere;
+    final allPaused = _engine.isAllPaused;
+    final anySealed = bound.any((b) => b.vaultId.isNotEmpty);
+    final allSealed = bound.every((b) => b.vaultId.isNotEmpty);
+    final anyResealPending =
+        bound.any((b) => b.vaultId.isNotEmpty && b.resealPending);
+    final multi = bound.length > 1;
 
     return [
-      _SyncCard(
-        destination: binding.destination,
-        title: _destinationTitle(binding.destination),
-        subtitle: _status(binding),
-        failed: phase == SyncPhase.failed,
-        busy: working,
-        actions: [
-          if (_engine.needsSignIn && binding.destination.kind.needsConnection)
-            TextButton(
-              onPressed: () async {
-                if (await signInAgainForDestination(
-                      context,
-                      binding.destination,
-                    ) &&
-                    mounted) {
-                  unawaited(_engine.syncNow());
-                }
-              },
-              child: Text(LocaleKeys.backup_signInAgain.tr()),
-            ),
-          _AccentButton(
-            label: LocaleKeys.sync_syncNow.tr(),
-            onPressed: working ||
-                    binding.paused ||
-                    phase == SyncPhase.restoredElsewhere ||
-                    phase == SyncPhase.locked
+      for (var i = 0; i < bound.length; i++) ...[
+        if (i > 0) const SizedBox(height: 10),
+        _buildProviderCard(
+          context,
+          bound[i],
+          multi: multi,
+          engineWorking: working,
+        ),
+      ],
+      if (settingUp != null &&
+          !bound.any((b) => b.matchesDestination(settingUp))) ...[
+        const SizedBox(height: 10),
+        _SyncCard(
+          destination: settingUp,
+          title: _destinationTitle(settingUp),
+          subtitle: _engine.activity.isEmpty
+              ? LocaleKeys.sync_statusWorking.tr()
+              : _engine.activity,
+          busy: true,
+          actions: const [],
+        ),
+      ],
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TextButton.icon(
+            key: const ValueKey('sync-add-provider-button'),
+            onPressed: _engine.isBusy
                 ? null
-                : () => unawaited(_engine.syncNow()),
+                : () =>
+                    unawaited(setUpWorkspaceSync(context, addingAnother: true)),
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: Text(LocaleKeys.sync_addProvider.tr()),
+            style: TextButton.styleFrom(
+              foregroundColor: premium.accent,
+              backgroundColor: premium.accent.withValues(alpha: 0.10),
+            ),
           ),
+          TextButton.icon(
+            key: const ValueKey('sync-pause-resume-all-button'),
+            onPressed: _engine.isBusy
+                ? null
+                : () => unawaited(_engine.setPaused(!allPaused)),
+            icon: Icon(
+              allPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+              size: 16,
+            ),
+            label: Text(
+              allPaused
+                  ? (multi
+                      ? LocaleKeys.sync_resumeAll.tr()
+                      : LocaleKeys.sync_resume.tr())
+                  : (multi
+                      ? LocaleKeys.sync_pauseAll.tr()
+                      : LocaleKeys.sync_pause.tr()),
+            ),
+          ),
+          if (multi)
+            _AccentButton(
+              label: LocaleKeys.sync_syncAllNow.tr(),
+              onPressed: working || allPaused || phase == SyncPhase.locked
+                  ? null
+                  : () => unawaited(_engine.syncNow()),
+            ),
         ],
       ),
       if (restored != null) ...[
@@ -172,7 +234,7 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
           action: LocaleKeys.sync_unlock.tr(),
           onPressed: () => unawaited(_unlock()),
         ),
-      ] else if (binding.vaultId.isEmpty) ...[
+      ] else if (!allSealed) ...[
         const SizedBox(height: 10),
         _Banner(
           icon: Icons.lock_open_rounded,
@@ -180,7 +242,7 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
           action: LocaleKeys.sync_sealConfirm.tr(),
           onPressed: _engine.isBusy ? null : () => unawaited(_seal()),
         ),
-      ] else if (binding.resealPending) ...[
+      ] else if (anyResealPending) ...[
         const SizedBox(height: 10),
         _Banner(
           icon: Icons.lock_reset_rounded,
@@ -196,15 +258,24 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
       ),
       const SizedBox(height: 6),
       _IntervalRow(
-        seconds: binding.intervalSeconds,
-        enabled: !binding.paused,
+        seconds: primary.intervalSeconds,
+        enabled: !allPaused,
         onChanged: (seconds) => unawaited(_engine.setInterval(seconds)),
+      ),
+      const SizedBox(height: 12),
+      _ToggleRow(
+        label: LocaleKeys.sync_backgroundToggle.tr(),
+        hint: LocaleKeys.sync_backgroundToggleHint.tr(),
+        value: _engine.settings.keepRunningInBackground,
+        enabled: true,
+        onChanged: (on) =>
+            unawaited(_engine.settings.setKeepRunningInBackground(on)),
       ),
       const SizedBox(height: 12),
       _ToggleRow(
         label: LocaleKeys.sync_encryptToggle.tr(),
         hint: LocaleKeys.sync_encryptToggleHint.tr(),
-        value: binding.vaultId.isNotEmpty,
+        value: allSealed,
         enabled: !_engine.isBusy && phase != SyncPhase.locked,
         onChanged: (on) => unawaited(on ? _seal() : _unseal()),
       ),
@@ -212,8 +283,8 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
       _ToggleRow(
         label: LocaleKeys.sync_settingsToggle.tr(),
         hint: LocaleKeys.sync_settingsToggleHint.tr(),
-        value: binding.syncPreferences,
-        enabled: !_engine.isBusy && binding.vaultId.isNotEmpty,
+        value: primary.syncPreferences,
+        enabled: !_engine.isBusy && anySealed,
         onChanged: (on) => unawaited(_engine.setSyncPreferences(on)),
       ),
       const SizedBox(height: 12),
@@ -221,78 +292,149 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
         label: LocaleKeys.sync_credentialsToggle.tr(),
         hint: LocaleKeys.sync_credentialsToggleHint.tr(),
         value: _engine.credentialsSynced,
-        enabled: !_engine.isBusy &&
-            binding.vaultId.isNotEmpty &&
-            phase != SyncPhase.locked,
+        enabled: !_engine.isBusy && anySealed && phase != SyncPhase.locked,
         onChanged: (on) => unawaited(_setCredentials(on)),
       ),
       const SizedBox(height: 8),
       Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          TextButton.icon(
-            onPressed: _engine.isBusy
-                ? null
-                : () => unawaited(_engine.setPaused(!binding.paused)),
-            icon: Icon(
-              binding.paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-              size: 16,
-            ),
-            label: Text(
-              binding.paused
-                  ? LocaleKeys.sync_resume.tr()
-                  : LocaleKeys.sync_pause.tr(),
-            ),
-          ),
-          const Spacer(),
           TextButton(
-            onPressed: _engine.isBusy ? null : () => unawaited(_disconnect()),
+            onPressed:
+                _engine.isBusy ? null : () => unawaited(_disconnectAll()),
             style: TextButton.styleFrom(
               foregroundColor: premium.textSecondary,
             ),
-            child: Text(LocaleKeys.sync_disconnect.tr()),
+            child: Text(
+              multi
+                  ? LocaleKeys.sync_disconnectAll.tr()
+                  : LocaleKeys.sync_disconnect.tr(),
+            ),
           ),
         ],
       ),
     ];
   }
 
-  String _status(SyncBinding binding) {
+  Widget _buildProviderCard(
+    BuildContext context,
+    SyncBinding binding, {
+    required bool multi,
+    required bool engineWorking,
+  }) {
+    final premium = PremiumThemeExtension.of(context);
+    final status = _engine.statusOf(binding.id);
+    final cardBusy =
+        !binding.paused && (status.phase == SyncPhase.working || engineWorking);
+    final cardFailed = status.phase == SyncPhase.failed ||
+        (!cardBusy && binding.lastError.isNotEmpty);
+
+    return _SyncCard(
+      key: ValueKey('sync-provider-card-${binding.id}'),
+      destination: binding.destination,
+      title: _destinationTitle(binding.destination),
+      subtitle: _statusForBinding(binding, status),
+      failed: cardFailed,
+      busy: cardBusy,
+      actions: [
+        if (status.needsSignIn && binding.destination.kind.needsConnection)
+          TextButton(
+            onPressed: () async {
+              if (await signInAgainForDestination(
+                    context,
+                    binding.destination,
+                  ) &&
+                  mounted) {
+                unawaited(_engine.syncNow());
+              }
+            },
+            child: Text(LocaleKeys.backup_signInAgain.tr()),
+          ),
+        if (status.phase == SyncPhase.locked)
+          TextButton(
+            onPressed: () => unawaited(_unlock(bindingId: binding.id)),
+            child: Text(LocaleKeys.sync_unlock.tr()),
+          ),
+        IconButton(
+          key: ValueKey('sync-provider-pause-${binding.id}'),
+          tooltip: binding.paused
+              ? LocaleKeys.sync_resume.tr()
+              : LocaleKeys.sync_pause.tr(),
+          onPressed: _engine.isBusy
+              ? null
+              : () => unawaited(
+                    _engine.setDestinationPaused(binding.id, !binding.paused),
+                  ),
+          icon: Icon(
+            binding.paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+            size: 18,
+            color: premium.textSecondary,
+          ),
+          visualDensity: VisualDensity.compact,
+        ),
+        if (!multi)
+          _AccentButton(
+            label: LocaleKeys.sync_syncNow.tr(),
+            onPressed: cardBusy ||
+                    binding.paused ||
+                    _engine.phase == SyncPhase.restoredElsewhere ||
+                    status.phase == SyncPhase.locked
+                ? null
+                : () => unawaited(_engine.syncNow()),
+          ),
+        if (multi)
+          IconButton(
+            key: ValueKey('sync-provider-disconnect-${binding.id}'),
+            tooltip: LocaleKeys.sync_disconnectProvider.tr(),
+            onPressed: _engine.isBusy
+                ? null
+                : () => unawaited(_disconnectOne(binding)),
+            icon: Icon(
+              Icons.link_off_rounded,
+              size: 17,
+              color: premium.textSecondary,
+            ),
+            visualDensity: VisualDensity.compact,
+          ),
+      ],
+    );
+  }
+
+  String _statusForBinding(SyncBinding binding, SyncDestinationStatus status) {
     if (binding.paused) {
       return LocaleKeys.sync_statusPaused.tr();
     }
-    switch (_engine.phase) {
-      case SyncPhase.working:
-        return _engine.activity.isEmpty
-            ? LocaleKeys.sync_statusWorking.tr()
-            : _engine.activity;
-      case SyncPhase.failed:
-        return LocaleKeys.sync_statusFailed.tr(
-          args: [
-            binding.lastError.isNotEmpty ? binding.lastError : _engine.activity,
-          ],
-        );
-      case SyncPhase.restoredElsewhere:
-        return LocaleKeys.sync_restoredTitle.tr();
-      case SyncPhase.locked:
-        return LocaleKeys.sync_statusLocked.tr();
-      case SyncPhase.off:
-      case SyncPhase.idle:
-      case SyncPhase.paused:
-        final last = binding.lastSyncedAt;
-        return last == null
-            ? LocaleKeys.sync_statusNever.tr()
-            : LocaleKeys.sync_statusChecked.tr(args: [_ago(last)]);
+    if (status.phase == SyncPhase.locked) {
+      return LocaleKeys.sync_statusLocked.tr();
     }
+    if (status.phase == SyncPhase.working || _engine.phase == SyncPhase.working) {
+      final detail =
+          status.activity.isNotEmpty ? status.activity : _engine.activity;
+      return detail.isEmpty ? LocaleKeys.sync_statusWorking.tr() : detail;
+    }
+    if (status.phase == SyncPhase.failed || binding.lastError.isNotEmpty) {
+      final err = binding.lastError.isNotEmpty
+          ? binding.lastError
+          : (status.activity.isNotEmpty ? status.activity : _engine.activity);
+      return LocaleKeys.sync_statusFailed.tr(args: [err]);
+    }
+    if (_engine.phase == SyncPhase.restoredElsewhere) {
+      return LocaleKeys.sync_restoredTitle.tr();
+    }
+    final last = binding.lastSyncedAt;
+    return last == null
+        ? LocaleKeys.sync_statusNever.tr()
+        : LocaleKeys.sync_statusChecked.tr(args: [_ago(last)]);
   }
 
-  Future<void> _unlock() => askAppPassword(
+  Future<void> _unlock({String? bindingId}) => askAppPassword(
         context,
         question: _engine.passwordChangedElsewhere
             ? AppPasswordQuestion.changedElsewhere
             : AppPasswordQuestion.typeForFolder,
         check: (password) async {
           try {
-            await _engine.unlock(password);
+            await _engine.unlock(password, bindingId: bindingId);
             return null;
           } on SyncError catch (error) {
             return error.detail;
@@ -300,9 +442,9 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
         },
       );
 
-  /// Seals the folder with the AppFlowy password — choosing one first when
-  /// this computer has none.
-  Future<void> _seal() async {
+  /// Seals bound sync folder(s) with the AppFlowy password — choosing one first
+  /// when this computer has none.
+  Future<void> _seal({String? bindingId}) async {
     final password = await ensureAppPassword(context);
     if (password == null || !mounted) {
       return;
@@ -311,7 +453,7 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
       context,
       title: LocaleKeys.sync_sealing.tr(),
       work: () async {
-        await _engine.sealWithAppPassword();
+        await _engine.sealWithAppPassword(bindingId: bindingId);
         return true;
       },
     );
@@ -324,8 +466,8 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
     }
   }
 
-  /// Turns sync folder encryption off after confirming and verifying the
-  /// AppFlowy password when one is set.
+  /// Turns sync folder encryption off across bound folder(s) after confirming
+  /// and verifying the AppFlowy password when one is set.
   Future<void> _unseal() async {
     final confirmed = await confirmSyncStep(
       context,
@@ -359,7 +501,11 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
       context,
       title: LocaleKeys.sync_unsealing.tr(),
       work: () async {
-        await _engine.unsealSyncFolder();
+        for (final target in List<SyncBinding>.of(_engine.boundBindings)) {
+          if (target.vaultId.isNotEmpty) {
+            await _engine.unsealSyncFolder(bindingId: target.id);
+          }
+        }
         return true;
       },
     );
@@ -396,7 +542,20 @@ class _SyncSettingsSectionState extends State<SyncSettingsSection> {
     );
   }
 
-  Future<void> _disconnect() async {
+  Future<void> _disconnectOne(SyncBinding target) async {
+    final confirmed = await confirmSyncStep(
+      context,
+      title: LocaleKeys.sync_disconnectProviderTitle
+          .tr(args: [_destinationTitle(target.destination)]),
+      body: LocaleKeys.sync_disconnectBody.tr(),
+      confirm: LocaleKeys.sync_disconnectConfirm.tr(),
+    );
+    if (confirmed) {
+      await _engine.disconnectDestination(target.id);
+    }
+  }
+
+  Future<void> _disconnectAll() async {
     final confirmed = await confirmSyncStep(
       context,
       title: LocaleKeys.sync_disconnectTitle.tr(),
@@ -430,6 +589,7 @@ String _ago(DateTime moment) {
 
 class _SyncCard extends StatelessWidget {
   const _SyncCard({
+    super.key,
     required this.destination,
     required this.title,
     required this.subtitle,

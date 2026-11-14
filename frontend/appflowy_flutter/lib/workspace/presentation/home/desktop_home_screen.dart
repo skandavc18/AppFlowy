@@ -84,10 +84,14 @@ class DesktopHomeScreen extends StatelessWidget {
           return const WorkspaceFailedScreen();
         }
 
-        // Nothing behind this is built while the workspace waits for its
-        // passphrase — not the sidebar, not the last page somebody had open.
-        return WorkspaceEncryptionGate(
-          child: AFFocusManager(
+        // Sync bootstraps outside the lock gate so `--background` login start
+        // and locked workspaces still stay up to date while nothing behind the
+        // gate is built until unlocked.
+        return BackgroundSyncBootstrap(
+          userProfile: userProfile,
+          workspaceId: workspaceLatest.workspaceId,
+          child: WorkspaceEncryptionGate(
+            child: AFFocusManager(
             child: MultiBlocProvider(
               key: ValueKey(userProfile.id),
               providers: [
@@ -171,6 +175,7 @@ class DesktopHomeScreen extends StatelessWidget {
                           ),
                         ),
                       ),
+                    ),
                     ),
                   ),
                 ),

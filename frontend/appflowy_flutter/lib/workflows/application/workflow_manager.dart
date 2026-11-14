@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/sync/sync_engine.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
@@ -25,9 +27,11 @@ class WorkflowManager extends ChangeNotifier {
     WorkflowServices? services,
     WorkflowScheduler? scheduler,
     WorkflowWebhookServer? webhooks,
+    WorkspaceSyncEngine? syncEngine,
   })  : store = store ?? WorkflowStore.instance,
         log = log ?? WorkflowRunLog.instance,
-        services = services ?? AppWorkflowServices() {
+        services = services ?? AppWorkflowServices(),
+        _sync = syncEngine ?? WorkspaceSyncEngine.instance {
     this.scheduler = scheduler ??
         WorkflowScheduler(
           store: this.store,
@@ -43,6 +47,7 @@ class WorkflowManager extends ChangeNotifier {
   final WorkflowStore store;
   final WorkflowRunLog log;
   final WorkflowServices services;
+  final WorkspaceSyncEngine _sync;
   late final WorkflowScheduler scheduler;
   late final WorkflowWebhookServer webhooks;
 
@@ -53,6 +58,7 @@ class WorkflowManager extends ChangeNotifier {
   bool _launchAtLoginBeforeStop = false;
   bool _quitting = false;
   String? _backgroundErrorKey;
+  (bool, bool, bool)? _lastSyncTrayState;
 
   bool get isStarted => _started;
 
@@ -69,6 +75,44 @@ class WorkflowManager extends ChangeNotifier {
     return next;
   }
 
+  bool get _syncWantsBackground =>
+      _sync.settings.bindings.isNotEmpty &&
+      _sync.settings.keepRunningInBackground;
+
+  void _onSyncStateChanged() {
+    if (!_started || !WorkflowBackground.isSupported) {
+      return;
+    }
+    final current = (
+      _sync.settings.bindings.isNotEmpty,
+      _sync.settings.keepRunningInBackground,
+      _sync.isAllPaused,
+    );
+    if (_lastSyncTrayState == current) {
+      return;
+    }
+    _lastSyncTrayState = current;
+    unawaited(_syncBackgroundChanged());
+  }
+
+  Future<void> _syncBackgroundChanged() async {
+    await applyBackgroundSettings();
+    if (!FlowyRunner.currentMode.isTest &&
+        _syncWantsBackground &&
+        !_launchAtLogin &&
+        _backgroundErrorKey == null) {
+      await setLaunchAtLogin(true);
+    } else if (!store.settings.keepRunningInBackground &&
+        !_syncWantsBackground &&
+        _launchAtLogin) {
+      await setLaunchAtLogin(false);
+    }
+  }
+
+  void _onWindowShown() {
+    _sync.setBackgroundMode(false);
+  }
+
   Future<void> _start() async {
     if (_started) {
       return;
@@ -77,28 +121,46 @@ class WorkflowManager extends ChangeNotifier {
     try {
       await store.ensureLoaded();
       await log.ensureLoaded();
+      await _sync.settings.ensureLoaded();
     } on Object catch (error) {
       Log.warn('Workflows could not be read at startup: $error');
     }
     scheduler.onRunFinished = _onRunFinished;
     store.addListener(_syncWebhookServer);
     scheduler.addListener(_syncWebhookServer);
+    _sync.addListener(_onSyncStateChanged);
+    _sync.settings.addListener(_onSyncStateChanged);
+    _lastSyncTrayState = (
+      _sync.settings.bindings.isNotEmpty,
+      _sync.settings.keepRunningInBackground,
+      _sync.isAllPaused,
+    );
 
     if (WorkflowBackground.isSupported) {
       WorkflowBackground.instance.attach(
         onTrayAction: _onTrayAction,
         onClosedToTray: _onClosedToTray,
       );
+      WorkflowBackground.instance.addShownListener(_onWindowShown);
+      if (WorkflowBackground.startedInBackground) {
+        _sync.setBackgroundMode(true);
+      }
       await applyBackgroundSettings();
       _launchAtLogin =
           await WorkflowBackground.instance.isLaunchAtLoginEnabled();
       if (_backgroundErrorKey != null && _launchAtLogin) {
         await setLaunchAtLogin(false);
+      } else if (!FlowyRunner.currentMode.isTest &&
+          _syncWantsBackground &&
+          !_launchAtLogin &&
+          _backgroundErrorKey == null) {
+        await setLaunchAtLogin(true);
       }
-      // Started hidden at sign-in, but nobody asked to keep running: a hidden
-      // process with no icon could never be found again.
+      // Started hidden at sign-in, but neither workflows nor sync asked to keep
+      // running: a hidden process with no icon could never be found again.
       if (WorkflowBackground.startedInBackground &&
-          !store.settings.keepRunningInBackground) {
+          !store.settings.keepRunningInBackground &&
+          !_syncWantsBackground) {
         await WorkflowBackground.instance.showWindow();
       }
       // The labels were written before translations finished loading.
@@ -122,6 +184,11 @@ class WorkflowManager extends ChangeNotifier {
     _backgroundTimer = null;
     store.removeListener(_syncWebhookServer);
     scheduler.removeListener(_syncWebhookServer);
+    _sync.removeListener(_onSyncStateChanged);
+    _sync.settings.removeListener(_onSyncStateChanged);
+    if (WorkflowBackground.isSupported) {
+      WorkflowBackground.instance.removeShownListener(_onWindowShown);
+    }
     await webhooks.stop();
     await scheduler.stopAndDrain();
     await Future.wait([store.flush(), log.flush()]);
@@ -173,11 +240,25 @@ class WorkflowManager extends ChangeNotifier {
       return;
     }
     final settings = store.settings;
+    final syncActive = _syncWantsBackground;
+    final keepRunning = settings.keepRunningInBackground || syncActive;
     final enabled =
         store.workflows.where((workflow) => workflow.enabled).length;
-    final configured = await WorkflowBackground.instance.configure(
-      keepRunning: settings.keepRunningInBackground,
-      tooltip: settings.pausedAll
+    final syncPaused = _sync.isAllPaused;
+
+    final String tooltip;
+    if (syncActive && !settings.keepRunningInBackground) {
+      tooltip = syncPaused
+          ? _label(
+              LocaleKeys.sync_trayTooltipPaused,
+              'AppFlowy — sync paused',
+            )
+          : _label(
+              LocaleKeys.sync_trayTooltipActive,
+              'AppFlowy — syncing in background',
+            );
+    } else {
+      tooltip = settings.pausedAll
           ? _label(
               LocaleKeys.workflows_tray_tooltipPaused,
               'AppFlowy — workflows paused',
@@ -186,19 +267,39 @@ class WorkflowManager extends ChangeNotifier {
               LocaleKeys.workflows_tray_tooltip,
               'AppFlowy — {} workflows on',
               args: ['$enabled'],
-            ),
+            );
+    }
+
+    final configured = await WorkflowBackground.instance.configure(
+      keepRunning: keepRunning,
+      tooltip: tooltip,
       menu: [
         WorkflowTrayItem(
           id: WorkflowBackground.openAction,
           label: _label(LocaleKeys.workflows_tray_open, 'Open AppFlowy'),
         ),
-        const WorkflowTrayItem.separator(),
-        WorkflowTrayItem(
-          id: 'togglePause',
-          label: settings.pausedAll
-              ? _label(LocaleKeys.workflows_tray_resume, 'Resume workflows')
-              : _label(LocaleKeys.workflows_tray_pause, 'Pause workflows'),
-        ),
+        if (syncActive) ...[
+          const WorkflowTrayItem.separator(),
+          WorkflowTrayItem(
+            id: 'syncNow',
+            label: _label(LocaleKeys.sync_syncNow, 'Sync now'),
+          ),
+          WorkflowTrayItem(
+            id: 'toggleSyncPause',
+            label: syncPaused
+                ? _label(LocaleKeys.sync_resume, 'Resume sync')
+                : _label(LocaleKeys.sync_pause, 'Pause sync'),
+          ),
+        ],
+        if (settings.keepRunningInBackground || !syncActive) ...[
+          const WorkflowTrayItem.separator(),
+          WorkflowTrayItem(
+            id: 'togglePause',
+            label: settings.pausedAll
+                ? _label(LocaleKeys.workflows_tray_resume, 'Resume workflows')
+                : _label(LocaleKeys.workflows_tray_pause, 'Pause workflows'),
+          ),
+        ],
         const WorkflowTrayItem.separator(),
         WorkflowTrayItem(
           id: WorkflowBackground.quitAction,
@@ -218,6 +319,11 @@ class WorkflowManager extends ChangeNotifier {
         );
         await WorkflowBackground.instance.showWindow();
       }
+    } else if (syncActive && !configured) {
+      // Desktop without a tray host: fall back gracefully to window-only sync.
+      await WorkflowBackground.instance.showWindow();
+    } else if (configured) {
+      _backgroundErrorKey = null;
     }
     if (_backgroundErrorKey != previousError) notifyListeners();
   }
@@ -242,6 +348,10 @@ class WorkflowManager extends ChangeNotifier {
 
   void _onTrayAction(String action) {
     switch (action) {
+      case 'syncNow':
+        unawaited(_sync.syncNow());
+      case 'toggleSyncPause':
+        unawaited(_sync.setPaused(!_sync.isAllPaused));
       case 'togglePause':
         unawaited(
           updateSettings(
@@ -254,6 +364,7 @@ class WorkflowManager extends ChangeNotifier {
   }
 
   void _onClosedToTray() {
+    _sync.setBackgroundMode(true);
     unawaited(applyBackgroundSettings());
     if (store.settings.closedHintShown) {
       return;
@@ -264,11 +375,17 @@ class WorkflowManager extends ChangeNotifier {
           LocaleKeys.workflows_tray_stillRunningTitle,
           'AppFlowy is still running',
         ),
-        body: _label(
-          LocaleKeys.workflows_tray_stillRunningBody,
-          'Workflows keep running in the background. Use the AppFlowy icon '
-          'in the notification area to open or quit.',
-        ),
+        body: _syncWantsBackground
+            ? _label(
+                LocaleKeys.sync_trayStillRunningBody,
+                'AppFlowy keeps syncing in the background. Use the AppFlowy '
+                'icon in the notification area to open, pause, or quit.',
+              )
+            : _label(
+                LocaleKeys.workflows_tray_stillRunningBody,
+                'Workflows keep running in the background. Use the AppFlowy icon '
+                'in the notification area to open or quit.',
+              ),
       ),
     );
     unawaited(
@@ -293,6 +410,7 @@ class WorkflowManager extends ChangeNotifier {
         webhooks.stop(),
         store.flush(),
         log.flush(),
+        if (_sync.isBoundHere && !_sync.isAllPaused) _sync.syncNow(),
       ]).timeout(const Duration(seconds: 3));
     } on Object catch (error) {
       Log.warn('Workflows were not fully written before quitting: $error');
@@ -306,7 +424,9 @@ class WorkflowManager extends ChangeNotifier {
         before.pausedAll != settings.pausedAll) {
       await applyBackgroundSettings();
     }
-    if (!store.settings.keepRunningInBackground && _launchAtLogin) {
+    if (!store.settings.keepRunningInBackground &&
+        !_syncWantsBackground &&
+        _launchAtLogin) {
       await setLaunchAtLogin(false);
     }
     if (before.pausedAll && !settings.pausedAll) {
@@ -505,6 +625,11 @@ class WorkflowManager extends ChangeNotifier {
   void dispose() {
     store.removeListener(_syncWebhookServer);
     scheduler.removeListener(_syncWebhookServer);
+    _sync.removeListener(_onSyncStateChanged);
+    _sync.settings.removeListener(_onSyncStateChanged);
+    if (WorkflowBackground.isSupported) {
+      WorkflowBackground.instance.removeShownListener(_onWindowShown);
+    }
     super.dispose();
   }
 }

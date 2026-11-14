@@ -1,10 +1,16 @@
 import 'dart:io';
 
+import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workflows/application/workflow_background.dart';
 import 'package:appflowy/workflows/application/workflow_manager.dart';
 import 'package:appflowy/workflows/application/workflow_run_log.dart';
 import 'package:appflowy/workflows/application/workflow_store.dart';
+import 'package:appflowy/workspace/application/backup/backup_policy.dart';
+import 'package:appflowy/workspace/application/sync/sync_engine.dart';
+import 'package:appflowy/workspace/application/sync/sync_settings.dart';
+import 'package:appflowy/workspace/application/sync/sync_vault.dart';
+import 'package:appflowy/workspace/application/sync/workspace_bundle_bridge.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -67,10 +73,10 @@ void main() {
     WorkflowBackground.recordLaunchArguments(const []);
   });
 
-  test('background support includes Linux and Windows', () {
+  test('background support includes Linux, Windows, and macOS', () {
     expect(
       WorkflowBackground.isSupported,
-      Platform.isLinux || Platform.isWindows,
+      Platform.isLinux || Platform.isWindows || Platform.isMacOS,
     );
     WorkflowBackground.recordLaunchArguments(['--background']);
     expect(WorkflowBackground.startedInBackground, isTrue);
@@ -237,4 +243,147 @@ void main() {
     },
     skip: !WorkflowBackground.isSupported,
   );
+
+  test(
+    'background sync keeps desktop tray alive and wires sync pause/resume tray actions',
+    () async {
+      final tmp = Directory.systemTemp.createTempSync('af_bg_sync_test_');
+      addTearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+      final syncSettings =
+          SyncSettings(storage: _MemoryKV(), home: () async => tmp);
+      await syncSettings.upsertBinding(
+        SyncBinding(
+          destination: BackupDestination(
+            kind: BackupDestinationKind.folder,
+            localPath: tmp.path,
+          ),
+          epoch: '20261114T000000-test01',
+          workspaceId: 'ws-1',
+          workspaceName: 'Synced WS',
+          uid: 1,
+          paused: true,
+        ),
+      );
+      final syncEngine = WorkspaceSyncEngine(
+        bridge: const _NoOpBundleBridge(),
+        settings: syncSettings,
+        keys: MemoryKeyKeeper(),
+        dataPath: () async => tmp.path,
+        scratch: () async => tmp,
+      );
+      await syncEngine.attach(
+        workspaceId: 'ws-1',
+        uid: 1,
+        workspaceName: 'Synced WS',
+        isLocalWorkspace: true,
+      );
+
+      final store = WorkflowStore(files: MemoryWorkflowFiles());
+      final log = WorkflowRunLog(files: MemoryWorkflowFiles());
+      await store.ensureLoaded();
+      await log.ensureLoaded();
+      final combined = WorkflowManager(
+        store: store,
+        log: log,
+        services: FakeWorkflowServices(),
+        syncEngine: syncEngine,
+      );
+      await combined.start();
+
+      final lastConfigure = calls
+          .where((call) => call.method == 'configure')
+          .last
+          .arguments as Map<Object?, Object?>;
+      expect(lastConfigure['keepRunning'], isTrue);
+      final menuIds = (lastConfigure['menu'] as List)
+          .whereType<Map>()
+          .map((item) => item['id'])
+          .whereType<String>()
+          .toList();
+      expect(menuIds, containsAll(['syncNow', 'toggleSyncPause']));
+
+      await combined.stop();
+      syncEngine.detach();
+      combined.dispose();
+      combined.scheduler.dispose();
+      store.dispose();
+      log.dispose();
+    },
+    skip: !WorkflowBackground.isSupported,
+  );
+}
+
+class _MemoryKV implements KeyValueStorage {
+  final Map<String, String> data = {};
+
+  @override
+  Future<void> clear() async => data.clear();
+
+  @override
+  Future<String?> get(String key) async => data[key];
+
+  @override
+  Future<T?> getWithFormat<T>(
+    String key,
+    T Function(String value) formatter,
+  ) async {
+    final v = data[key];
+    return v == null ? null : formatter(v);
+  }
+
+  @override
+  Future<void> remove(String key) async => data.remove(key);
+
+  @override
+  Future<void> set(String key, String value) async => data[key] = value;
+}
+
+class _NoOpBundleBridge implements WorkspaceBundleBridge {
+  const _NoOpBundleBridge();
+
+  @override
+  Future<WorkspaceBundleExport> exportChanges({
+    required String path,
+    required String syncStatePath,
+  }) async =>
+      const WorkspaceBundleExport(
+        wrote: false,
+        objectCount: 0,
+        uid: 1,
+        workspaceId: 'ws-1',
+        workspaceName: 'Synced WS',
+        isLocalWorkspace: true,
+      );
+
+  @override
+  Future<WorkspaceBundleExport> exportSnapshot({
+    required String path,
+    String syncStatePath = '',
+  }) async =>
+      const WorkspaceBundleExport(
+        wrote: false,
+        objectCount: 0,
+        uid: 1,
+        workspaceId: 'ws-1',
+        workspaceName: 'Synced WS',
+        isLocalWorkspace: true,
+      );
+
+  @override
+  Future<WorkspaceBundleImport> importChanges({
+    required String path,
+    String syncStatePath = '',
+  }) async =>
+      const WorkspaceBundleImport();
+
+  @override
+  Future<void> scheduleRestore({
+    required String path,
+    String syncStatePath = '',
+  }) async {}
+
+  @override
+  Future<WorkspaceRestoreOutcome?> takeRestoreOutcome() async => null;
 }
